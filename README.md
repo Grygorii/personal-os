@@ -30,8 +30,10 @@ Telegram  ←→  worker (Railway)  ←→  MongoDB Atlas (personal_os db)
   the coach. Everything that isn't a slash-command goes to the coach.
 - **the System** (`src/system.js`) — a Solo-Leveling-style layer over your real actions.
   Everything you log feeds four stats (Vitality, Mind, Forge, Discipline), earns XP, and
-  clears daily quests; XP compounds into levels and titles on an **accelerating curve**
-  (gentle early, a real grind up high). **Energy** is derived live from last night's sleep
+  clears daily quests; XP compounds into levels on an **accelerating, uncapped curve**
+  (gentle early, a real grind up high — there's no winning, only climbing). Levels map to
+  **hunter ranks** (E→D→C→B→A→S→National→Monarch); Monarch at Lv.100+ is a lifetime away.
+  **Energy** is derived live from last night's sleep
   and today's water (0–100). **Debuffs** (sleep-debt, dehydration) and **buffs** (well-rested)
   are honest mirrors of how your body is doing — they have teeth (cap energy, shave/boost XP),
   but are never punishments for gaming. `/status` shows it all. Mirror, not bribe: the numbers
@@ -71,7 +73,8 @@ get you moving because *you* want to — never because it pushed you.
 ## Daily use
 
 ```
-/status                  open your status window (level, energy, quests)
+/status                  open your status window (level, rank, energy, quests)
+/ranks                   see the full rank ladder (E → Monarch)
 /read Antifragile        start a book you chose
 /suggest                 get a recommendation
 /progress halfway, ch 8  log where you are

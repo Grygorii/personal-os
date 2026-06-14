@@ -53,7 +53,7 @@ function buildSystem({ profile, logsSummary, reading, energy, state, now }) {
   const sleepTxt = e.sleepHours != null ? `${e.sleepHours}h` : 'unknown';
   const activeEffects =
     [...(e.effects?.debuffs || []), ...(e.effects?.buffs || [])].map((x) => x.label).join('; ') || 'none';
-  const st = state || { level: 1, streak: 0, stats: { vitality: 0, mind: 0, forge: 0, discipline: 0 }, titles: [] };
+  const st = state || { level: 1, streak: 0, stats: { vitality: 0, mind: 0, forge: 0, discipline: 0 }, titles: [], rank: 'E-Rank Hunter' };
 
   return `You are Гриша's personal coach. Not an app, not a logging tool — a coach who knows him and is genuinely in his corner.
 
@@ -92,7 +92,7 @@ Active status effects: ${activeEffects}. (Debuffs reflect real strain, buffs rew
 When these run low, connect them to lived consequence — a flat stretch in the afternoon, foggy focus, less drive for deep SILKILINEN work — as foresight he'd thank you for, never a scold, and only when it genuinely matters. Don't recite the figures back at him; translate them into what today will feel like. When they're solid, let it ride.
 
 THE CLIMB (his game layer — reference it for continuity and momentum, never as a scoreboard you recite):
-Level ${st.level} · streak ${st.streak} days · stats Vitality ${st.stats.vitality} / Mind ${st.stats.mind} / Forge ${st.stats.forge} / Discipline ${st.stats.discipline}${st.titles?.length ? ` · titles: ${st.titles.join(', ')}` : ''}.
+Level ${st.level} · ${st.rank ?? 'E-Rank Hunter'} · streak ${st.streak} days · stats Vitality ${st.stats.vitality} / Mind ${st.stats.mind} / Forge ${st.stats.forge} / Discipline ${st.stats.discipline}${st.titles?.length ? ` · titles: ${st.titles.join(', ')}` : ''}.
 As he levels up and his stats grow, occasionally recommend ONE concrete real-world skill to train next — drawn from his goals and what you know about him, the same way you'd recommend a book. Frame it as leveling up a real ability he'll need (e.g. for SILKILINEN), not homework. When you do, record it with a set_skill_focus action so you can follow up later. Celebrate genuine milestones lightly; never nag about the numbers.
 
 OUTPUT FORMAT — reply with ONLY a JSON object, nothing else, no markdown fences:

@@ -124,6 +124,46 @@ export function titleForLevel(l) {
   return null;
 }
 
+// ---------------- ranks (Solo Leveling ladder over uncapped levels) ----------------
+// The level number climbs forever — there is no cap, no "winning". Ranks give the
+// climb texture and a near horizon; Monarch (Lv.100+) is the legend almost no one
+// reaches. The only end is the one you can't code around.
+const RANKS = [
+  { min: 1, title: 'E-Rank Hunter' },
+  { min: 5, title: 'D-Rank Hunter' },
+  { min: 10, title: 'C-Rank Hunter' },
+  { min: 20, title: 'B-Rank Hunter' },
+  { min: 35, title: 'A-Rank Hunter' },
+  { min: 55, title: 'S-Rank Hunter' },
+  { min: 80, title: 'National Level Hunter' },
+  { min: 100, title: 'Monarch' },
+];
+
+export function rankForLevel(level) {
+  let rank = RANKS[0];
+  for (const r of RANKS) {
+    if (level >= r.min) rank = r;
+    else break;
+  }
+  return rank;
+}
+
+export function nextRankAfter(level) {
+  return RANKS.find((r) => r.min > level) || null;
+}
+
+export function renderLadder(currentLevel = 0) {
+  const lines = ['⟦  R A N K   L A D D E R  ⟧'];
+  RANKS.forEach((r, i) => {
+    const next = RANKS[i + 1];
+    const range = next ? `Lv.${r.min}-${next.min - 1}` : `Lv.${r.min}+`;
+    const here = currentLevel >= r.min && (!next || currentLevel < next.min);
+    lines.push(`${here ? '►' : ' '} ${r.title.padEnd(22)} ${range}`);
+  });
+  lines.push('', 'No ceiling above Monarch — the climb never ends.');
+  return lines.join('\n');
+}
+
 export function renderStatus(s, energy = null, effects = null) {
   const floor = xpToReach(s.level);
   const next = xpToReach(s.level + 1);
@@ -132,11 +172,14 @@ export function renderStatus(s, energy = null, effects = null) {
   const q = s.quests || {};
   const line = (k) => ` ${q[k] ? '✓' : '▢'} ${QUEST_LABEL[k]}`;
 
+  const rank = rankForLevel(s.level);
+  const upcoming = nextRankAfter(s.level);
   const out = [
     '⟦  S T A T U S  ⟧',
-    `LEVEL ${s.level}`,
-    `XP     ${bar(prog, need)}  ${prog}/${need}`,
+    `LEVEL ${s.level} · ${rank.title}`,
   ];
+  if (upcoming) out.push(`  → ${upcoming.title} at Lv.${upcoming.min}`);
+  out.push(`XP     ${bar(prog, need)}  ${prog}/${need}`);
   if (energy != null) out.push(`ENERGY ${bar(energy, 100)}  ${energy}/100`);
   out.push(
     '',
@@ -249,6 +292,9 @@ export async function recordAction(action) {
   if (newLevel > prevLevel) {
     s.level = newLevel;
     pings.push(`⟦ LEVEL UP ⟧ Lv.${prevLevel} → Lv.${newLevel}`);
+    if (rankForLevel(newLevel).title !== rankForLevel(prevLevel).title) {
+      pings.push(`⟦ RANK UP ⟧ You are now ${rankForLevel(newLevel).title}.`);
+    }
     const title = titleForLevel(newLevel);
     if (title && !s.titles.includes(title)) {
       s.titles.push(title);
@@ -305,7 +351,7 @@ export async function energySnapshot() {
 // Raw System state for the coach to reference the climb (no rendering).
 export async function currentState() {
   const s = await getState();
-  return { level: s.level, xp: s.xp, stats: s.stats, streak: s.streak, titles: s.titles || [] };
+  return { level: s.level, xp: s.xp, stats: s.stats, streak: s.streak, titles: s.titles || [], rank: rankForLevel(s.level).title };
 }
 
 // Render the status window (refreshes today's quest state for display).

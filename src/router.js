@@ -15,7 +15,7 @@ export async function route({ chatId, text }) {
         'Just talk to me — how you slept, what you drank, what you\'re reading, ' +
         'what you shipped, what\'s on your mind. I\'ll coach you and the System ' +
         'tracks the growth.\n\n' +
-        '`/status` — open your status window\n' +
+        '`/status` — your status window   `/ranks` — the rank ladder\n' +
         'Shortcuts: `/water 0.5`, `/read <title>`, `/suggest`, `/progress <note>`, `/finished`.',
       chatId
     );
@@ -24,6 +24,12 @@ export async function route({ chatId, text }) {
 
   if (/^\/status\b/i.test(text)) {
     await send('```\n' + (await system.statusWindow()) + '\n```');
+    return;
+  }
+
+  if (/^\/ranks?\b/i.test(text)) {
+    const st = await system.currentState();
+    await send('```\n' + system.renderLadder(st.level) + '\n```');
     return;
   }
 
