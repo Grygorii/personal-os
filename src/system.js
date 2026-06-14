@@ -29,10 +29,48 @@ export function energyFrom({ sleepHours, waterLitres }) {
   return clamp(sleepPart + waterPart, 0, 100);
 }
 
+// Status effects derived from recent reality — honest mirrors of how the body
+// is actually doing, not punishments. Debuffs have teeth (cap energy, shave XP
+// gain); buffs reward good days. Gaming is handled by the coach in conversation,
+// never here.
+export function effectsFrom({ sleepHours, todayWater, yesterdayWater }) {
+  const debuffs = [];
+  const buffs = [];
+  const h = Number(sleepHours);
+  const knownSleep = sleepHours != null && !Number.isNaN(h);
+
+  if (knownSleep && h < 6) {
+    debuffs.push({ key: 'sleep_debt', label: `SLEEP-DEBT · ${h}h`, note: 'foggy focus, low drive', xpMult: 0.8, energyCap: 100 });
+  }
+  if ((Number(yesterdayWater) || 0) < 1 && (Number(todayWater) || 0) < 1) {
+    debuffs.push({ key: 'dehydrated', label: 'DEHYDRATED · 2 dry days', note: 'headache risk, flat afternoon', xpMult: 1, energyCap: 60 });
+  }
+  if (knownSleep && h >= 8) {
+    buffs.push({ key: 'well_rested', label: `WELL-RESTED · ${h}h`, note: 'sharp — +10% XP', xpMult: 1.1 });
+  }
+  return { debuffs, buffs };
+}
+
+// Net XP multiplier from all active effects.
+export function xpMultiplier({ debuffs = [], buffs = [] } = {}) {
+  return [...debuffs, ...buffs].reduce((m, e) => m * (e.xpMult ?? 1), 1);
+}
+
+// Lowest energy ceiling imposed by active debuffs.
+export function energyCap({ debuffs = [] } = {}) {
+  return debuffs.reduce((cap, d) => Math.min(cap, d.energyCap ?? 100), 100);
+}
+
+// Per-level XP cost accelerates hard: gentle at first, a real grind up high.
+// L1→2 ≈ 110, L5→6 ≈ 450, L10→11 ≈ 1325, L20→21 ≈ 4575.
+export function levelStep(l) {
+  return 75 + 25 * l + 10 * l * l;
+}
+
 // Cumulative XP required to BE at a given level (level 1 = 0 XP).
 export function xpToReach(level) {
   let total = 0;
-  for (let l = 1; l < level; l++) total += 100 + (l - 1) * 50;
+  for (let l = 1; l < level; l++) total += levelStep(l);
   return total;
 }
 
@@ -86,7 +124,7 @@ export function titleForLevel(l) {
   return null;
 }
 
-export function renderStatus(s, energy = null) {
+export function renderStatus(s, energy = null, effects = null) {
   const floor = xpToReach(s.level);
   const next = xpToReach(s.level + 1);
   const prog = s.xp - floor;
@@ -114,6 +152,15 @@ export function renderStatus(s, energy = null) {
     line('read'),
     line('build')
   );
+  const eff = effects || {};
+  if (eff.debuffs && eff.debuffs.length) {
+    out.push('', 'DEBUFFS');
+    for (const d of eff.debuffs) out.push(` ⚠ ${d.label}${d.note ? ' — ' + d.note : ''}`);
+  }
+  if (eff.buffs && eff.buffs.length) {
+    out.push('', 'BUFFS');
+    for (const b of eff.buffs) out.push(` ✦ ${b.label}${b.note ? ' — ' + b.note : ''}`);
+  }
   if (s.titles && s.titles.length) out.push('', `TITLES: ${s.titles.join(', ')}`);
   return out.join('\n');
 }
@@ -169,9 +216,12 @@ export async function recordAction(action) {
   const prevLevel = s.level;
   const pings = [];
 
+  // Active effects scale the action's XP (debuffs shave it, buffs boost it).
+  const mult = xpMultiplier((await energySnapshot()).effects);
   for (const [stat, xp] of awardsFor(action)) {
-    s.stats[stat] = (s.stats[stat] || 0) + xp;
-    s.xp += xp;
+    const gain = Math.round(xp * mult);
+    s.stats[stat] = (s.stats[stat] || 0) + gain;
+    s.xp += gain;
   }
 
   // Quests
@@ -241,11 +291,14 @@ export async function energySnapshot() {
     waterBetween(today.start, today.end),
     waterBetween(yest.start, yest.end),
   ]);
+  const effects = effectsFrom({ sleepHours, todayWater, yesterdayWater });
+  const base = energyFrom({ sleepHours, waterLitres: todayWater });
   return {
-    energy: energyFrom({ sleepHours, waterLitres: todayWater }),
+    energy: Math.min(base, energyCap(effects)),
     sleepHours,
     todayWater,
     yesterdayWater,
+    effects,
   };
 }
 
@@ -256,6 +309,6 @@ export async function statusWindow() {
   const now = questsFromLogs(await todaysLogs());
   s.quests = { ...s.quests, ...Object.fromEntries(Object.entries(now).filter(([, v]) => v)) };
   await saveState(s);
-  const { energy } = await energySnapshot();
-  return renderStatus(s, energy);
+  const { energy, effects } = await energySnapshot();
+  return renderStatus(s, energy, effects);
 }

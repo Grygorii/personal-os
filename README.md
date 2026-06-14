@@ -27,10 +27,12 @@ Telegram  ←→  worker (Railway)  ←→  MongoDB Atlas (personal_os db)
   the coach. Everything that isn't a slash-command goes to the coach.
 - **the System** (`src/system.js`) — a Solo-Leveling-style layer over your real actions.
   Everything you log feeds four stats (Vitality, Mind, Forge, Discipline), earns XP, and
-  clears daily quests; XP compounds into levels and titles. **Energy** is derived live from
-  last night's sleep and today's water (0–100), so the coach can flag how a low day will
-  actually feel. `/status` opens your status window. It's a mirror, not a bribe — the
-  numbers track growth you're already choosing, and there are no penalties, just a streak.
+  clears daily quests; XP compounds into levels and titles on an **accelerating curve**
+  (gentle early, a real grind up high). **Energy** is derived live from last night's sleep
+  and today's water (0–100). **Debuffs** (sleep-debt, dehydration) and **buffs** (well-rested)
+  are honest mirrors of how your body is doing — they have teeth (cap energy, shave/boost XP),
+  but are never punishments for gaming. `/status` shows it all. Mirror, not bribe: the numbers
+  track growth you're already choosing.
 
 The coach is situational and autonomy-supportive by design: no fixed tone, and it aims to
 get you moving because *you* want to — never because it pushed you.
