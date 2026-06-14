@@ -324,7 +324,7 @@ export async function checkIn(kind) {
   const trigger =
     kind === 'morning'
       ? "(Morning check-in — he hasn't messaged yet. Open his day warmly with at most ONE light question — how he slept, how he's landing today. When he answers, sense his mood from how he writes and log it quietly; never ask him to rate anything. Short.)"
-      : "(Evening check-in — he hasn't messaged. Look back on his day from the data and reach out: notice what happened, hold gentle continuity. Short.)";
+      : "(Evening check-in — he hasn't messaged. In one or two sentences, gently close out his day (notice what actually happened from the data) and nod lightly to tomorrow. Warm and brief — a goodnight from someone in his corner, never a report.)";
   await deliver(await think(trigger));
 }
 
@@ -345,4 +345,83 @@ export async function maybeReflectOnBurst(type) {
       `(He just logged "${type}" for the ${count}th time within an hour, via a quick command with no conversation around it. Don't log anything for this — just notice the repetition and gently check in on what's actually going on.)`
     )
   );
+}
+
+// ---------- weekly review ----------
+
+async function logsBetween(start, end) {
+  return col('logs').find({ ts: { $gte: start, $lt: end } }).toArray();
+}
+
+function aggregateWeek(logs) {
+  const pick = (t) => logs.filter((l) => l.type === t);
+  const avg = (arr) => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null);
+  const water = pick('water').reduce((s, l) => s + (l.value || 0), 0);
+  return {
+    mood: avg(pick('mood').map((l) => l.score).filter((x) => x != null)),
+    sleep: avg(pick('sleep').map((l) => Number(l.hours)).filter((x) => x != null && !Number.isNaN(x))),
+    waterPerDay: water / 7,
+    training: pick('move').length,
+    reading: logs.filter((l) => l.type === 'book' || l.type === 'essay').length,
+    shipped: pick('work').length,
+  };
+}
+
+function weekArrow(cur, prev) {
+  if (cur == null || prev == null) return ' ';
+  if (cur > prev * 1.03) return '▲';
+  if (cur < prev * 0.97) return '▼';
+  return '=';
+}
+
+function renderWeekly(a, b, state, prevSnap) {
+  const out = ['⟦  W E E K   I N   R E V I E W  ⟧'];
+  const row = (label, cur, prev, fmt) => {
+    const c = cur == null ? '—' : fmt(cur);
+    const p = prev == null || cur == null ? '' : `  (was ${fmt(prev)})`;
+    out.push(`${label.padEnd(9)}${String(c).padEnd(9)}${weekArrow(cur, prev)}${p}`);
+  };
+  row('Mood', a.mood, b.mood, (v) => `${v.toFixed(1)}/5`);
+  row('Sleep', a.sleep, b.sleep, (v) => `${v.toFixed(1)}h`);
+  row('Training', a.training, b.training, (v) => `${v}x`);
+  row('Water', a.waterPerDay, b.waterPerDay, (v) => `${v.toFixed(1)}L/d`);
+  row('Reading', a.reading, b.reading, (v) => `${v}`);
+  row('Shipped', a.shipped, b.shipped, (v) => `${v}`);
+  out.push('');
+  out.push(`Level ${state.level} · ${state.rank}${prevSnap ? `   (was Lv.${prevSnap.level})` : ''}`);
+  if (state.domainRanks) {
+    const d = state.domainRanks;
+    out.push(`Body ${d.vitality} · Mind ${d.mind} · Craft ${d.forge} · Disc ${d.discipline} · Spirit ${d.spirit}`);
+  }
+  out.push(`Streak 🔥 ${state.streak} days`);
+  return out.join('\n');
+}
+
+// Sunday week-in-review: a short warm reflection + a trend report card; saves a snapshot
+// each week so movement over time accrues (and feeds the future dashboard).
+export async function weeklyReview() {
+  const DAY = 24 * 60 * 60 * 1000;
+  const now = Date.now();
+  const thisStart = new Date(now - 7 * DAY);
+  const lastStart = new Date(now - 14 * DAY);
+  const [thisLogs, lastLogs, state, prevSnap] = await Promise.all([
+    logsBetween(thisStart, new Date(now)),
+    logsBetween(lastStart, thisStart),
+    system.currentState(),
+    col('snapshots').findOne({}, { sort: { ts: -1 } }),
+  ]);
+  const a = aggregateWeek(thisLogs);
+  const b = aggregateWeek(lastLogs);
+  const block = renderWeekly(a, b, state, prevSnap);
+
+  const trigger =
+    '(Weekly review — Sunday. His week vs last week, as data: ' +
+    JSON.stringify({ thisWeek: a, lastWeek: b, level: state.level, rank: state.rank, domainRanks: state.domainRanks, streak: state.streak }) +
+    '. Write a SHORT, warm reflection (2–4 sentences): name the ONE trend that matters most — a rise worth celebrating or a dip worth getting curious about — and nod gently at the week ahead. Do NOT recite all the numbers; the report card below already shows them.)';
+  const { reply } = await think(trigger);
+  await remember('coach', reply);
+  await send(reply);
+  await send('```\n' + block + '\n```');
+
+  await col('snapshots').insertOne({ ts: new Date(), level: state.level, xp: state.xp, stats: state.stats, streak: state.streak });
 }

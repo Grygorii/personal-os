@@ -48,7 +48,14 @@ async function main() {
       enabled: true,
       schedule: '0 21 * * *', // every day 21:00
       channel: 'telegram',
-      description: 'Evening coach check-in — reviews the day and holds continuity.',
+      description: 'Evening coach check-in — closes today, nods at tomorrow.',
+    },
+    {
+      id: 'coach-weekly',
+      enabled: true,
+      schedule: '0 19 * * 0', // Sunday 19:00
+      channel: 'telegram',
+      description: 'Sunday week-in-review — trends over time.',
     },
   ];
   for (const a of agents) {
