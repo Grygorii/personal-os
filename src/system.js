@@ -302,6 +302,12 @@ export async function energySnapshot() {
   };
 }
 
+// Raw System state for the coach to reference the climb (no rendering).
+export async function currentState() {
+  const s = await getState();
+  return { level: s.level, xp: s.xp, stats: s.stats, streak: s.streak, titles: s.titles || [] };
+}
+
 // Render the status window (refreshes today's quest state for display).
 export async function statusWindow() {
   const s = await getState();

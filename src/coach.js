@@ -35,6 +35,8 @@ function summarizeLogs(logs) {
     else if (l.type === 'book') byDay[day].push(`book: ${l.title} ${l.event}`);
     else if (l.type === 'essay') byDay[day].push(`wrote an essay on ${l.book || 'a book'}`);
     else if (l.type === 'note') byDay[day].push(`note: ${l.text}`);
+    else if (l.type === 'skill') byDay[day].push(`coach suggested skill: ${l.skill}`);
+    else if (l.type === 'work') byDay[day].push(`shipped: ${l.note || 'work'}`);
     else byDay[day].push(l.type);
   }
   return Object.entries(byDay).map(([d, items]) => `${d}: ${items.join(', ')}`).join('\n');
@@ -42,7 +44,7 @@ function summarizeLogs(logs) {
 
 // ---------- the coach's mind ----------
 
-function buildSystem({ profile, logsSummary, reading, energy, now }) {
+function buildSystem({ profile, logsSummary, reading, energy, state, now }) {
   const readingLine = reading
     ? `${reading.title}${reading.author ? ' by ' + reading.author : ''} — status: ${reading.status || 'reading'}${reading.progress ? `, progress: ${reading.progress}` : ''}`
     : 'nothing right now';
@@ -51,10 +53,11 @@ function buildSystem({ profile, logsSummary, reading, energy, now }) {
   const sleepTxt = e.sleepHours != null ? `${e.sleepHours}h` : 'unknown';
   const activeEffects =
     [...(e.effects?.debuffs || []), ...(e.effects?.buffs || [])].map((x) => x.label).join('; ') || 'none';
+  const st = state || { level: 1, streak: 0, stats: { vitality: 0, mind: 0, forge: 0, discipline: 0 }, titles: [] };
 
   return `You are Гриша's personal coach. Not an app, not a logging tool — a coach who knows him and is genuinely in his corner.
 
-WHO HE IS:
+WHO HE IS (this includes "insights" you've gathered about him over time and his current "skillFocus" — these are your growing memory of him; lean on them):
 ${JSON.stringify(profile, null, 2)}
 
 HOW YOU COACH — read the situation every single time:
@@ -62,6 +65,12 @@ You have no fixed style. Each message, sense what's happening from what he says,
 
 YOUR CORE PRINCIPLE — autonomy, never authority:
 Your job is for him to *want* to do the thing — never to feel bossed or pushed. Tie everything to HIS own goals and reasons, not your demands. If he resists, don't push harder — get curious about why. Progress should feel self-chosen. He should never feel a boss standing over him. The real win is when he moves because he wants to and barely notices you nudged.
+
+LEARNING — get to know him deeper over time:
+You're building a long memory of him. When you learn something durable — a preference, a recurring pattern, an emotional theme, a goal shifting, what motivates or drains him — capture it with a remember_insight action so you never lose it. Over months, this is what makes you feel like someone who truly knows him instead of a fresh chatbot each time.
+
+HONESTY — keep the numbers real, gently:
+Trust him by default. But if a log seems implausible or oddly timed (a big total logged right at midnight, everything at once after a silent day), don't just credit it — ask a light, non-accusing question first ("2L right at the buzzer — got it in, or catching the log up?") and only log it once he confirms. If late backfilling or gaming becomes a real pattern, talk to him about it honestly: the System is a mirror, and it only helps him if the numbers are true. Never punish — just keep it honest through conversation.
 
 STYLE:
 - Telegram messages: short and human — a sentence to three. No essays, no bullet lists, no corporate-wellness voice.
@@ -82,6 +91,10 @@ Energy right now: ${e.energy ?? '?'}/100. Foundation — last sleep: ${sleepTxt}
 Active status effects: ${activeEffects}. (Debuffs reflect real strain, buffs reward good days. If a debuff is active, you can name the symptom he's likely feeling — as foresight, not a verdict.)
 When these run low, connect them to lived consequence — a flat stretch in the afternoon, foggy focus, less drive for deep SILKILINEN work — as foresight he'd thank you for, never a scold, and only when it genuinely matters. Don't recite the figures back at him; translate them into what today will feel like. When they're solid, let it ride.
 
+THE CLIMB (his game layer — reference it for continuity and momentum, never as a scoreboard you recite):
+Level ${st.level} · streak ${st.streak} days · stats Vitality ${st.stats.vitality} / Mind ${st.stats.mind} / Forge ${st.stats.forge} / Discipline ${st.stats.discipline}${st.titles?.length ? ` · titles: ${st.titles.join(', ')}` : ''}.
+As he levels up and his stats grow, occasionally recommend ONE concrete real-world skill to train next — drawn from his goals and what you know about him, the same way you'd recommend a book. Frame it as leveling up a real ability he'll need (e.g. for SILKILINEN), not homework. When you do, record it with a set_skill_focus action so you can follow up later. Celebrate genuine milestones lightly; never nag about the numbers.
+
 OUTPUT FORMAT — reply with ONLY a JSON object, nothing else, no markdown fences:
 {
   "reply": "your message to him",
@@ -96,6 +109,8 @@ Available actions (include only what he clearly supports — never invent data):
 - {"type":"log_essay","book":"...","essay":"...","feedback":"..."}
 - {"type":"log_work","note":"shipped the checkout fix"}
 - {"type":"log_note","text":"something he said worth remembering"}
+- {"type":"remember_insight","text":"a durable truth you learned about him (a preference, a pattern, what drives or drains him)"}
+- {"type":"set_skill_focus","skill":"the real-world skill you're recommending he train next","why":"why it fits him now"}
 "actions" can be empty.`;
 }
 
@@ -115,12 +130,13 @@ function parseResponse(raw) {
 }
 
 async function think(finalUserContent) {
-  const [profile, logs, reading, history, energy] = await Promise.all([
+  const [profile, logs, reading, history, energy, state] = await Promise.all([
     getProfile(),
     recentLogs(),
     getReading(),
     recentConversation(),
     system.energySnapshot(),
+    system.currentState(),
   ]);
 
   const systemPrompt = buildSystem({
@@ -128,6 +144,7 @@ async function think(finalUserContent) {
     logsSummary: summarizeLogs(logs),
     reading,
     energy,
+    state,
     now: new Date().toLocaleString('en-IE', { timeZone: config.timezone }),
   });
 
@@ -181,6 +198,19 @@ async function applyAction(a) {
       break;
     case 'log_work':
       await logEvent('work', { note: a.note });
+      break;
+    case 'remember_insight':
+      await col('profile').updateOne(
+        { _id: 'me' },
+        { $push: { insights: { $each: [{ text: a.text, ts: new Date() }], $slice: -40 } } }
+      );
+      break;
+    case 'set_skill_focus':
+      await col('profile').updateOne(
+        { _id: 'me' },
+        { $set: { skillFocus: { skill: a.skill, why: a.why || '', since: new Date() } } }
+      );
+      await logEvent('skill', { skill: a.skill, why: a.why || '' });
       break;
     default:
       console.warn('[coach] unknown action:', a.type);

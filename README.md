@@ -19,9 +19,12 @@ Telegram  ←→  worker (Railway)  ←→  MongoDB Atlas (personal_os db)
 
 - **coach** (`src/coach.js`) — the brain. You just *talk* to it. Every message goes to
   Claude with your full context (profile, last 7 days of logs, what you're reading,
-  recent conversation). It reads the situation, replies in whatever register fits, and
-  quietly logs anything worth remembering (water, sleep, reading, notes) via structured
-  actions. It also reaches out on its own — a morning and an evening check-in.
+  recent conversation, and your live System state). It reads the situation, replies in
+  whatever register fits, and quietly logs anything worth remembering. Over time it
+  **learns you** — durable insights get written back into your profile — recommends a
+  real-world **skill** to train as you level up, and **gently verifies** logs that look
+  off instead of blindly crediting them. It also reaches out on its own — a morning and
+  an evening check-in, and reads your mood across days.
 - **shortcuts** (`/water`, `/read`, `/suggest`, `/progress`, `/finished`) — optional fast
   paths handled by `src/agents/*`. They log *and* feed the System, exactly like talking to
   the coach. Everything that isn't a slash-command goes to the coach.
