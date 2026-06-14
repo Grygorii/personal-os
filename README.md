@@ -83,6 +83,7 @@ get you moving because *you* want to — never because it pushed you.
 ```
 /status                  open your status window (level, rank, energy, quests)
 /ranks                   see the full rank ladder (Novice → Sage)
+/pursuits                your personal mastery paths (guitar, a language, …)
 /read Antifragile        start a book you chose
 /suggest                 get a recommendation
 /progress halfway, ch 8  log where you are
