@@ -1,0 +1,19 @@
+{
+  "name": "personal-os",
+  "version": "0.1.0",
+  "description": "A personal operating system: proactive agents that coach Гриша over Telegram, backed by MongoDB Atlas.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "seed": "node src/seed.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.104.1",
+    "dotenv": "^17.4.2",
+    "mongodb": "^7.3.0",
+    "node-cron": "^4.2.1"
+  }
+}
