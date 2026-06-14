@@ -4,7 +4,7 @@ import { poll } from './telegram.js';
 import { route } from './router.js';
 
 // Bump on each deploy so we can confirm which build is actually live (read meta.boot).
-const VERSION = 'coach-fix-1';
+const VERSION = 'coach-fix-2';
 
 async function main() {
   await connect();
