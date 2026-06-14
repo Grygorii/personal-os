@@ -1,6 +1,6 @@
 import { chat } from './llm.js';
 import { getProfile, col, logEvent } from './db.js';
-import { send } from './telegram.js';
+import { send, sendPings } from './telegram.js';
 import { config } from './config.js';
 import * as system from './system.js';
 
@@ -42,10 +42,13 @@ function summarizeLogs(logs) {
 
 // ---------- the coach's mind ----------
 
-function buildSystem({ profile, logsSummary, reading, now }) {
+function buildSystem({ profile, logsSummary, reading, energy, now }) {
   const readingLine = reading
     ? `${reading.title}${reading.author ? ' by ' + reading.author : ''} — status: ${reading.status || 'reading'}${reading.progress ? `, progress: ${reading.progress}` : ''}`
     : 'nothing right now';
+
+  const e = energy || {};
+  const sleepTxt = e.sleepHours != null ? `${e.sleepHours}h` : 'unknown';
 
   return `You are Гриша's personal coach. Not an app, not a logging tool — a coach who knows him and is genuinely in his corner.
 
@@ -71,6 +74,10 @@ Local time: ${now}
 Currently reading: ${readingLine}
 Activity, last 7 days:
 ${logsSummary}
+
+ENERGY & CONSEQUENCES — speak to how he'll actually feel, never the raw numbers:
+Energy right now: ${e.energy ?? '?'}/100. Foundation — last sleep: ${sleepTxt}; water today: ${e.todayWater ?? 0}L; water yesterday: ${e.yesterdayWater ?? 0}L.
+When these run low, connect them to lived consequence — a flat stretch in the afternoon, foggy focus, less drive for deep SILKILINEN work — as foresight he'd thank you for, never a scold, and only when it genuinely matters. Don't recite the figures back at him; translate them into what today will feel like. When they're solid, let it ride.
 
 OUTPUT FORMAT — reply with ONLY a JSON object, nothing else, no markdown fences:
 {
@@ -105,17 +112,19 @@ function parseResponse(raw) {
 }
 
 async function think(finalUserContent) {
-  const [profile, logs, reading, history] = await Promise.all([
+  const [profile, logs, reading, history, energy] = await Promise.all([
     getProfile(),
     recentLogs(),
     getReading(),
     recentConversation(),
+    system.energySnapshot(),
   ]);
 
-  const system = buildSystem({
+  const systemPrompt = buildSystem({
     profile,
     logsSummary: summarizeLogs(logs),
     reading,
+    energy,
     now: new Date().toLocaleString('en-IE', { timeZone: config.timezone }),
   });
 
@@ -125,7 +134,7 @@ async function think(finalUserContent) {
   }));
   messages.push({ role: 'user', content: finalUserContent });
 
-  const raw = await chat({ system, messages, maxTokens: 600 });
+  const raw = await chat({ system: systemPrompt, messages, maxTokens: 600 });
   return parseResponse(raw);
 }
 
@@ -188,7 +197,7 @@ async function deliver({ reply, actions }) {
   }
   await remember('coach', reply);
   await send(reply);
-  if (pings.length) await send('```\n' + pings.join('\n') + '\n```');
+  await sendPings(pings);
 }
 
 // ---------- entry points ----------

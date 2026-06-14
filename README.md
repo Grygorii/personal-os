@@ -10,7 +10,8 @@ Telegram  ←→  worker (Railway)  ←→  MongoDB Atlas (personal_os db)
                   ├─ node-cron           logs     (water/sleep/book/essay events)
                   ├─ runtime.js          agents   (the registry)
                   ├─ router.js           reading  (current book state)
-                  └─ agents/*            
+                  ├─ system.js           system   (XP, level, quests, streak)
+                  └─ agents/*            conversation (coach memory)
                   └─ llm.js  → Claude API
 ```
 
@@ -22,7 +23,14 @@ Telegram  ←→  worker (Railway)  ←→  MongoDB Atlas (personal_os db)
   quietly logs anything worth remembering (water, sleep, reading, notes) via structured
   actions. It also reaches out on its own — a morning and an evening check-in.
 - **shortcuts** (`/water`, `/read`, `/suggest`, `/progress`, `/finished`) — optional fast
-  paths handled by `src/agents/*`. Everything that isn't a slash-command goes to the coach.
+  paths handled by `src/agents/*`. They log *and* feed the System, exactly like talking to
+  the coach. Everything that isn't a slash-command goes to the coach.
+- **the System** (`src/system.js`) — a Solo-Leveling-style layer over your real actions.
+  Everything you log feeds four stats (Vitality, Mind, Forge, Discipline), earns XP, and
+  clears daily quests; XP compounds into levels and titles. **Energy** is derived live from
+  last night's sleep and today's water (0–100), so the coach can flag how a low day will
+  actually feel. `/status` opens your status window. It's a mirror, not a bribe — the
+  numbers track growth you're already choosing, and there are no penalties, just a streak.
 
 The coach is situational and autonomy-supportive by design: no fixed tone, and it aims to
 get you moving because *you* want to — never because it pushed you.
@@ -58,6 +66,7 @@ get you moving because *you* want to — never because it pushed you.
 ## Daily use
 
 ```
+/status                  open your status window (level, energy, quests)
 /read Antifragile        start a book you chose
 /suggest                 get a recommendation
 /progress halfway, ch 8  log where you are

@@ -16,6 +16,12 @@ export async function send(text, chatId = config.telegramChatId) {
   return res.json();
 }
 
+// Send a batch of System "ping" lines as a monospaced block (no-op if empty).
+export async function sendPings(pings, chatId = config.telegramChatId) {
+  if (!pings || !pings.length) return;
+  await send('```\n' + pings.join('\n') + '\n```', chatId);
+}
+
 /**
  * Long-poll for incoming messages. Calls onMessage({ chatId, text }) per message.
  * Runs forever.

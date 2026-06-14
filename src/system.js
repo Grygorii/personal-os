@@ -8,6 +8,27 @@ const QUEST_LABEL = {
 
 // ---------------- pure logic (no DB, unit-testable) ----------------
 
+const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
+
+// A 10-cell progress bar: ▰ filled, ▱ empty.
+function bar(value, max, width = 10) {
+  const fill = clamp(max > 0 ? Math.round((value / max) * width) : width, 0, width);
+  return '▰'.repeat(fill) + '▱'.repeat(width - fill);
+}
+
+// Energy is derived from reality, never stored: last night's sleep is the
+// foundation (up to 70), today's water tops it up (up to 30). Range 0–100.
+// e.g. 7h + 2L ≈ 86; 5h + a dry morning ≈ 28.
+export function energyFrom({ sleepHours, waterLitres }) {
+  const h = Number(sleepHours);
+  const sleepPart =
+    sleepHours == null || Number.isNaN(h)
+      ? 45 // neutral assumption when we don't know last night
+      : clamp(Math.round(((h - 3) / 5) * 70), 0, 70);
+  const waterPart = clamp(Math.round(((Number(waterLitres) || 0) / 2) * 30), 0, 30);
+  return clamp(sleepPart + waterPart, 0, 100);
+}
+
 // Cumulative XP required to BE at a given level (level 1 = 0 XP).
 export function xpToReach(level) {
   let total = 0;
@@ -65,21 +86,21 @@ export function titleForLevel(l) {
   return null;
 }
 
-export function renderStatus(s) {
+export function renderStatus(s, energy = null) {
   const floor = xpToReach(s.level);
   const next = xpToReach(s.level + 1);
   const prog = s.xp - floor;
   const need = next - floor;
-  const w = 10;
-  const fill = need > 0 ? Math.round((prog / need) * w) : w;
-  const xpbar = '▰'.repeat(fill) + '▱'.repeat(w - fill);
   const q = s.quests || {};
   const line = (k) => ` ${q[k] ? '✓' : '▢'} ${QUEST_LABEL[k]}`;
 
   const out = [
     '⟦  S T A T U S  ⟧',
     `LEVEL ${s.level}`,
-    `XP ${xpbar}  ${prog}/${need}`,
+    `XP     ${bar(prog, need)}  ${prog}/${need}`,
+  ];
+  if (energy != null) out.push(`ENERGY ${bar(energy, 100)}  ${energy}/100`);
+  out.push(
     '',
     `VITALITY   ${s.stats.vitality}`,
     `MIND       ${s.stats.mind}`,
@@ -91,8 +112,8 @@ export function renderStatus(s) {
     'DAILY QUESTS',
     line('hydrate'),
     line('read'),
-    line('build'),
-  ];
+    line('build')
+  );
   if (s.titles && s.titles.length) out.push('', `TITLES: ${s.titles.join(', ')}`);
   return out.join('\n');
 }
@@ -189,6 +210,45 @@ export async function recordAction(action) {
   return pings;
 }
 
+// ---------------- energy (derived from the log stream) ----------------
+
+function dayRange(offsetDays = 0) {
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  start.setDate(start.getDate() - offsetDays);
+  const end = new Date(start);
+  end.setDate(end.getDate() + 1);
+  return { start, end };
+}
+
+async function waterBetween(start, end) {
+  const rows = await col('logs').find({ type: 'water', ts: { $gte: start, $lt: end } }).toArray();
+  return rows.reduce((sum, l) => sum + (l.value || 0), 0);
+}
+
+async function lastSleepHours() {
+  const since = new Date(Date.now() - 18 * 60 * 60 * 1000); // "last night"
+  const s = await col('logs').findOne({ type: 'sleep', ts: { $gte: since } }, { sort: { ts: -1 } });
+  return s && s.hours != null ? Number(s.hours) : null;
+}
+
+// Current energy plus the raw inputs, so the coach can speak to consequences.
+export async function energySnapshot() {
+  const today = dayRange(0);
+  const yest = dayRange(1);
+  const [sleepHours, todayWater, yesterdayWater] = await Promise.all([
+    lastSleepHours(),
+    waterBetween(today.start, today.end),
+    waterBetween(yest.start, yest.end),
+  ]);
+  return {
+    energy: energyFrom({ sleepHours, waterLitres: todayWater }),
+    sleepHours,
+    todayWater,
+    yesterdayWater,
+  };
+}
+
 // Render the status window (refreshes today's quest state for display).
 export async function statusWindow() {
   const s = await getState();
@@ -196,5 +256,6 @@ export async function statusWindow() {
   const now = questsFromLogs(await todaysLogs());
   s.quests = { ...s.quests, ...Object.fromEntries(Object.entries(now).filter(([, v]) => v)) };
   await saveState(s);
-  return renderStatus(s);
+  const { energy } = await energySnapshot();
+  return renderStatus(s, energy);
 }

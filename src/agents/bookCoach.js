@@ -1,6 +1,7 @@
 import { ask } from '../llm.js';
 import { getProfile, logEvent, col } from '../db.js';
-import { send } from '../telegram.js';
+import { send, sendPings } from '../telegram.js';
+import * as system from '../system.js';
 
 // --- current-book state (one document) ---
 async function getReading() {
@@ -72,7 +73,9 @@ export async function command(text) {
     const title = m[1].trim();
     await setReading({ title, author: '', status: 'reading', progress: 'just started', source: 'self' });
     await logEvent('book', { title, event: 'started', source: 'self' });
+    const pings = await system.recordAction({ type: 'set_reading', title });
     await send(`Got it — you're reading *${title}*. I'll start asking you about it. 📖`);
+    await sendPings(pings);
     return true;
   }
 
@@ -91,7 +94,9 @@ export async function command(text) {
       return true;
     }
     await setReading({ ...reading, progress: m[1].trim() });
+    const pings = await system.recordAction({ type: 'log_progress', note: m[1].trim() });
     await send('Noted where you are. 👍');
+    await sendPings(pings);
     return true;
   }
 
@@ -101,7 +106,9 @@ export async function command(text) {
     if (reading) {
       await logEvent('book', { title: reading.title, event: 'finished' });
       await setReading({ ...reading, status: 'finished' });
+      const pings = await system.recordAction({ type: 'finish_book' });
       await send(`🎉 Logged *${reading.title}* as finished. I'll suggest your next read.`);
+      await sendPings(pings);
     } else {
       await send('No active book to finish.');
     }
@@ -126,7 +133,9 @@ export async function command(text) {
       feedback,
     });
     await setReading({ ...reading, status: 'reading' });
+    const pings = await system.recordAction({ type: 'log_essay', book: reading.title });
     await send(`✍️ *Feedback*\n\n${feedback}`);
+    await sendPings(pings);
     return true;
   }
 
