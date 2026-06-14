@@ -27,3 +27,9 @@ export async function getProfile() {
 export async function logEvent(type, data = {}) {
   return col('logs').insertOne({ type, ...data, ts: new Date() });
 }
+
+// Count events of a type logged within the last `withinMs` milliseconds.
+export async function recentCount(type, withinMs) {
+  const since = new Date(Date.now() - withinMs);
+  return col('logs').countDocuments({ type, ts: { $gte: since } });
+}

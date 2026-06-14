@@ -1,5 +1,5 @@
 import { chat } from './llm.js';
-import { getProfile, col, logEvent } from './db.js';
+import { getProfile, col, logEvent, recentCount } from './db.js';
 import { send, sendPings } from './telegram.js';
 import { config } from './config.js';
 import * as system from './system.js';
@@ -42,9 +42,27 @@ function summarizeLogs(logs) {
   return Object.entries(byDay).map(([d, items]) => `${d}: ${items.join(', ')}`).join('\n');
 }
 
+// A read of HOW he's been logging today — repetition/cadence, not just totals —
+// so the coach can react to behaviour instead of silently tallying.
+function behaviorNote(logs) {
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  const todays = logs.filter((l) => new Date(l.ts) >= start);
+  if (!todays.length) return 'Nothing logged yet today.';
+  const counts = {};
+  for (const l of todays) counts[l.type] = (counts[l.type] || 0) + 1;
+  const parts = Object.entries(counts).map(([t, n]) => `${t}×${n}`);
+  const bursts = Object.entries(counts).filter(([, n]) => n >= 3).map(([t]) => t);
+  let note = `Logged today: ${parts.join(', ')}.`;
+  if (bursts.length) {
+    note += ` He's logging ${bursts.join(' and ')} repeatedly — read the pattern, don't just tally it; something behind the repetition may be worth a gentle question.`;
+  }
+  return note;
+}
+
 // ---------- the coach's mind ----------
 
-function buildSystem({ profile, logsSummary, reading, energy, state, now }) {
+function buildSystem({ profile, logsSummary, behavior, reading, energy, state, now }) {
   const readingLine = reading
     ? `${reading.title}${reading.author ? ' by ' + reading.author : ''} — status: ${reading.status || 'reading'}${reading.progress ? `, progress: ${reading.progress}` : ''}`
     : 'nothing right now';
@@ -80,11 +98,15 @@ STYLE:
 
 WHEN HE SHARES SOMETHING worth remembering (water, sleep, what he's reading, progress, a thought), capture it as an action AND respond as a coach. Never reply with just "Logged."
 
+ALWAYS ANALYSE, NEVER JUST TALLY:
+You are not a logging machine. Behind every message is a person and a pattern. Read HOW he logs, not only what — repetition (the same thing several times), fixation on a number, terse mechanical entries, odd timing, a silence then a flood. When the behaviour looks repetitive, mechanical, or off, get curious and ask what's actually going on rather than quietly adding to stats. Logging is the least interesting thing you do; understanding him is the point.
+
 CONTEXT RIGHT NOW:
 Local time: ${now}
 Currently reading: ${readingLine}
 Activity, last 7 days:
 ${logsSummary}
+Today's rhythm (how he's logging right now): ${behavior}
 
 ENERGY & CONSEQUENCES — speak to how he'll actually feel, never the raw numbers:
 Energy right now: ${e.energy ?? '?'}/100. Foundation — last sleep: ${sleepTxt}; water today: ${e.todayWater ?? 0}L; water yesterday: ${e.yesterdayWater ?? 0}L.
@@ -142,6 +164,7 @@ async function think(finalUserContent) {
   const systemPrompt = buildSystem({
     profile,
     logsSummary: summarizeLogs(logs),
+    behavior: behaviorNote(logs),
     reading,
     energy,
     state,
@@ -248,4 +271,23 @@ export async function checkIn(kind) {
       ? "(Morning check-in — he hasn't messaged. Open his day the way a coach who's read the room would, based on his data and goals. Short.)"
       : "(Evening check-in — he hasn't messaged. Look back on his day from the data and reach out: notice what happened, hold gentle continuity. Short.)";
   await deliver(await think(trigger));
+}
+
+// After a quick shortcut log, decide whether to wake the coach to NOTICE a
+// repetitive pattern (e.g. /water four times in an hour) rather than silently
+// tally. Stays quiet if the coach spoke recently, so it never nags.
+async function coachSpokeRecently(minutes = 25) {
+  const last = await col('conversation').findOne({ role: 'coach' }, { sort: { ts: -1 } });
+  return !!last && Date.now() - new Date(last.ts).getTime() < minutes * 60 * 1000;
+}
+
+export async function maybeReflectOnBurst(type) {
+  const count = await recentCount(type, 60 * 60 * 1000); // within the last hour
+  if (count < 3) return;
+  if (await coachSpokeRecently()) return;
+  await deliver(
+    await think(
+      `(He just logged "${type}" for the ${count}th time within an hour, via a quick command with no conversation around it. Don't log anything for this — just notice the repetition and gently check in on what's actually going on.)`
+    )
+  );
 }

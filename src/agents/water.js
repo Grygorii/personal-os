@@ -2,6 +2,7 @@ import { ask } from '../llm.js';
 import { getProfile, logEvent, col } from '../db.js';
 import { send, sendPings } from '../telegram.js';
 import * as system from '../system.js';
+import * as coach from '../coach.js';
 
 // Personal target in litres. Adjust to taste — this is a habit nudge, not medical advice.
 const TARGET_LITRES = 2.0;
@@ -44,5 +45,6 @@ export async function command(text) {
   const pings = await system.recordAction({ type: 'log_water', litres });
   await send(`Logged ${litres}L 💧`);
   await sendPings(pings);
+  await coach.maybeReflectOnBurst('water');
   return true;
 }
