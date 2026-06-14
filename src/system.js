@@ -139,19 +139,20 @@ export function titleForLevel(l) {
   return null;
 }
 
-// ---------------- ranks (Solo Leveling ladder over uncapped levels) ----------------
+// ---------------- ranks (a universal mastery ladder over uncapped levels) ----------------
 // The level number climbs forever — there is no cap, no "winning". Ranks give the
-// climb texture and a near horizon; Monarch (Lv.100+) is the legend almost no one
-// reaches. The only end is the one you can't code around.
+// climb texture and a near horizon; Sage (Lv.100+) is the title almost no one reaches.
+// Names are deliberately universal and timeless (not game-y) so they fit anyone of any
+// age, profession, or background. The only end is the one you can't code around.
 const RANKS = [
-  { min: 1, title: 'E-Rank Hunter' },
-  { min: 5, title: 'D-Rank Hunter' },
-  { min: 10, title: 'C-Rank Hunter' },
-  { min: 20, title: 'B-Rank Hunter' },
-  { min: 35, title: 'A-Rank Hunter' },
-  { min: 55, title: 'S-Rank Hunter' },
-  { min: 80, title: 'National Level Hunter' },
-  { min: 100, title: 'Monarch' },
+  { min: 1, title: 'Novice' },
+  { min: 5, title: 'Apprentice' },
+  { min: 10, title: 'Adept' },
+  { min: 20, title: 'Expert' },
+  { min: 35, title: 'Master' },
+  { min: 55, title: 'Grandmaster' },
+  { min: 80, title: 'Luminary' },
+  { min: 100, title: 'Sage' },
 ];
 
 export function rankForLevel(level) {
@@ -175,7 +176,7 @@ export function renderLadder(currentLevel = 0) {
     const here = currentLevel >= r.min && (!next || currentLevel < next.min);
     lines.push(`${here ? '►' : ' '} ${r.title.padEnd(22)} ${range}`);
   });
-  lines.push('', 'No ceiling above Monarch — the climb never ends.');
+  lines.push('', 'No ceiling above Sage — the climb never ends.');
   return lines.join('\n');
 }
 

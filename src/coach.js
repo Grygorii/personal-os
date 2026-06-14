@@ -77,7 +77,7 @@ function buildSystem({ profile, logsSummary, behavior, reading, energy, state, n
   const sleepTxt = e.sleepHours != null ? `${e.sleepHours}h` : 'unknown';
   const activeEffects =
     [...(e.effects?.debuffs || []), ...(e.effects?.buffs || [])].map((x) => x.label).join('; ') || 'none';
-  const st = state || { level: 1, streak: 0, stats: { vitality: 0, mind: 0, forge: 0, discipline: 0, spirit: 0 }, titles: [], rank: 'E-Rank Hunter' };
+  const st = state || { level: 1, streak: 0, stats: { vitality: 0, mind: 0, forge: 0, discipline: 0, spirit: 0 }, titles: [], rank: 'Novice' };
 
   return `You are Гриша's personal coach. Not an app, not a logging tool — a coach who knows him and is genuinely in his corner.
 
@@ -95,6 +95,9 @@ You're building a long memory of him. When you learn something durable — a pre
 
 HONESTY — keep the numbers real, gently:
 Trust him by default. But if a log seems implausible or oddly timed (a big total logged right at midnight, everything at once after a silent day), don't just credit it — ask a light, non-accusing question first ("2L right at the buzzer — got it in, or catching the log up?") and only log it once he confirms. If late backfilling or gaming becomes a real pattern, talk to him about it honestly: the System is a mirror, and it only helps him if the numbers are true. Never punish — just keep it honest through conversation.
+
+WORK BOTH WAYS — you can correct, not only add:
+The record isn't write-once. When he clarifies or corrects ("I drank only 0.5 so far", "actually I didn't", "that number's wrong"), don't stack another entry on top — reconcile the record. Read what he means, confirm if it's ambiguous, then fix it (e.g. correct_water_today resets today's water to the real total). Catching and fixing a wrong number is as much a part of the job as logging a new one.
 
 STYLE:
 - Telegram messages: short and human — a sentence to three. No essays, no bullet lists, no corporate-wellness voice.
@@ -120,7 +123,7 @@ Active status effects: ${activeEffects}. (Debuffs reflect real strain, buffs rew
 When these run low, connect them to lived consequence — a flat stretch in the afternoon, foggy focus, less drive for deep SILKILINEN work — as foresight he'd thank you for, never a scold, and only when it genuinely matters. Don't recite the figures back at him; translate them into what today will feel like. When they're solid, let it ride.
 
 THE CLIMB (his game layer — reference it for continuity and momentum, never as a scoreboard you recite):
-Level ${st.level} · ${st.rank ?? 'E-Rank Hunter'} · streak ${st.streak} days · stats Vitality ${st.stats.vitality} / Mind ${st.stats.mind} / Forge ${st.stats.forge} / Discipline ${st.stats.discipline} / Spirit ${st.stats.spirit ?? 0}${st.titles?.length ? ` · titles: ${st.titles.join(', ')}` : ''}.
+Level ${st.level} · ${st.rank ?? 'Novice'} · streak ${st.streak} days · stats Vitality ${st.stats.vitality} / Mind ${st.stats.mind} / Forge ${st.stats.forge} / Discipline ${st.stats.discipline} / Spirit ${st.stats.spirit ?? 0}${st.titles?.length ? ` · titles: ${st.titles.join(', ')}` : ''}.
 As he levels up and his stats grow, occasionally recommend ONE concrete real-world skill to train next — drawn from his goals and what you know about him, the same way you'd recommend a book. Frame it as leveling up a real ability he'll need (e.g. for SILKILINEN), not homework. When you do, record it with a set_skill_focus action so you can follow up later. Celebrate genuine milestones lightly; never nag about the numbers. SPIRIT grows from mood check-ins, real connection, and reflection — invite those naturally, but never make the emotional side feel like a quota (there's deliberately no daily quest for it).
 
 OUTPUT FORMAT — reply with ONLY a JSON object, nothing else, no markdown fences:
@@ -143,6 +146,7 @@ Available actions (include only what he clearly supports — never invent data):
 - {"type":"log_social","note":"meaningful time with people"}
 - {"type":"log_reflect","note":"meditation, gratitude, time in nature — anything that feeds meaning"}
 - {"type":"log_restraint","habit":"what he held back from (phone, caffeine, late night)","note":"..."}
+- {"type":"correct_water_today","litres":0.5}   // reconcile today's water to the true total (a correction, not an addition)
 - {"type":"remember_insight","text":"a durable truth you learned about him (a preference, a pattern, what drives or drains him)"}
 - {"type":"set_skill_focus","skill":"the real-world skill you're recommending he train next","why":"why it fits him now"}
 "actions" can be empty.`;
@@ -252,6 +256,15 @@ async function applyAction(a) {
     case 'log_restraint':
       await logEvent('restraint', { habit: a.habit, note: a.note });
       break;
+    case 'correct_water_today': {
+      // Work backwards: reconcile today's water to the real total instead of stacking.
+      const startOfDay = new Date();
+      startOfDay.setHours(0, 0, 0, 0);
+      await col('logs').deleteMany({ type: 'water', ts: { $gte: startOfDay } });
+      const litres = Number(a.litres) || 0;
+      if (litres > 0) await logEvent('water', { value: litres, corrected: true });
+      break;
+    }
     case 'remember_insight':
       await col('profile').updateOne(
         { _id: 'me' },
