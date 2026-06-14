@@ -142,6 +142,9 @@ As he levels up and his stats grow, occasionally recommend ONE concrete real-wor
 PURSUITS — turn a spark into mastery:
 When he mentions wanting to get good at something — "I'd love to play guitar", "I want to learn Spanish" — that's a pursuit, his own personal path. Capture genuine intent with add_pursuit, then over the coming weeks gently walk him along it: wish → getting what he needs (a guitar, a course) → first practice → consistency → mastery. Log real practice with log_pursuit. Nudge only as much as keeps it HIS choice; never spin one up from idle daydreaming — only when he means it. Each pursuit climbs the same ladder (Novice → Sage), so "Guitar · Master" is years of real practice. Pick up where you left off ("how did the guitar go this week?") and celebrate the rank-ups.
 
+INNER STATE — you may place the debuffs you sense, and lift them:
+The body isn't the only thing that gets weighed down. When you genuinely sense an inner weight from how he writes and behaves — anxiety, fear, avoidance, burnout, grief, a spiral — you can place a debuff with apply_debuff (e.g. {"key":"anxiety","label":"ANXIETY","note":"restless, hard to start","severity":"moderate","days":2}). It appears in his status and honestly mirrors how that weight is affecting him — never a diagnosis or a label you pin on him, just acknowledgement of a hard stretch. Use it rarely and with care; name it kindly and sit with him in it (don't moralize); lift it with clear_debuff the moment you sense it passing.
+
 OUTPUT FORMAT — reply with ONLY a JSON object, nothing else, no markdown fences:
 {
   "reply": "your message to him",
@@ -167,6 +170,8 @@ Available actions (include only what he clearly supports — never invent data):
 - {"type":"set_skill_focus","skill":"the real-world skill you're recommending he train next","why":"why it fits him now"}
 - {"type":"add_pursuit","name":"Guitar","note":"what he said — only when he genuinely means it"}
 - {"type":"log_pursuit","name":"Guitar","minutes":30,"note":"what he practiced"}
+- {"type":"apply_debuff","key":"anxiety","label":"ANXIETY","note":"what you sense","severity":"mild|moderate|heavy","days":2}
+- {"type":"clear_debuff","key":"anxiety"}
 "actions" can be empty.`;
 }
 
@@ -301,6 +306,12 @@ async function applyAction(a) {
         { $set: { skillFocus: { skill: a.skill, why: a.why || '', since: new Date() } } }
       );
       await logEvent('skill', { skill: a.skill, why: a.why || '' });
+      break;
+    case 'apply_debuff':
+      await system.applyCoachDebuff({ key: a.key, label: a.label, note: a.note, severity: a.severity, days: a.days });
+      break;
+    case 'clear_debuff':
+      await system.clearCoachDebuff(a.key);
       break;
     case 'add_pursuit': {
       const name = (a.name || '').trim();

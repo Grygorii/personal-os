@@ -71,26 +71,35 @@ function detrainingDebuff(domain, form, note) {
   return { key: `detrain_${domain}`, label: `${name} · ${domain} (${tag})`, note, xpMult, energyCap: 100 };
 }
 
-// --- condition: research-shaped detraining + recovery ----------------------------
-// Fitness loss begins ~day 10 of no training; cardio falls ~6% by 4 weeks and ~20% by
-// ~11 weeks, while strength is retained far longer (muscle memory). Recovery scales with
-// how deep you fell: a couple weeks off is regained in a couple weeks; months off take
-// ~3 months. So: a grace period, then decline toward a muscle-memory floor; rebuilding
-// from a deep hole takes many more sessions than topping back up from a shallow dip.
-const CONDITION = { graceDays: 7, halfLifeDays: 30, floorFactor: 0.12, initForm: 70, baseGain: 8 };
+// --- condition: detraining + recovery, gated by how deeply INGRAINED a skill is --------
+// Research: fitness loss begins ~day 10; cardio falls ~6% by 4wk, ~20% by ~11wk; strength
+// (muscle memory) lasts far longer. But retention really depends on DEPTH of practice:
+//  • a few months of casual Spanish → low mastery → you forget almost all of it;
+//  • five years of driving → high mastery → you keep it through long breaks (mild rust);
+//  • ten years on an instrument → a year off leaves you good, just below your peak.
+// "mastery" (0–100) grows slowly with sustained practice (months/years), barely fades, and
+// sets BOTH the retention floor and how slowly form decays. Deeper = far stickier.
+const DAY = 24 * 60 * 60 * 1000;
+const CONDITION = { graceDays: 7, baseHalfLifeDays: 30, masteryHalfLife: 35, masteryRate: 0.0015, initForm: 70, baseGain: 8 };
 
-// Decay a stored condition over idle days (grace, then exponential decline to a floor).
-export function decayCondition(v, peak, idleDays) {
+// Decay current form (v) over idle days toward the mastery floor; deeper mastery decays slower.
+export function decayCondition(v, mastery, idleDays) {
+  const m = mastery || 0;
   const eff = Math.max(0, idleDays - CONDITION.graceDays);
-  const decayed = v * Math.pow(0.5, eff / CONDITION.halfLifeDays);
-  const floor = (peak || 0) * CONDITION.floorFactor; // muscle memory: never fully lost
-  return clamp(Math.round(Math.max(decayed, floor)), 0, 100);
+  const halfLife = CONDITION.baseHalfLifeDays * Math.exp(m / CONDITION.masteryHalfLife);
+  const decayed = v * Math.pow(0.5, eff / halfLife);
+  return clamp(Math.round(Math.max(decayed, m)), 0, 100); // never drop below what's ingrained
 }
 
-// One session's gain — larger if you've been higher before (muscle memory: you regain
-// faster than you first built). Deep detraining still takes many sessions to climb out.
-export function recoveryGain(peak) {
-  return Math.round(CONDITION.baseGain * (0.7 + 0.6 * ((peak || 0) / 100)));
+// Mastery one more session ingrains — diminishing, so real depth takes months/years.
+export function masteryAfterSession(mastery) {
+  const m = mastery || 0;
+  return m + (100 - m) * CONDITION.masteryRate;
+}
+
+// Per-session form gain — faster when more is ingrained (muscle memory regains quickly).
+export function recoveryGain(mastery) {
+  return Math.round(CONDITION.baseGain * (0.7 + 0.6 * ((mastery || 0) / 100)));
 }
 
 // Net XP multiplier from all active effects.
@@ -293,6 +302,7 @@ function freshState() {
     lastClearDate: null,
     titles: [],
     condition: {},
+    coachDebuffs: [],
   };
 }
 
@@ -305,6 +315,7 @@ async function getState() {
   // Ensure every stat exists, even on states seeded before a stat was added.
   s.stats = { vitality: 0, mind: 0, forge: 0, discipline: 0, spirit: 0, ...s.stats };
   s.condition = s.condition || {};
+  s.coachDebuffs = activeCoachDebuffs(s); // drop any that have expired
   return s;
 }
 
@@ -430,23 +441,54 @@ const DOMAIN_BY_ACTION = {
 function currentCondition(s, domain) {
   const c = s.condition && s.condition[domain];
   if (!c) return null;
-  const idleDays = (Date.now() - new Date(c.ts).getTime()) / (24 * 60 * 60 * 1000);
-  return decayCondition(c.v, c.peak, idleDays);
+  const idleDays = (Date.now() - new Date(c.ts).getTime()) / DAY;
+  return decayCondition(c.v, c.mastery || 0, idleDays);
 }
 
-// Apply one session: decay to now, then add the recovery gain; track peak (muscle memory).
+// Apply one session: decay to now, add the recovery gain, and ingrain a little more mastery.
 function bumpCondition(s, domain) {
   s.condition = s.condition || {};
   const c = s.condition[domain];
   const now = new Date();
   if (!c) {
     // First session in a domain: he's clearly active now — start in decent form.
-    s.condition[domain] = { v: CONDITION.initForm, peak: CONDITION.initForm, ts: now };
+    s.condition[domain] = { v: CONDITION.initForm, mastery: masteryAfterSession(0), ts: now };
     return;
   }
-  const idleDays = (now.getTime() - new Date(c.ts).getTime()) / (24 * 60 * 60 * 1000);
-  const v = clamp(decayCondition(c.v, c.peak, idleDays) + recoveryGain(c.peak), 0, 100);
-  s.condition[domain] = { v, peak: Math.max(c.peak || 0, v), ts: now };
+  const idleDays = (now.getTime() - new Date(c.ts).getTime()) / DAY;
+  const mastery = c.mastery || 0;
+  const v = clamp(decayCondition(c.v, mastery, idleDays) + recoveryGain(mastery), 0, 100);
+  s.condition[domain] = { v, mastery: masteryAfterSession(mastery), ts: now };
+}
+
+// ---------------- coach-placed inner debuffs (anxiety, fear, burnout…) -------------
+// The coach can place a debuff it SENSES from how he's behaving — a real inner weight, not
+// a tracked metric. Each auto-expires; the coach lifts it when it senses the weight passing.
+const DEBUFF_SEVERITY = {
+  mild: { xpMult: 0.92, energyCap: 100 },
+  moderate: { xpMult: 0.82, energyCap: 75 },
+  heavy: { xpMult: 0.7, energyCap: 55 },
+};
+
+function activeCoachDebuffs(s) {
+  const now = Date.now();
+  return (s.coachDebuffs || []).filter((d) => !d.until || new Date(d.until).getTime() > now);
+}
+
+export async function applyCoachDebuff({ key, label, note, severity = 'moderate', days = 2 }) {
+  if (!key) return;
+  const s = await getState();
+  const eff = DEBUFF_SEVERITY[severity] || DEBUFF_SEVERITY.moderate;
+  const until = new Date(Date.now() + Math.max(1, Number(days) || 2) * DAY);
+  s.coachDebuffs = activeCoachDebuffs(s).filter((d) => d.key !== key);
+  s.coachDebuffs.push({ key, label: label || key.toUpperCase(), note: note || '', xpMult: eff.xpMult, energyCap: eff.energyCap, until });
+  await saveState(s);
+}
+
+export async function clearCoachDebuff(key) {
+  const s = await getState();
+  s.coachDebuffs = activeCoachDebuffs(s).filter((d) => d.key !== key);
+  await saveState(s);
 }
 
 // Current energy plus the raw inputs, so the coach can speak to consequences.
@@ -466,6 +508,7 @@ export async function energySnapshot() {
     moveForm: currentCondition(s, 'body'),
     mindForm: currentCondition(s, 'mind'),
   });
+  for (const d of activeCoachDebuffs(s)) effects.debuffs.push(d); // inner weights the coach sensed
   const base = energyFrom({ sleepHours, waterLitres: todayWater });
   return { energy: Math.min(base, energyCap(effects)), sleepHours, todayWater, yesterdayWater, effects };
 }
