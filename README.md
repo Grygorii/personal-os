@@ -36,8 +36,10 @@ Telegram  ←→  worker (Railway)  ←→  MongoDB Atlas (personal_os db)
   (gentle early, a real grind up high — there's no winning, only climbing). Levels map to
   **hunter ranks** (E→D→C→B→A→S→National→Monarch); Monarch at Lv.100+ is a lifetime away.
   **Energy** is derived live from last night's sleep
-  and today's water (0–100). **Debuffs** (sleep-debt, dehydration) and **buffs** (well-rested)
-  are honest mirrors of how your body is doing — they have teeth (cap energy, shave/boost XP),
+  and today's water (0–100). **Debuffs** (sleep-debt, dehydration, and **detraining** — your condition in a domain
+  fades when you stop training body or mind, deepening the longer you're away and lifting
+  only after several sessions back, like real detraining) and **buffs** (well-rested) are
+  honest mirrors of how you're actually doing — they have teeth (cap energy, shave/boost XP),
   but are never punishments for gaming. `/status` shows it all. Mirror, not bribe: the numbers
   track growth you're already choosing.
 

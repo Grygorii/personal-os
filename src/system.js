@@ -35,7 +35,7 @@ export function energyFrom({ sleepHours, waterLitres }) {
 // is actually doing, not punishments. Debuffs have teeth (cap energy, shave XP
 // gain); buffs reward good days. Gaming is handled by the coach in conversation,
 // never here.
-export function effectsFrom({ sleepHours, todayWater, yesterdayWater }) {
+export function effectsFrom({ sleepHours, todayWater, yesterdayWater, moveForm, mindForm }) {
   const debuffs = [];
   const buffs = [];
   const h = Number(sleepHours);
@@ -47,10 +47,28 @@ export function effectsFrom({ sleepHours, todayWater, yesterdayWater }) {
   if ((Number(yesterdayWater) || 0) < 1 && (Number(todayWater) || 0) < 1) {
     debuffs.push({ key: 'dehydrated', label: 'DEHYDRATED · 2 dry days', note: 'headache risk, flat afternoon', xpMult: 1, energyCap: 60 });
   }
+
+  // Detraining: stop feeding a domain and your CONDITION there slips (research-backed).
+  // The debuff appears as form falls, deepens the longer you're away, and fades only
+  // after several sessions back — the body and mind rebuild slowly, just like real life.
+  const body = detrainingDebuff('body', moveForm, 'strength & stamina fading — the first sessions back feel harder than you remember');
+  if (body) debuffs.push(body);
+  const mind = detrainingDebuff('mind', mindForm, 'recall slower and focus foggier without regular reading — it sharpens back within days');
+  if (mind) debuffs.push(mind);
+
   if (knownSleep && h >= 8) {
     buffs.push({ key: 'well_rested', label: `WELL-RESTED · ${h}h`, note: 'sharp — +10% XP', xpMult: 1.1 });
   }
   return { debuffs, buffs };
+}
+
+// A detraining debuff from a 0–100 condition score (null = not enough history to judge).
+// Deepens as condition drops; clears only once it climbs back above the threshold.
+function detrainingDebuff(domain, form, note) {
+  if (form == null || form >= 55) return null;
+  const [tag, xpMult] = form < 20 ? ['heavy', 0.7] : form < 38 ? ['moderate', 0.82] : ['mild', 0.92];
+  const name = domain === 'body' ? 'DETRAINING' : 'DULL EDGE';
+  return { key: `detrain_${domain}`, label: `${name} · ${domain} (${tag})`, note, xpMult, energyCap: 100 };
 }
 
 // Net XP multiplier from all active effects.
@@ -345,16 +363,35 @@ async function lastSleepHours() {
   return s && s.hours != null ? Number(s.hours) : null;
 }
 
+// Recency-weighted "condition" 0–100 for a domain, from its logs in a trailing window.
+// Recent activity lifts it; it fades as sessions age out — so rebuilding after a break
+// takes several sessions back (the hysteresis of getting back in shape). Returns null
+// when there's no activity in the window (nothing to judge yet).
+async function formScore(types, windowDays = 21) {
+  const since = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000);
+  const rows = await col('logs').find({ type: { $in: types }, ts: { $gte: since } }).toArray();
+  if (!rows.length) return null;
+  const now = Date.now();
+  let form = 0;
+  for (const r of rows) {
+    const daysAgo = (now - new Date(r.ts).getTime()) / (24 * 60 * 60 * 1000);
+    form += Math.max(0, 1 - daysAgo / windowDays);
+  }
+  return clamp(Math.round(form * 22), 0, 100);
+}
+
 // Current energy plus the raw inputs, so the coach can speak to consequences.
 export async function energySnapshot() {
   const today = dayRange(0);
   const yest = dayRange(1);
-  const [sleepHours, todayWater, yesterdayWater] = await Promise.all([
+  const [sleepHours, todayWater, yesterdayWater, moveForm, mindForm] = await Promise.all([
     lastSleepHours(),
     waterBetween(today.start, today.end),
     waterBetween(yest.start, yest.end),
+    formScore(['move']),
+    formScore(['book', 'essay']),
   ]);
-  const effects = effectsFrom({ sleepHours, todayWater, yesterdayWater });
+  const effects = effectsFrom({ sleepHours, todayWater, yesterdayWater, moveForm, mindForm });
   const base = energyFrom({ sleepHours, waterLitres: todayWater });
   return {
     energy: Math.min(base, energyCap(effects)),
