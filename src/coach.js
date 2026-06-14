@@ -68,7 +68,7 @@ function behaviorNote(logs) {
 
 // ---------- the coach's mind ----------
 
-function buildSystem({ profile, logsSummary, behavior, reading, energy, state, now }) {
+function buildSystem({ profile, logsSummary, behavior, reading, energy, state, pursuits, now }) {
   const readingLine = reading
     ? `${reading.title}${reading.author ? ' by ' + reading.author : ''} — status: ${reading.status || 'reading'}${reading.progress ? `, progress: ${reading.progress}` : ''}`
     : 'nothing right now';
@@ -128,6 +128,7 @@ Currently reading: ${readingLine}
 Activity, last 7 days:
 ${logsSummary}
 Today's rhythm (how he's logging right now): ${behavior}
+His pursuits (personal skills he's building toward mastery): ${pursuits}
 
 ENERGY & CONSEQUENCES — speak to how he'll actually feel, never the raw numbers:
 Energy right now: ${e.energy ?? '?'}/100. Foundation — last sleep: ${sleepTxt}; water today: ${e.todayWater ?? 0}L; water yesterday: ${e.yesterdayWater ?? 0}L.
@@ -137,6 +138,9 @@ When these run low, connect them to lived consequence — a flat stretch in the 
 THE CLIMB (his game layer — reference it for continuity and momentum, never as a scoreboard you recite):
 Level ${st.level} · ${st.rank ?? 'Novice'} · streak ${st.streak} days · stats Vitality ${st.stats.vitality} / Mind ${st.stats.mind} / Forge ${st.stats.forge} / Discipline ${st.stats.discipline} / Spirit ${st.stats.spirit ?? 0}${st.titles?.length ? ` · titles: ${st.titles.join(', ')}` : ''}.${st.domainRanks ? `\nDomain ranks (what he's actually mastered) — Body: ${st.domainRanks.vitality}, Mind: ${st.domainRanks.mind}, Craft: ${st.domainRanks.forge}, Discipline: ${st.domainRanks.discipline}, Spirit: ${st.domainRanks.spirit}.` : ''}
 As he levels up and his stats grow, occasionally recommend ONE concrete real-world skill to train next — drawn from his goals and what you know about him, the same way you'd recommend a book. Frame it as leveling up a real ability he'll need (e.g. for SILKILINEN), not homework. When you do, record it with a set_skill_focus action so you can follow up later. Celebrate genuine milestones lightly; never nag about the numbers. SPIRIT grows from mood check-ins, real connection, and reflection — invite those naturally, but never make the emotional side feel like a quota (there's deliberately no daily quest for it).
+
+PURSUITS — turn a spark into mastery:
+When he mentions wanting to get good at something — "I'd love to play guitar", "I want to learn Spanish" — that's a pursuit, his own personal path. Capture genuine intent with add_pursuit, then over the coming weeks gently walk him along it: wish → getting what he needs (a guitar, a course) → first practice → consistency → mastery. Log real practice with log_pursuit. Nudge only as much as keeps it HIS choice; never spin one up from idle daydreaming — only when he means it. Each pursuit climbs the same ladder (Novice → Sage), so "Guitar · Master" is years of real practice. Pick up where you left off ("how did the guitar go this week?") and celebrate the rank-ups.
 
 OUTPUT FORMAT — reply with ONLY a JSON object, nothing else, no markdown fences:
 {
@@ -161,6 +165,8 @@ Available actions (include only what he clearly supports — never invent data):
 - {"type":"correct_water_today","litres":0.5}   // reconcile today's water to the true total (a correction, not an addition)
 - {"type":"remember_insight","text":"a durable truth you learned about him (a preference, a pattern, what drives or drains him)"}
 - {"type":"set_skill_focus","skill":"the real-world skill you're recommending he train next","why":"why it fits him now"}
+- {"type":"add_pursuit","name":"Guitar","note":"what he said — only when he genuinely means it"}
+- {"type":"log_pursuit","name":"Guitar","minutes":30,"note":"what he practiced"}
 "actions" can be empty.`;
 }
 
@@ -180,14 +186,19 @@ function parseResponse(raw) {
 }
 
 async function think(finalUserContent) {
-  const [profile, logs, reading, history, energy, state] = await Promise.all([
+  const [profile, logs, reading, history, energy, state, pursuitRows] = await Promise.all([
     getProfile(),
     recentLogs(),
     getReading(),
     recentConversation(),
     system.energySnapshot(),
     system.currentState(),
+    col('pursuits').find().sort({ lastActive: -1 }).limit(10).toArray(),
   ]);
+
+  const pursuits = pursuitRows.length
+    ? pursuitRows.map((p) => `${p.name}: ${system.rankForStat(p.xp || 0)} (${p.sessions || 0} sessions, ${p.stage || 'active'})`).join('; ')
+    : 'none yet';
 
   const systemPrompt = buildSystem({
     profile,
@@ -196,6 +207,7 @@ async function think(finalUserContent) {
     reading,
     energy,
     state,
+    pursuits,
     now: new Date().toLocaleString('en-IE', { timeZone: config.timezone }),
   });
 
@@ -290,18 +302,56 @@ async function applyAction(a) {
       );
       await logEvent('skill', { skill: a.skill, why: a.why || '' });
       break;
+    case 'add_pursuit': {
+      const name = (a.name || '').trim();
+      if (name) {
+        await col('pursuits').updateOne(
+          { key: name.toLowerCase() },
+          {
+            $setOnInsert: { key: name.toLowerCase(), name, stage: 'aspiration', xp: 0, sessions: 0, note: a.note || '', createdAt: new Date() },
+            $set: { lastActive: new Date() },
+          },
+          { upsert: true }
+        );
+      }
+      break;
+    }
+    case 'log_pursuit': {
+      const name = (a.name || '').trim();
+      if (name) {
+        const key = name.toLowerCase();
+        const before = await col('pursuits').findOne({ key });
+        const beforeXp = before?.xp || 0;
+        const inc = 15 + Math.min(20, Math.round((Number(a.minutes) || 0) / 3));
+        await col('pursuits').updateOne(
+          { key },
+          {
+            $setOnInsert: { key, name, createdAt: new Date() },
+            $set: { lastActive: new Date(), stage: 'active' },
+            $inc: { xp: inc, sessions: 1 },
+          },
+          { upsert: true }
+        );
+        const after = system.rankForStat(beforeXp + inc);
+        if (after !== system.rankForStat(beforeXp)) {
+          return [`⟦ ${name.toUpperCase()} RANK UP ⟧ ${after} of ${name}`];
+        }
+      }
+      break;
+    }
     default:
       console.warn('[coach] unknown action:', a.type);
   }
+  return [];
 }
 
 async function deliver({ reply, actions }) {
   const pings = [];
   for (const a of actions) {
     try {
-      await applyAction(a);
+      const extra = await applyAction(a);
       const p = await system.recordAction(a);
-      pings.push(...p);
+      pings.push(...(extra || []), ...p);
     } catch (e) {
       console.error('[coach] action failed:', e.message);
     }
@@ -424,4 +474,19 @@ export async function weeklyReview() {
   await send('```\n' + block + '\n```');
 
   await col('snapshots').insertOne({ ts: new Date(), level: state.level, xp: state.xp, stats: state.stats, streak: state.streak });
+}
+
+// The /pursuits window: his personal mastery paths and their ranks.
+export async function listPursuits() {
+  const rows = await col('pursuits').find().sort({ lastActive: -1 }).toArray();
+  if (!rows.length) {
+    return 'No pursuits yet.\nTell me something you want to get good at — "I want to learn guitar" — and I\'ll start the path with you.';
+  }
+  const out = ['⟦  P U R S U I T S  ⟧'];
+  for (const p of rows) {
+    const rank = system.rankForStat(p.xp || 0);
+    const where = p.stage === 'aspiration' ? 'not started yet' : `${p.sessions || 0} sessions`;
+    out.push(`${p.name} — ${rank}  (${where})`);
+  }
+  return out.join('\n');
 }

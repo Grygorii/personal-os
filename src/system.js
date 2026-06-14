@@ -154,6 +154,8 @@ export function awardsFor(action) {
       return [['spirit', 12]];
     case 'log_restraint':
       return [['discipline', 12]];
+    case 'log_pursuit':
+      return [['discipline', 10]];
     case 'log_note':
       return [['mind', 2]];
     default:
