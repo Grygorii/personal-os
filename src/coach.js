@@ -236,7 +236,13 @@ async function think(finalUserContent) {
   messages.push({ role: 'user', content: finalUserContent });
 
   const raw = await chat({ system: systemPrompt, messages, maxTokens: 600 });
-  return parseResponse(raw);
+  const parsed = parseResponse(raw);
+  console.log(
+    `[coach] in="${finalUserContent.slice(0, 70).replace(/\n/g, ' ')}" ` +
+      `actions=${JSON.stringify(parsed.actions.map((a) => a.type))} ` +
+      `raw="${raw.slice(0, 100).replace(/\n/g, ' ')}"`
+  );
+  return parsed;
 }
 
 // ---------- acting on what he said ----------

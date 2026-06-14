@@ -537,8 +537,8 @@ export async function currentState() {
 export async function statusWindow() {
   const s = await getState();
   rollDay(s);
-  const now = questsFromLogs(await todaysLogs());
-  s.quests = { ...s.quests, ...Object.fromEntries(Object.entries(now).filter(([, v]) => v)) };
+  // Reflect today's real logs exactly — a quest un-checks if its data is corrected down.
+  s.quests = questsFromLogs(await todaysLogs());
   await saveState(s);
   const { energy, effects } = await energySnapshot();
   return renderStatus(s, energy, effects);
