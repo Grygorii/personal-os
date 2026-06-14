@@ -220,6 +220,20 @@ export function renderLadder(currentLevel = 0) {
   return lines.join('\n');
 }
 
+// Per-domain rank: a stat's VALUE mapped onto the same ladder, so someone can be a Master
+// of the Body and a Novice of the Mind — rank reflects what he actually pours himself into.
+const STAT_RANK_MINS = [0, 150, 400, 900, 1800, 3200, 5500, 9000];
+const DOMAIN_NOUN = { vitality: 'Body', mind: 'Mind', forge: 'Craft', discipline: 'Discipline', spirit: 'Spirit' };
+
+export function rankForStat(value) {
+  let i = 0;
+  for (let k = 0; k < STAT_RANK_MINS.length; k++) {
+    if ((value || 0) >= STAT_RANK_MINS[k]) i = k;
+    else break;
+  }
+  return RANKS[i].title;
+}
+
 export function renderStatus(s, energy = null, effects = null) {
   const floor = xpToReach(s.level);
   const next = xpToReach(s.level + 1);
@@ -239,11 +253,11 @@ export function renderStatus(s, energy = null, effects = null) {
   if (energy != null) out.push(`ENERGY ${bar(energy, 100)}  ${energy}/100`);
   out.push(
     '',
-    `VITALITY   ${s.stats.vitality}`,
-    `MIND       ${s.stats.mind}`,
-    `FORGE      ${s.stats.forge}`,
-    `DISCIPLINE ${s.stats.discipline}`,
-    `SPIRIT     ${s.stats.spirit || 0}`,
+    `VITALITY   ${String(s.stats.vitality || 0).padEnd(6)}${rankForStat(s.stats.vitality)}`,
+    `MIND       ${String(s.stats.mind || 0).padEnd(6)}${rankForStat(s.stats.mind)}`,
+    `FORGE      ${String(s.stats.forge || 0).padEnd(6)}${rankForStat(s.stats.forge)}`,
+    `DISCIPLINE ${String(s.stats.discipline || 0).padEnd(6)}${rankForStat(s.stats.discipline)}`,
+    `SPIRIT     ${String(s.stats.spirit || 0).padEnd(6)}${rankForStat(s.stats.spirit)}`,
     '',
     `STREAK  🔥 ${s.streak} days`,
     '',
@@ -316,6 +330,7 @@ function rollDay(s) {
 export async function recordAction(action) {
   const s = await getState();
   const prevLevel = s.level;
+  const prevStats = { ...s.stats };
   const pings = [];
 
   // Active effects scale the action's XP (debuffs shave it, buffs boost it).
@@ -362,6 +377,15 @@ export async function recordAction(action) {
     if (title && !s.titles.includes(title)) {
       s.titles.push(title);
       pings.push(`⟦ TITLE EARNED ⟧ "${title}"`);
+    }
+  }
+
+  // Per-domain rank-ups — a stat crossing a mastery threshold ("Master of the Body").
+  for (const stat of Object.keys(s.stats)) {
+    const after = rankForStat(s.stats[stat]);
+    if (after !== rankForStat(prevStats[stat] || 0)) {
+      const noun = DOMAIN_NOUN[stat] || stat;
+      pings.push(`⟦ ${noun.toUpperCase()} RANK UP ⟧ ${after} of ${noun}`);
     }
   }
 
@@ -447,7 +471,21 @@ export async function energySnapshot() {
 // Raw System state for the coach to reference the climb (no rendering).
 export async function currentState() {
   const s = await getState();
-  return { level: s.level, xp: s.xp, stats: s.stats, streak: s.streak, titles: s.titles || [], rank: rankForLevel(s.level).title };
+  return {
+    level: s.level,
+    xp: s.xp,
+    stats: s.stats,
+    streak: s.streak,
+    titles: s.titles || [],
+    rank: rankForLevel(s.level).title,
+    domainRanks: {
+      vitality: rankForStat(s.stats.vitality),
+      mind: rankForStat(s.stats.mind),
+      forge: rankForStat(s.stats.forge),
+      discipline: rankForStat(s.stats.discipline),
+      spirit: rankForStat(s.stats.spirit),
+    },
+  };
 }
 
 // Render the status window (refreshes today's quest state for display).

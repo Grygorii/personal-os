@@ -34,7 +34,10 @@ Telegram  ←→  worker (Railway)  ←→  MongoDB Atlas (personal_os db)
   Mind, Forge, Discipline, Spirit), earns XP, and clears daily quests; XP compounds into
   levels on an **accelerating, uncapped curve**
   (gentle early, a real grind up high — there's no winning, only climbing). Levels map to
-  **hunter ranks** (E→D→C→B→A→S→National→Monarch); Monarch at Lv.100+ is a lifetime away.
+  a universal **mastery ladder** (Novice → Apprentice → Adept → Expert → Master →
+  Grandmaster → Luminary → Sage); Sage at Lv.100+ is a lifetime away. Each **stat** also
+  earns its *own* rank from what you actually do there — so two people at the same Level
+  can be a Master of the Body vs a Master of the Mind. Everyone's game is their own.
   **Energy** is derived live from last night's sleep
   and today's water (0–100). **Debuffs** (sleep-debt, dehydration, and **detraining** — your condition in a domain
   fades when you stop training body or mind, deepening the longer you're away and lifting
@@ -78,7 +81,7 @@ get you moving because *you* want to — never because it pushed you.
 
 ```
 /status                  open your status window (level, rank, energy, quests)
-/ranks                   see the full rank ladder (E → Monarch)
+/ranks                   see the full rank ladder (Novice → Sage)
 /read Antifragile        start a book you chose
 /suggest                 get a recommendation
 /progress halfway, ch 8  log where you are
