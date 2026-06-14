@@ -65,10 +65,32 @@ export function effectsFrom({ sleepHours, todayWater, yesterdayWater, moveForm, 
 // A detraining debuff from a 0–100 condition score (null = not enough history to judge).
 // Deepens as condition drops; clears only once it climbs back above the threshold.
 function detrainingDebuff(domain, form, note) {
-  if (form == null || form >= 55) return null;
-  const [tag, xpMult] = form < 20 ? ['heavy', 0.7] : form < 38 ? ['moderate', 0.82] : ['mild', 0.92];
+  if (form == null || form >= 60) return null;
+  const [tag, xpMult] = form < 25 ? ['heavy', 0.7] : form < 40 ? ['moderate', 0.82] : ['mild', 0.92];
   const name = domain === 'body' ? 'DETRAINING' : 'DULL EDGE';
   return { key: `detrain_${domain}`, label: `${name} · ${domain} (${tag})`, note, xpMult, energyCap: 100 };
+}
+
+// --- condition: research-shaped detraining + recovery ----------------------------
+// Fitness loss begins ~day 10 of no training; cardio falls ~6% by 4 weeks and ~20% by
+// ~11 weeks, while strength is retained far longer (muscle memory). Recovery scales with
+// how deep you fell: a couple weeks off is regained in a couple weeks; months off take
+// ~3 months. So: a grace period, then decline toward a muscle-memory floor; rebuilding
+// from a deep hole takes many more sessions than topping back up from a shallow dip.
+const CONDITION = { graceDays: 7, halfLifeDays: 30, floorFactor: 0.12, initForm: 70, baseGain: 8 };
+
+// Decay a stored condition over idle days (grace, then exponential decline to a floor).
+export function decayCondition(v, peak, idleDays) {
+  const eff = Math.max(0, idleDays - CONDITION.graceDays);
+  const decayed = v * Math.pow(0.5, eff / CONDITION.halfLifeDays);
+  const floor = (peak || 0) * CONDITION.floorFactor; // muscle memory: never fully lost
+  return clamp(Math.round(Math.max(decayed, floor)), 0, 100);
+}
+
+// One session's gain — larger if you've been higher before (muscle memory: you regain
+// faster than you first built). Deep detraining still takes many sessions to climb out.
+export function recoveryGain(peak) {
+  return Math.round(CONDITION.baseGain * (0.7 + 0.6 * ((peak || 0) / 100)));
 }
 
 // Net XP multiplier from all active effects.
@@ -254,6 +276,7 @@ function freshState() {
     quests: {},
     lastClearDate: null,
     titles: [],
+    condition: {},
   };
 }
 
@@ -265,6 +288,7 @@ async function getState() {
   }
   // Ensure every stat exists, even on states seeded before a stat was added.
   s.stats = { vitality: 0, mind: 0, forge: 0, discipline: 0, spirit: 0, ...s.stats };
+  s.condition = s.condition || {};
   return s;
 }
 
@@ -301,6 +325,10 @@ export async function recordAction(action) {
     s.stats[stat] = (s.stats[stat] || 0) + gain;
     s.xp += gain;
   }
+
+  // Training a domain rebuilds its condition (recovers detraining over sessions).
+  const trained = DOMAIN_BY_ACTION[action.type];
+  if (trained) bumpCondition(s, trained);
 
   // Quests
   rollDay(s);
@@ -363,43 +391,57 @@ async function lastSleepHours() {
   return s && s.hours != null ? Number(s.hours) : null;
 }
 
-// Recency-weighted "condition" 0–100 for a domain, from its logs in a trailing window.
-// Recent activity lifts it; it fades as sessions age out — so rebuilding after a break
-// takes several sessions back (the hysteresis of getting back in shape). Returns null
-// when there's no activity in the window (nothing to judge yet).
-async function formScore(types, windowDays = 21) {
-  const since = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000);
-  const rows = await col('logs').find({ type: { $in: types }, ts: { $gte: since } }).toArray();
-  if (!rows.length) return null;
-  const now = Date.now();
-  let form = 0;
-  for (const r of rows) {
-    const daysAgo = (now - new Date(r.ts).getTime()) / (24 * 60 * 60 * 1000);
-    form += Math.max(0, 1 - daysAgo / windowDays);
+// Which domain a coach action trains (so we can update its condition).
+const DOMAIN_BY_ACTION = {
+  log_movement: 'body',
+  set_reading: 'mind',
+  log_progress: 'mind',
+  finish_book: 'mind',
+  log_essay: 'mind',
+};
+
+// Current decayed condition for a domain (null if he's never trained it — no debuff then).
+function currentCondition(s, domain) {
+  const c = s.condition && s.condition[domain];
+  if (!c) return null;
+  const idleDays = (Date.now() - new Date(c.ts).getTime()) / (24 * 60 * 60 * 1000);
+  return decayCondition(c.v, c.peak, idleDays);
+}
+
+// Apply one session: decay to now, then add the recovery gain; track peak (muscle memory).
+function bumpCondition(s, domain) {
+  s.condition = s.condition || {};
+  const c = s.condition[domain];
+  const now = new Date();
+  if (!c) {
+    // First session in a domain: he's clearly active now — start in decent form.
+    s.condition[domain] = { v: CONDITION.initForm, peak: CONDITION.initForm, ts: now };
+    return;
   }
-  return clamp(Math.round(form * 22), 0, 100);
+  const idleDays = (now.getTime() - new Date(c.ts).getTime()) / (24 * 60 * 60 * 1000);
+  const v = clamp(decayCondition(c.v, c.peak, idleDays) + recoveryGain(c.peak), 0, 100);
+  s.condition[domain] = { v, peak: Math.max(c.peak || 0, v), ts: now };
 }
 
 // Current energy plus the raw inputs, so the coach can speak to consequences.
 export async function energySnapshot() {
   const today = dayRange(0);
   const yest = dayRange(1);
-  const [sleepHours, todayWater, yesterdayWater, moveForm, mindForm] = await Promise.all([
+  const [s, sleepHours, todayWater, yesterdayWater] = await Promise.all([
+    getState(),
     lastSleepHours(),
     waterBetween(today.start, today.end),
     waterBetween(yest.start, yest.end),
-    formScore(['move']),
-    formScore(['book', 'essay']),
   ]);
-  const effects = effectsFrom({ sleepHours, todayWater, yesterdayWater, moveForm, mindForm });
-  const base = energyFrom({ sleepHours, waterLitres: todayWater });
-  return {
-    energy: Math.min(base, energyCap(effects)),
+  const effects = effectsFrom({
     sleepHours,
     todayWater,
     yesterdayWater,
-    effects,
-  };
+    moveForm: currentCondition(s, 'body'),
+    mindForm: currentCondition(s, 'mind'),
+  });
+  const base = energyFrom({ sleepHours, waterLitres: todayWater });
+  return { energy: Math.min(base, energyCap(effects)), sleepHours, todayWater, yesterdayWater, effects };
 }
 
 // Raw System state for the coach to reference the climb (no rendering).
