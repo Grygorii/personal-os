@@ -2,9 +2,11 @@ import { col } from './db.js';
 
 const QUEST_LABEL = {
   hydrate: 'Hydrate (2L)',
+  move: 'Move (train your body)',
   read: 'Read / reflect',
   build: 'Ship one thing',
 };
+const QUEST_KEYS = ['hydrate', 'move', 'read', 'build'];
 
 // ---------------- pure logic (no DB, unit-testable) ----------------
 
@@ -100,6 +102,18 @@ export function awardsFor(action) {
       return [['mind', 30]];
     case 'log_work':
       return [['forge', 20]];
+    case 'log_movement':
+      return [['vitality', 18]];
+    case 'log_meal':
+      return [['vitality', 6]];
+    case 'log_mood':
+      return [['spirit', 5]];
+    case 'log_social':
+      return [['spirit', 15]];
+    case 'log_reflect':
+      return [['spirit', 12]];
+    case 'log_restraint':
+      return [['discipline', 12]];
     case 'log_note':
       return [['mind', 2]];
     default:
@@ -112,6 +126,7 @@ export function questsFromLogs(logs) {
   const water = logs.filter((l) => l.type === 'water').reduce((s, l) => s + (l.value || 0), 0);
   return {
     hydrate: water >= 2,
+    move: logs.some((l) => l.type === 'move'),
     read: logs.some((l) => l.type === 'book' || l.type === 'essay'),
     build: logs.some((l) => l.type === 'work'),
   };
@@ -187,13 +202,12 @@ export function renderStatus(s, energy = null, effects = null) {
     `MIND       ${s.stats.mind}`,
     `FORGE      ${s.stats.forge}`,
     `DISCIPLINE ${s.stats.discipline}`,
+    `SPIRIT     ${s.stats.spirit || 0}`,
     '',
     `STREAK  🔥 ${s.streak} days`,
     '',
     'DAILY QUESTS',
-    line('hydrate'),
-    line('read'),
-    line('build')
+    ...QUEST_KEYS.map(line)
   );
   const eff = effects || {};
   if (eff.debuffs && eff.debuffs.length) {
@@ -215,7 +229,7 @@ function freshState() {
     _id: 'state',
     level: 1,
     xp: 0,
-    stats: { vitality: 0, mind: 0, forge: 0, discipline: 0 },
+    stats: { vitality: 0, mind: 0, forge: 0, discipline: 0, spirit: 0 },
     streak: 0,
     questDate: null,
     quests: {},
@@ -230,6 +244,8 @@ async function getState() {
     s = freshState();
     await col('system').insertOne(s);
   }
+  // Ensure every stat exists, even on states seeded before a stat was added.
+  s.stats = { vitality: 0, mind: 0, forge: 0, discipline: 0, spirit: 0, ...s.stats };
   return s;
 }
 
@@ -270,7 +286,7 @@ export async function recordAction(action) {
   // Quests
   rollDay(s);
   const now = questsFromLogs(await todaysLogs());
-  for (const k of ['hydrate', 'read', 'build']) {
+  for (const k of QUEST_KEYS) {
     if (now[k] && !s.quests[k]) {
       s.quests[k] = true;
       s.stats.discipline += 15;
@@ -278,7 +294,7 @@ export async function recordAction(action) {
       pings.push(`⟦ DAILY QUEST ⟧ ${QUEST_LABEL[k]} — complete.  DISCIPLINE +15`);
     }
   }
-  const allDone = ['hydrate', 'read', 'build'].every((k) => s.quests[k]);
+  const allDone = QUEST_KEYS.every((k) => s.quests[k]);
   if (allDone && s.lastClearDate !== s.questDate) {
     s.lastClearDate = s.questDate;
     s.streak = (s.streak || 0) + 1;

@@ -37,6 +37,12 @@ function summarizeLogs(logs) {
     else if (l.type === 'note') byDay[day].push(`note: ${l.text}`);
     else if (l.type === 'skill') byDay[day].push(`coach suggested skill: ${l.skill}`);
     else if (l.type === 'work') byDay[day].push(`shipped: ${l.note || 'work'}`);
+    else if (l.type === 'move') byDay[day].push(`trained: ${l.activity || 'workout'}${l.minutes ? ` ${l.minutes}m` : ''}`);
+    else if (l.type === 'meal') byDay[day].push(`ate: ${l.desc || 'a meal'}`);
+    else if (l.type === 'mood') byDay[day].push(`mood ${l.score ?? '?'}/5${l.note ? ` (${l.note})` : ''}`);
+    else if (l.type === 'social') byDay[day].push(`social: ${l.note || 'time with people'}`);
+    else if (l.type === 'reflect') byDay[day].push(`reflected: ${l.note || ''}`);
+    else if (l.type === 'restraint') byDay[day].push(`held back from ${l.habit || l.note || 'a vice'}`);
     else byDay[day].push(l.type);
   }
   return Object.entries(byDay).map(([d, items]) => `${d}: ${items.join(', ')}`).join('\n');
@@ -71,7 +77,7 @@ function buildSystem({ profile, logsSummary, behavior, reading, energy, state, n
   const sleepTxt = e.sleepHours != null ? `${e.sleepHours}h` : 'unknown';
   const activeEffects =
     [...(e.effects?.debuffs || []), ...(e.effects?.buffs || [])].map((x) => x.label).join('; ') || 'none';
-  const st = state || { level: 1, streak: 0, stats: { vitality: 0, mind: 0, forge: 0, discipline: 0 }, titles: [], rank: 'E-Rank Hunter' };
+  const st = state || { level: 1, streak: 0, stats: { vitality: 0, mind: 0, forge: 0, discipline: 0, spirit: 0 }, titles: [], rank: 'E-Rank Hunter' };
 
   return `You are Гриша's personal coach. Not an app, not a logging tool — a coach who knows him and is genuinely in his corner.
 
@@ -96,7 +102,7 @@ STYLE:
 - Use his data naturally — notice patterns, reference yesterday, hold continuity — but never recite stats at him like a dashboard.
 - One thread at a time. Don't pile on.
 
-WHEN HE SHARES SOMETHING worth remembering (water, sleep, what he's reading, progress, a thought), capture it as an action AND respond as a coach. Never reply with just "Logged."
+WHEN HE SHARES SOMETHING worth remembering (water, sleep, food, movement/training, mood, time with people, reflection, what he's reading, work shipped, a habit he resisted, a thought), capture it with the right action AND respond as a coach. Never reply with just "Logged."
 
 ALWAYS ANALYSE, NEVER JUST TALLY:
 You are not a logging machine. Behind every message is a person and a pattern. Read HOW he logs, not only what — repetition (the same thing several times), fixation on a number, terse mechanical entries, odd timing, a silence then a flood. When the behaviour looks repetitive, mechanical, or off, get curious and ask what's actually going on rather than quietly adding to stats. Logging is the least interesting thing you do; understanding him is the point.
@@ -114,8 +120,8 @@ Active status effects: ${activeEffects}. (Debuffs reflect real strain, buffs rew
 When these run low, connect them to lived consequence — a flat stretch in the afternoon, foggy focus, less drive for deep SILKILINEN work — as foresight he'd thank you for, never a scold, and only when it genuinely matters. Don't recite the figures back at him; translate them into what today will feel like. When they're solid, let it ride.
 
 THE CLIMB (his game layer — reference it for continuity and momentum, never as a scoreboard you recite):
-Level ${st.level} · ${st.rank ?? 'E-Rank Hunter'} · streak ${st.streak} days · stats Vitality ${st.stats.vitality} / Mind ${st.stats.mind} / Forge ${st.stats.forge} / Discipline ${st.stats.discipline}${st.titles?.length ? ` · titles: ${st.titles.join(', ')}` : ''}.
-As he levels up and his stats grow, occasionally recommend ONE concrete real-world skill to train next — drawn from his goals and what you know about him, the same way you'd recommend a book. Frame it as leveling up a real ability he'll need (e.g. for SILKILINEN), not homework. When you do, record it with a set_skill_focus action so you can follow up later. Celebrate genuine milestones lightly; never nag about the numbers.
+Level ${st.level} · ${st.rank ?? 'E-Rank Hunter'} · streak ${st.streak} days · stats Vitality ${st.stats.vitality} / Mind ${st.stats.mind} / Forge ${st.stats.forge} / Discipline ${st.stats.discipline} / Spirit ${st.stats.spirit ?? 0}${st.titles?.length ? ` · titles: ${st.titles.join(', ')}` : ''}.
+As he levels up and his stats grow, occasionally recommend ONE concrete real-world skill to train next — drawn from his goals and what you know about him, the same way you'd recommend a book. Frame it as leveling up a real ability he'll need (e.g. for SILKILINEN), not homework. When you do, record it with a set_skill_focus action so you can follow up later. Celebrate genuine milestones lightly; never nag about the numbers. SPIRIT grows from mood check-ins, real connection, and reflection — invite those naturally, but never make the emotional side feel like a quota (there's deliberately no daily quest for it).
 
 OUTPUT FORMAT — reply with ONLY a JSON object, nothing else, no markdown fences:
 {
@@ -131,6 +137,12 @@ Available actions (include only what he clearly supports — never invent data):
 - {"type":"log_essay","book":"...","essay":"...","feedback":"..."}
 - {"type":"log_work","note":"shipped the checkout fix"}
 - {"type":"log_note","text":"something he said worth remembering"}
+- {"type":"log_movement","activity":"run / gym / pushups / walk","minutes":30}
+- {"type":"log_meal","desc":"what he ate","quality":"good|ok|poor"}
+- {"type":"log_mood","score":4,"note":"how he's feeling, in his words"}
+- {"type":"log_social","note":"meaningful time with people"}
+- {"type":"log_reflect","note":"meditation, gratitude, time in nature — anything that feeds meaning"}
+- {"type":"log_restraint","habit":"what he held back from (phone, caffeine, late night)","note":"..."}
 - {"type":"remember_insight","text":"a durable truth you learned about him (a preference, a pattern, what drives or drains him)"}
 - {"type":"set_skill_focus","skill":"the real-world skill you're recommending he train next","why":"why it fits him now"}
 "actions" can be empty.`;
@@ -221,6 +233,24 @@ async function applyAction(a) {
       break;
     case 'log_work':
       await logEvent('work', { note: a.note });
+      break;
+    case 'log_movement':
+      await logEvent('move', { activity: a.activity || 'training', minutes: a.minutes });
+      break;
+    case 'log_meal':
+      await logEvent('meal', { desc: a.desc, quality: a.quality });
+      break;
+    case 'log_mood':
+      await logEvent('mood', { score: a.score != null ? Number(a.score) : null, note: a.note });
+      break;
+    case 'log_social':
+      await logEvent('social', { note: a.note });
+      break;
+    case 'log_reflect':
+      await logEvent('reflect', { note: a.note });
+      break;
+    case 'log_restraint':
+      await logEvent('restraint', { habit: a.habit, note: a.note });
       break;
     case 'remember_insight':
       await col('profile').updateOne(

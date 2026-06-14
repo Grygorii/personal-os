@@ -65,7 +65,7 @@ async function main() {
       $setOnInsert: {
         level: 1,
         xp: 0,
-        stats: { vitality: 0, mind: 0, forge: 0, discipline: 0 },
+        stats: { vitality: 0, mind: 0, forge: 0, discipline: 0, spirit: 0 },
         streak: 0,
         questDate: null,
         quests: {},

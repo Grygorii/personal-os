@@ -29,8 +29,10 @@ Telegram  ←→  worker (Railway)  ←→  MongoDB Atlas (personal_os db)
   paths handled by `src/agents/*`. They log *and* feed the System, exactly like talking to
   the coach. Everything that isn't a slash-command goes to the coach.
 - **the System** (`src/system.js`) — a Solo-Leveling-style layer over your real actions.
-  Everything you log feeds four stats (Vitality, Mind, Forge, Discipline), earns XP, and
-  clears daily quests; XP compounds into levels on an **accelerating, uncapped curve**
+  It tracks sleep, water, food, movement/training, reading, work shipped, mood, time with
+  people, reflection, and habits you're cutting. Everything feeds five stats (Vitality,
+  Mind, Forge, Discipline, Spirit), earns XP, and clears daily quests; XP compounds into
+  levels on an **accelerating, uncapped curve**
   (gentle early, a real grind up high — there's no winning, only climbing). Levels map to
   **hunter ranks** (E→D→C→B→A→S→National→Monarch); Monarch at Lv.100+ is a lifetime away.
   **Energy** is derived live from last night's sleep
