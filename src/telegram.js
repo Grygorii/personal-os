@@ -7,12 +7,21 @@ export async function send(text, chatId = config.telegramChatId) {
     console.warn('[telegram] no chatId set; message not sent:', text.slice(0, 60));
     return;
   }
-  const res = await fetch(`${API}/sendMessage`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'Markdown' }),
-  });
-  if (!res.ok) console.error('[telegram] send failed:', await res.text());
+  const post = (body) =>
+    fetch(`${API}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, ...body }),
+    });
+
+  // Try Markdown first; if the text trips Telegram's parser, resend as plain
+  // text so a stray * or _ can never silently swallow a coach reply.
+  let res = await post({ text, parse_mode: 'Markdown' });
+  if (!res.ok) res = await post({ text });
+  if (!res.ok) {
+    console.error('[telegram] send failed:', await res.text());
+    return;
+  }
   return res.json();
 }
 
