@@ -1,9 +1,9 @@
 import { col } from './db.js';
 
 const QUEST_LABEL = {
-  hydrate: 'Hydrate (2L)',
-  move: 'Move (train your body)',
-  read: 'Read / reflect',
+  hydrate: 'Hydrate',
+  move: 'Move',
+  read: 'Sharpen mind',
   build: 'Ship one thing',
 };
 const QUEST_KEYS = ['hydrate', 'move', 'read', 'build'];
@@ -112,6 +112,24 @@ export function energyCap({ debuffs = [] } = {}) {
   return debuffs.reduce((cap, d) => Math.min(cap, d.energyCap ?? 100), 100);
 }
 
+// Reward a balanced "wheel of life": XP into an already-dominant stat is dampened while
+// neglected stats earn full XP — so grinding one easy thing yields less and less, and
+// roundedness pays. Floor 0.4 so a strong area still grows, just slower.
+export function balanceMultiplier(statValue, allStats) {
+  const vals = Object.values(allStats || {});
+  const avg = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
+  if (avg <= 0) return 1;
+  const ratio = (statValue || 0) / avg;
+  return ratio <= 1 ? 1 : clamp(1 / ratio, 0.4, 1);
+}
+
+// Energy drains through the waking day — it can't sit at 90% at bedtime. ~0 just after
+// waking (7am reference), deepening toward night; wraps so late nights read as drained too.
+export function dayDrain(hour) {
+  const awake = hour >= 7 ? hour - 7 : hour + 17;
+  return Math.round(clamp(awake, 0, 16) * 2.5);
+}
+
 // Per-level XP cost accelerates hard: gentle at first, a real grind up high.
 // L1→2 ≈ 110, L5→6 ≈ 450, L10→11 ≈ 1325, L20→21 ≈ 4575.
 export function levelStep(l) {
@@ -165,6 +183,8 @@ export function awardsFor(action) {
       return [['discipline', 12]];
     case 'log_pursuit':
       return [['discipline', 10]];
+    case 'log_study':
+      return [['mind', 12]];
     case 'log_note':
       return [['mind', 2]];
     default:
@@ -178,8 +198,25 @@ export function questsFromLogs(logs) {
   return {
     hydrate: water >= 2,
     move: logs.some((l) => l.type === 'move'),
-    read: logs.some((l) => l.type === 'book' || l.type === 'essay'),
+    read: logs.some((l) => l.type === 'book' || l.type === 'essay' || l.type === 'study'),
     build: logs.some((l) => l.type === 'work'),
+  };
+}
+
+// Display progress toward each daily quest's target (current/target) for /status.
+export function questProgress(logs) {
+  const r1 = (n) => Math.round(n * 10) / 10;
+  const water = logs.filter((l) => l.type === 'water').reduce((s, l) => s + (l.value || 0), 0);
+  const count = (types) => logs.filter((l) => types.includes(l.type)).length;
+  const mk = (met, text) => ({ met, text });
+  const moveN = count(['move']);
+  const readN = count(['book', 'essay', 'study']);
+  const buildN = count(['work']);
+  return {
+    hydrate: mk(water >= 2, `${r1(water)}/2L`),
+    move: mk(moveN >= 1, `${Math.min(moveN, 1)}/1`),
+    read: mk(readN >= 1, `${Math.min(readN, 1)}/1`),
+    build: mk(buildN >= 1, `${Math.min(buildN, 1)}/1`),
   };
 }
 
@@ -245,13 +282,18 @@ export function rankForStat(value) {
   return RANKS[i].title;
 }
 
-export function renderStatus(s, energy = null, effects = null) {
+export function renderStatus(s, energy = null, effects = null, progress = null) {
   const floor = xpToReach(s.level);
   const next = xpToReach(s.level + 1);
   const prog = s.xp - floor;
   const need = next - floor;
   const q = s.quests || {};
-  const line = (k) => ` ${q[k] ? '✓' : '▢'} ${QUEST_LABEL[k]}`;
+  const line = (k) => {
+    const p = progress && progress[k];
+    const met = p ? p.met : q[k];
+    const amount = p ? `  ${p.text}` : '';
+    return ` ${met ? '✓' : '▢'} ${QUEST_LABEL[k].padEnd(14)}${amount}`;
+  };
 
   const rank = rankForLevel(s.level);
   const upcoming = nextRankAfter(s.level);
@@ -349,7 +391,7 @@ export async function recordAction(action) {
   // Active effects scale the action's XP (debuffs shave it, buffs boost it).
   const mult = xpMultiplier((await energySnapshot()).effects);
   for (const [stat, xp] of awardsFor(action)) {
-    const gain = Math.round(xp * mult);
+    const gain = Math.round(xp * mult * balanceMultiplier(s.stats[stat], s.stats));
     s.stats[stat] = (s.stats[stat] || 0) + gain;
     s.xp += gain;
   }
@@ -435,6 +477,7 @@ const DOMAIN_BY_ACTION = {
   log_progress: 'mind',
   finish_book: 'mind',
   log_essay: 'mind',
+  log_study: 'mind',
 };
 
 // Current decayed condition for a domain (null if he's never trained it — no debuff then).
@@ -471,17 +514,16 @@ const DEBUFF_SEVERITY = {
 };
 
 function activeCoachDebuffs(s) {
-  const now = Date.now();
-  return (s.coachDebuffs || []).filter((d) => !d.until || new Date(d.until).getTime() > now);
+  return s.coachDebuffs || []; // no timer — they persist until the coach lifts them
 }
 
-export async function applyCoachDebuff({ key, label, note, severity = 'moderate', days = 2 }) {
+export async function applyCoachDebuff({ key, label, note, severity = 'moderate' }) {
   if (!key) return;
   const s = await getState();
   const eff = DEBUFF_SEVERITY[severity] || DEBUFF_SEVERITY.moderate;
-  const until = new Date(Date.now() + Math.max(1, Number(days) || 2) * DAY);
-  s.coachDebuffs = activeCoachDebuffs(s).filter((d) => d.key !== key);
-  s.coachDebuffs.push({ key, label: label || key.toUpperCase(), note: note || '', xpMult: eff.xpMult, energyCap: eff.energyCap, until });
+  s.coachDebuffs = (s.coachDebuffs || []).filter((d) => d.key !== key);
+  // No timer: it stays until the coach clears it once his actions have earned its removal.
+  s.coachDebuffs.push({ key, label: label || key.toUpperCase(), note: note || '', xpMult: eff.xpMult, energyCap: eff.energyCap, placedAt: new Date() });
   await saveState(s);
 }
 
@@ -510,7 +552,9 @@ export async function energySnapshot() {
   });
   for (const d of activeCoachDebuffs(s)) effects.debuffs.push(d); // inner weights the coach sensed
   const base = energyFrom({ sleepHours, waterLitres: todayWater });
-  return { energy: Math.min(base, energyCap(effects)), sleepHours, todayWater, yesterdayWater, effects };
+  const ceiling = Math.min(base, energyCap(effects));
+  const energy = clamp(ceiling - dayDrain(new Date().getHours()), 5, 100);
+  return { energy, sleepHours, todayWater, yesterdayWater, effects };
 }
 
 // Raw System state for the coach to reference the climb (no rendering).
@@ -538,8 +582,9 @@ export async function statusWindow() {
   const s = await getState();
   rollDay(s);
   // Reflect today's real logs exactly — a quest un-checks if its data is corrected down.
-  s.quests = questsFromLogs(await todaysLogs());
+  const logs = await todaysLogs();
+  s.quests = questsFromLogs(logs);
   await saveState(s);
   const { energy, effects } = await energySnapshot();
-  return renderStatus(s, energy, effects);
+  return renderStatus(s, energy, effects, questProgress(logs));
 }
