@@ -220,6 +220,18 @@ export function questProgress(logs) {
   };
 }
 
+// Which life-domain (stat) each log type feeds — used for breadth/balance.
+const TYPE_DOMAIN = {
+  water: 'body', sleep: 'body', meal: 'body', move: 'body',
+  book: 'mind', essay: 'mind', study: 'mind', note: 'mind',
+  work: 'forge',
+  mood: 'spirit', social: 'spirit', reflect: 'spirit',
+  restraint: 'discipline',
+};
+function domainsToday(logs) {
+  return new Set(logs.map((l) => TYPE_DOMAIN[l.type]).filter(Boolean));
+}
+
 export function titleForLevel(l) {
   if (l >= 20) return 'The Disciplined';
   if (l >= 10) return 'The Builder';
@@ -377,6 +389,7 @@ function rollDay(s) {
   if (s.questDate !== today) {
     s.questDate = today;
     s.quests = {};
+    s.breadthAwarded = 0;
   }
 }
 
@@ -400,24 +413,35 @@ export async function recordAction(action) {
   const trained = DOMAIN_BY_ACTION[action.type];
   if (trained) bumpCondition(s, trained);
 
-  // Quests
+  // Quests — the daily checklist (ping on first completion; XP comes from the action itself).
   rollDay(s);
-  const now = questsFromLogs(await todaysLogs());
+  const todayLogs = await todaysLogs();
+  const now = questsFromLogs(todayLogs);
   for (const k of QUEST_KEYS) {
     if (now[k] && !s.quests[k]) {
       s.quests[k] = true;
-      s.stats.discipline += 15;
-      s.xp += 15;
-      pings.push(`⟦ DAILY QUEST ⟧ ${QUEST_LABEL[k]} — complete.  DISCIPLINE +15`);
+      pings.push(`⟦ DAILY QUEST ⟧ ${QUEST_LABEL[k]} — done.`);
     }
   }
-  const allDone = QUEST_KEYS.every((k) => s.quests[k]);
-  if (allDone && s.lastClearDate !== s.questDate) {
-    s.lastClearDate = s.questDate;
+
+  // DISCIPLINE rewards BREADTH — doing several DIFFERENT sides of life, not grinding one.
+  // Each new domain touched today earns discipline once; repeating one thing earns nothing.
+  const breadth = domainsToday(todayLogs).size;
+  if (breadth > (s.breadthAwarded || 0)) {
+    const fresh = breadth - (s.breadthAwarded || 0);
+    const gain = Math.round(fresh * 12 * balanceMultiplier(s.stats.discipline, s.stats));
+    s.stats.discipline += gain;
+    s.xp += gain;
+    s.breadthAwarded = breadth;
+    pings.push(`⟦ DISCIPLINE ⟧ ${breadth} sides of life today.  +${gain}`);
+  }
+
+  // STREAK — a day counts if he kept the wheel turning (2+ different sides of life),
+  // not the old all-four-quests bar that his real days never hit.
+  if (breadth >= 2 && s.streakDate !== s.questDate) {
+    s.streakDate = s.questDate;
     s.streak = (s.streak || 0) + 1;
-    s.stats.discipline += 25;
-    s.xp += 25;
-    pings.push(`⟦ ALL QUESTS CLEARED ⟧ Streak: ${s.streak} 🔥  DISCIPLINE +25`);
+    pings.push(`⟦ STREAK ⟧ ${s.streak} days 🔥 — kept the wheel turning.`);
   }
 
   // Level-up

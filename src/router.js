@@ -15,7 +15,7 @@ export async function route({ chatId, text }) {
         'Just talk to me — how you slept, what you drank, what you\'re reading, ' +
         'what you shipped, what\'s on your mind. I\'ll coach you and the System ' +
         'tracks the growth.\n\n' +
-        '`/status` — status   `/ranks` — rank ladder   `/pursuits` — your mastery paths\n' +
+        '`/status` — status   `/ranks` — ranks   `/pursuits` — mastery paths   `/review` — week in review\n' +
         'Shortcuts: `/water 0.5`, `/read <title>`, `/suggest`, `/progress <note>`, `/finished`.',
       chatId
     );
@@ -35,6 +35,11 @@ export async function route({ chatId, text }) {
 
   if (/^\/pursuits?\b/i.test(text)) {
     await send('```\n' + (await coach.listPursuits()) + '\n```');
+    return;
+  }
+
+  if (/^\/review\b/i.test(text)) {
+    await coach.weeklyReview(); // on-demand week-in-review (also saves a snapshot)
     return;
   }
 
