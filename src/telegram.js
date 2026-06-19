@@ -35,6 +35,17 @@ export async function sendPings(pings, chatId = config.telegramChatId) {
  * Long-poll for incoming messages. Calls onMessage({ chatId, text }) per message.
  * Runs forever.
  */
+// Download a Telegram photo (largest size) as base64 for the vision model.
+async function fetchPhotoBase64(fileId) {
+  const r = await fetch(`${API}/getFile?file_id=${fileId}`);
+  const path = (await r.json())?.result?.file_path;
+  if (!path) return null;
+  const fr = await fetch(`https://api.telegram.org/file/bot${config.telegramToken}/${path}`);
+  if (!fr.ok) return null;
+  const buf = Buffer.from(await fr.arrayBuffer());
+  return { base64: buf.toString('base64'), mediaType: 'image/jpeg' };
+}
+
 export async function poll(onMessage) {
   let offset = 0;
   console.log('[telegram] polling for messages...');
@@ -45,7 +56,15 @@ export async function poll(onMessage) {
       for (const update of result) {
         offset = update.update_id + 1;
         const msg = update.message;
-        if (msg?.text) {
+        if (msg?.photo?.length) {
+          let image = null;
+          try {
+            image = await fetchPhotoBase64(msg.photo[msg.photo.length - 1].file_id);
+          } catch (e) {
+            console.error('[telegram] photo download failed:', e.message);
+          }
+          await onMessage({ chatId: msg.chat.id, text: (msg.caption || '').trim(), image });
+        } else if (msg?.text) {
           await onMessage({ chatId: msg.chat.id, text: msg.text.trim() });
         }
       }

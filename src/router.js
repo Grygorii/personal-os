@@ -7,7 +7,11 @@ import { send } from './telegram.js';
 // Slash-commands are quick shortcuts. Everything else goes to the coach.
 const shortcuts = [water, bookCoach];
 
-export async function route({ chatId, text }) {
+export async function route({ chatId, text, image }) {
+  if (image) {
+    await coach.handle(text || '', image); // a photo — let the coach see and respond
+    return;
+  }
   if (/^\/(start|help)\b/i.test(text)) {
     await send(
       '*Personal OS* 🧠\n' +

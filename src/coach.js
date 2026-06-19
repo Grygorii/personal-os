@@ -109,7 +109,7 @@ STYLE:
 - Use his data naturally — notice patterns, reference yesterday, hold continuity — but never recite stats at him like a dashboard.
 - One thread at a time. Don't pile on.
 
-WHEN HE SHARES SOMETHING real (water, sleep, food, a walk or workout, time with people, a reflection, what he's reading, work shipped, a habit he resisted, a thought) — capture the meaningful part with the right action so his world quietly reflects it, AND respond as a coach. Logging is silent and frictionless: do it reliably whenever he clearly tells you something happened. The "ask sparingly / don't nag" rule is about QUESTIONS and nudges — NOT about logging. Never reply with just "Logged."
+WHEN HE SHARES SOMETHING real (water, sleep, food, a walk or workout, time with people, a reflection, what he's reading, work shipped, a habit he resisted, a thought) — capture the meaningful part with the right action so his world quietly reflects it, AND respond as a coach. Logging is silent and frictionless: do it reliably whenever he clearly tells you something happened. The "ask sparingly / don't nag" rule is about QUESTIONS and nudges — NOT about logging. Never reply with just "Logged." He may also send a PHOTO — a plate of food, a workout, a book cover, run stats on a watch. Read what's actually in it and log what's relevant (a meal → log_meal, a run screen → log_movement), responding to what you genuinely see, not a guess.
 
 AN ADD-ON TO LIFE, NOT A SECOND LIFE TO MAINTAIN:
 He should never feel he must report everything to "get credit." This rides alongside his life; it doesn't replace it. Capture what genuinely matters from what he naturally says, and let the rest just be life — a walk with his son is connection and joy first, not a workout to grind. Quality of attention over completeness of data.
@@ -133,12 +133,15 @@ STAY HUMBLE — DOUBT YOURSELF, THAT'S HOW YOU LEARN:
 You do not know everything, and you must never sound like you do — it's grating, and certainty is how you'd fool yourself. Hold your reads loosely: offer them as "I might be off, but…" or "tell me if this misses." When you infer something — a mood, a cause, a pattern — treat it as a hypothesis to check with him, not a verdict to pronounce. Being unsure and curious is what keeps you honest and keeps you learning; a know-it-all stops listening. He'll occasionally try to fool you, too — you can usually feel it; don't accuse, just stay quietly skeptical and ask.
 
 CONTEXT RIGHT NOW:
-Local time: ${now}
+Local time: ${now} — the day resets at local midnight.
 Currently reading: ${readingLine}
 Activity, last 7 days:
 ${logsSummary}
 Today's rhythm (how he's logging right now): ${behavior}
 His pursuits (personal skills he's building toward mastery): ${pursuits}
+
+TIME & TOTALS — be exact, never mix up days:
+It is ${now}; days reset at local midnight. Today's running totals come from the LOGS, not your memory of the chat: water TODAY = ${e.todayWater ?? 0}L (yesterday was ${e.yesterdayWater ?? 0}L, which does NOT count toward today). When he mentions water/sleep/food, assume he means TODAY unless he clearly says otherwise. To fix a total, use correct_water_today to set today's real number — never carry yesterday's forward, and never double-count a figure he's only restating.
 
 ENERGY & CONSEQUENCES — speak to how he'll actually feel, never the raw numbers:
 Energy right now: ${e.energy ?? '?'}/100. Foundation — last sleep: ${sleepTxt}; water today: ${e.todayWater ?? 0}L; water yesterday: ${e.yesterdayWater ?? 0}L.
@@ -211,7 +214,7 @@ function parseResponse(raw) {
   return { reply: raw, actions: [] };
 }
 
-async function think(finalUserContent) {
+async function think(finalUserContent, image = null) {
   const [profile, logs, reading, history, energy, state, pursuitRows] = await Promise.all([
     getProfile(),
     recentLogs(),
@@ -241,7 +244,15 @@ async function think(finalUserContent) {
     role: m.role === 'coach' ? 'assistant' : 'user',
     content: m.text,
   }));
-  messages.push({ role: 'user', content: finalUserContent });
+  messages.push({
+    role: 'user',
+    content: image
+      ? [
+          { type: 'image', source: { type: 'base64', media_type: image.mediaType || 'image/jpeg', data: image.base64 } },
+          { type: 'text', text: finalUserContent || 'I sent you a photo — take a look and respond.' },
+        ]
+      : finalUserContent,
+  });
 
   const raw = await chat({ system: systemPrompt, messages, maxTokens: 600 });
   const parsed = parseResponse(raw);
@@ -405,9 +416,9 @@ async function deliver({ reply, actions }) {
 // ---------- entry points ----------
 
 // Any free-text message from him.
-export async function handle(userText) {
-  await remember('user', userText);
-  await deliver(await think(userText));
+export async function handle(userText, image = null) {
+  await remember('user', image ? `[photo]${userText ? ' ' + userText : ''}` : userText);
+  await deliver(await think(userText, image));
 }
 
 // Proactive check-in fired by the scheduler.

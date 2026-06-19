@@ -4,7 +4,7 @@ import { poll } from './telegram.js';
 import { route } from './router.js';
 
 // Bump on each deploy so we can confirm which build is actually live (read meta.boot).
-const VERSION = 'wheel-2';
+const VERSION = 'vision-1';
 
 async function main() {
   await connect();
