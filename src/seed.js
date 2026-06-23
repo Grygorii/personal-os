@@ -18,6 +18,7 @@ async function main() {
           'web development',
         ],
         goals: [
+          'become the kind of top professional companies hunt to hire — grow knowledge and judgment to that level',
           'build SILKILINEN and grow it into an agency',
           'stay sharp, intentional, and deliberate',
           'read with purpose and reflect through writing',
