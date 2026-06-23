@@ -111,6 +111,9 @@ STYLE:
 
 WHEN HE SHARES SOMETHING real (water, sleep, food, a walk or workout, time with people, a reflection, what he's reading, work shipped, a habit he resisted, a thought) — capture the meaningful part with the right action so his world quietly reflects it, AND respond as a coach. Logging is silent and frictionless: do it reliably whenever he clearly tells you something happened. The "ask sparingly / don't nag" rule is about QUESTIONS and nudges — NOT about logging. Never reply with just "Logged." He may also send a PHOTO — a plate of food, a workout, a book cover, run stats on a watch. Read what's actually in it and log what's relevant (a meal → log_meal, a run screen → log_movement), responding to what you genuinely see, not a guess.
 
+LOG ONLY WHAT'S NEW AND DONE — never re-log:
+Act ONLY on what he tells you in his LATEST message, and only on things he has actually DONE — never a plan, an intention, or a "going to". The conversation history is for continuity ONLY: never re-log or re-correct something already captured earlier in the chat. If the walk, the book, or the water was already logged, it's done — logging it again double-counts and corrupts his totals. One real event = exactly one log.
+
 AN ADD-ON TO LIFE, NOT A SECOND LIFE TO MAINTAIN:
 He should never feel he must report everything to "get credit." This rides alongside his life; it doesn't replace it. Capture what genuinely matters from what he naturally says, and let the rest just be life — a walk with his son is connection and joy first, not a workout to grind. Quality of attention over completeness of data.
 
@@ -141,7 +144,7 @@ Today's rhythm (how he's logging right now): ${behavior}
 His pursuits (personal skills he's building toward mastery): ${pursuits}
 
 TIME & TOTALS — be exact, never mix up days:
-It is ${now}; days reset at local midnight. Today's running totals come from the LOGS, not your memory of the chat: water TODAY = ${e.todayWater ?? 0}L (yesterday was ${e.yesterdayWater ?? 0}L, which does NOT count toward today). When he mentions water/sleep/food, assume he means TODAY unless he clearly says otherwise. To fix a total, use correct_water_today to set today's real number — never carry yesterday's forward, and never double-count a figure he's only restating.
+It is ${now}; days reset at local midnight. Today's running totals come from the LOGS, not your memory of the chat: water TODAY = ${e.todayWater ?? 0}L (yesterday was ${e.yesterdayWater ?? 0}L, which does NOT count toward today). When he mentions water/sleep/food, assume he means TODAY unless he clearly says otherwise. To fix a total, use correct_water_today to set today's real number — never carry yesterday's forward, and never double-count a figure he's only restating. When he says he drank an amount ("drank 0.5L"), add just that one amount once via log_water; reserve correct_water_today for when he states a full TOTAL ("1.5L total today"). The logged total above is the source of truth — state THAT, don't recompute a running total in your head.
 
 ENERGY & CONSEQUENCES — speak to how he'll actually feel, never the raw numbers:
 Energy right now: ${e.energy ?? '?'}/100. Foundation — last sleep: ${sleepTxt}; water today: ${e.todayWater ?? 0}L; water yesterday: ${e.yesterdayWater ?? 0}L.
@@ -327,11 +330,13 @@ async function applyAction(a) {
       await logEvent('study', { note: a.note });
       break;
     case 'correct_water_today': {
-      // Work backwards: reconcile today's water to the real total instead of stacking.
+      // Work backwards: reconcile today's water to the real total. NEVER wipe on a malformed
+      // value (a glitchy re-emit) — only delete when there's a valid number to replace it with.
+      const litres = Number(a.litres);
+      if (Number.isNaN(litres) || litres < 0) break;
       const startOfDay = new Date();
       startOfDay.setHours(0, 0, 0, 0);
       await col('logs').deleteMany({ type: 'water', ts: { $gte: startOfDay } });
-      const litres = Number(a.litres) || 0;
       if (litres > 0) await logEvent('water', { value: litres, corrected: true });
       break;
     }
@@ -427,7 +432,8 @@ export async function checkIn(kind) {
     kind === 'morning'
       ? "(Morning check-in — he hasn't messaged yet. Open his day warmly with at most ONE light question — how he slept, how he's landing today. When he answers, sense his mood from how he writes and log it quietly; never ask him to rate anything. Short.)"
       : "(Evening check-in — he hasn't messaged. In one or two sentences, gently close out his day (notice what actually happened from the data) and nod lightly to tomorrow. Warm and brief — a goodnight from someone in his corner, never a report.)";
-  await deliver(await think(trigger));
+  const { reply } = await think(trigger);
+  await deliver({ reply, actions: [] }); // check-ins reflect & converse — they NEVER log (re-logging the day was corrupting totals)
 }
 
 // After a quick shortcut log, decide whether to wake the coach to NOTICE a
