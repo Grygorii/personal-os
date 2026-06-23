@@ -1,4 +1,5 @@
 import { col } from './db.js';
+import { config } from './config.js';
 
 const QUEST_LABEL = {
   hydrate: 'Hydrate',
@@ -294,7 +295,7 @@ export function rankForStat(value) {
   return RANKS[i].title;
 }
 
-export function renderStatus(s, energy = null, effects = null, progress = null) {
+export function renderStatus(s, energy = null, effects = null, progress = null, nowText = null) {
   const floor = xpToReach(s.level);
   const next = xpToReach(s.level + 1);
   const prog = s.xp - floor;
@@ -309,10 +310,9 @@ export function renderStatus(s, energy = null, effects = null, progress = null) 
 
   const rank = rankForLevel(s.level);
   const upcoming = nextRankAfter(s.level);
-  const out = [
-    '⟦  S T A T U S  ⟧',
-    `LEVEL ${s.level} · ${rank.title}`,
-  ];
+  const out = ['⟦  S T A T U S  ⟧'];
+  if (nowText) out.push(nowText);
+  out.push(`LEVEL ${s.level} · ${rank.title}`);
   if (upcoming) out.push(`  → ${upcoming.title} at Lv.${upcoming.min}`);
   out.push(`XP     ${bar(prog, need)}  ${prog}/${need}`);
   if (energy != null) out.push(`ENERGY ${bar(energy, 100)}  ${energy}/100`);
@@ -610,5 +610,14 @@ export async function statusWindow() {
   s.quests = questsFromLogs(logs);
   await saveState(s);
   const { energy, effects } = await energySnapshot();
-  return renderStatus(s, energy, effects, questProgress(logs));
+  const nowText =
+    new Date().toLocaleString('en-IE', {
+      timeZone: config.timezone,
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+    }) + '  ·  today resets at midnight';
+  return renderStatus(s, energy, effects, questProgress(logs), nowText);
 }
