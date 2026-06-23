@@ -161,9 +161,9 @@ export function awardsFor(action) {
       return [['vitality', xp]];
     }
     case 'set_reading':
-      return [['mind', 10]];
+      return [['mind', 6]];
     case 'log_progress':
-      return [['mind', 12]];
+      return [['mind', 4]]; // turning pages alone is barely growth — real thinking earns mind
     case 'finish_book':
       return [['mind', 60]];
     case 'log_essay':
@@ -184,8 +184,11 @@ export function awardsFor(action) {
       return [['discipline', 12]];
     case 'log_pursuit':
       return [['discipline', 10]];
-    case 'log_study':
-      return [['mind', 12]];
+    case 'log_study': {
+      // Mind grows with the DEPTH of his thinking, not the act — the coach evaluates and scales.
+      const xp = action.depth === 'deep' ? 28 : action.depth === 'light' ? 5 : 14;
+      return [['mind', xp]];
+    }
     case 'log_note':
       return [['mind', 2]];
     default:
