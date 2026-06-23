@@ -21,7 +21,8 @@ export async function route({ chatId, text, image }) {
         "`/status` — level, energy, stats, ranks, today's quests\n" +
         '`/ranks` — the rank ladder (Novice → Sage)\n' +
         '`/pursuits` — your personal mastery paths\n' +
-        '`/review` — your week in review\n\n' +
+        '`/review` — your week in review\n' +
+        '`/portrait` — an honest portrait of you (re-read monthly to see change)\n\n' +
         '⚡ *Quick log*\n' +
         '`/water 0.5` — log water\n' +
         '`/read <title>` — start a book\n' +
@@ -52,6 +53,11 @@ export async function route({ chatId, text, image }) {
 
   if (/^\/review\b/i.test(text)) {
     await coach.weeklyReview(); // on-demand week-in-review (also saves a snapshot)
+    return;
+  }
+
+  if (/^\/portrait\b/i.test(text)) {
+    await coach.portrait(); // honest, all-directions portrait from real observation (saved over time)
     return;
   }
 

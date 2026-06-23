@@ -31,6 +31,24 @@ export async function sendPings(pings, chatId = config.telegramChatId) {
   await send('```\n' + pings.join('\n') + '\n```', chatId);
 }
 
+// Send a long message, split on line breaks into <4k chunks (Telegram's per-message cap).
+export async function sendLong(text, chatId = config.telegramChatId) {
+  const MAX = 3800;
+  if ((text || '').length <= MAX) return send(text, chatId);
+  const parts = [];
+  let buf = '';
+  for (const line of text.split('\n')) {
+    if ((buf + '\n' + line).length > MAX) {
+      if (buf) parts.push(buf);
+      buf = line;
+    } else {
+      buf = buf ? buf + '\n' + line : line;
+    }
+  }
+  if (buf) parts.push(buf);
+  for (const p of parts) await send(p, chatId);
+}
+
 /**
  * Long-poll for incoming messages. Calls onMessage({ chatId, text }) per message.
  * Runs forever.

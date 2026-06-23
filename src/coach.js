@@ -1,6 +1,6 @@
 import { chat } from './llm.js';
 import { getProfile, col, logEvent, recentCount } from './db.js';
-import { send, sendPings } from './telegram.js';
+import { send, sendPings, sendLong } from './telegram.js';
 import { config } from './config.js';
 import * as system from './system.js';
 
@@ -532,6 +532,46 @@ export async function weeklyReview() {
   await send('```\n' + block + '\n```');
 
   await col('snapshots').insertOne({ ts: new Date(), level: state.level, xp: state.xp, stats: state.stats, streak: state.streak });
+}
+
+// An honest, all-directions portrait the coach writes from real OBSERVATION (not his CV),
+// saved each time so he can re-read it in a month and measure how he's actually changed.
+export async function portrait() {
+  const [profile, state, history, logs] = await Promise.all([
+    getProfile(),
+    system.currentState(),
+    col('conversation').find().sort({ ts: -1 }).limit(80).toArray(),
+    recentLogs(30),
+  ]);
+  const convo = history
+    .reverse()
+    .map((m) => `[${m.role}] ${(m.text || '').slice(0, 200)}`)
+    .join('\n')
+    .slice(-7000);
+
+  const sys = `You are writing an HONEST, multi-dimensional PORTRAIT of Гриша — for HIM to read, to study himself and measure progress over the coming months. He has granted FULL permission: hold nothing back, no flattery, no overreaction, hard truths where they are real. Ground EVERYTHING in what you have actually OBSERVED — his behaviour, his words, his data — NOT his CV or credentials (he says his formal education doesn't reflect what he actually knows today).
+
+Write it warmly but unflinchingly — a mirror for growth, never a wound, yet never softening what's true. Short sections, each with a heading:
+- MIND — how he actually thinks; real knowledge depth and where it's thin
+- DISCIPLINE — how he truly shows up; follow-through vs intention
+- BODY — his real patterns with sleep, water, movement
+- CHARACTER & EMOTION — his drives, his fears, how he handles hard things
+- CRAFT & WORK — how he builds; his initiative and his crutches
+- BLIND SPOTS — what he doesn't seem to see about himself
+- TRAJECTORY — where this is heading, and the one or two changes that would most move him toward the professional companies hunt
+
+WHAT YOU KNOW ABOUT HIM (profile — includes insights you've gathered + his mission):
+${JSON.stringify(profile, null, 2)}
+
+His measured stats: ${JSON.stringify(state)}.
+Activity (last 30 days): ${summarizeLogs(logs)}
+
+Recent conversation (most recent last):
+${convo}`;
+
+  const text = await chat({ system: sys, messages: [{ role: 'user', content: 'Write my honest portrait now.' }], maxTokens: 1500 });
+  await sendLong("🪞 *Your portrait — honest, as I actually see you.*\n_Re-read this in a month to measure how you've moved._\n\n" + text);
+  await col('portraits').insertOne({ ts: new Date(), text });
 }
 
 // The /pursuits window: his personal mastery paths and their ranks.
