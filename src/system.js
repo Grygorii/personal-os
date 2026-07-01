@@ -541,7 +541,9 @@ const DEBUFF_SEVERITY = {
 };
 
 function activeCoachDebuffs(s) {
-  return s.coachDebuffs || []; // no timer — they persist until the coach lifts them
+  // The coach lifts them, but a 7-day safety cap ensures none can stick forever if forgotten.
+  const cutoff = Date.now() - 7 * DAY;
+  return (s.coachDebuffs || []).filter((d) => !d.placedAt || new Date(d.placedAt).getTime() > cutoff);
 }
 
 export async function applyCoachDebuff({ key, label, note, severity = 'moderate' }) {
