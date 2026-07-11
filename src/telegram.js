@@ -49,6 +49,29 @@ export async function sendLong(text, chatId = config.telegramChatId) {
   for (const p of parts) await send(p, chatId);
 }
 
+// Send a message with tappable inline buttons that open a URL inside Telegram.
+// buttons: [{ text, url }] (one row). Falls back to plain text if Markdown trips the parser.
+export async function sendButtons(text, buttons, chatId = config.telegramChatId) {
+  if (!chatId) {
+    console.warn('[telegram] no chatId set; button message not sent:', text.slice(0, 60));
+    return;
+  }
+  const reply_markup = { inline_keyboard: [buttons.map((b) => ({ text: b.text, url: b.url }))] };
+  const post = (body) =>
+    fetch(`${API}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, reply_markup, ...body }),
+    });
+  let res = await post({ text, parse_mode: 'Markdown' });
+  if (!res.ok) res = await post({ text });
+  if (!res.ok) {
+    console.error('[telegram] sendButtons failed:', await res.text());
+    return;
+  }
+  return res.json();
+}
+
 /**
  * Long-poll for incoming messages. Calls onMessage({ chatId, text }) per message.
  * Runs forever.

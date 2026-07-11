@@ -1,6 +1,6 @@
 import { chat } from '../llm.js';
 import { col, logEvent } from '../db.js';
-import { send, sendPings } from '../telegram.js';
+import { send, sendPings, sendButtons } from '../telegram.js';
 import * as system from '../system.js';
 
 // The English → C2 tutor. A dedicated conversation mode: Гриша talks (business,
@@ -260,7 +260,11 @@ export async function addBook(title) {
 }
 
 async function deck() {
-  await send(`📖 Your study deck — tap to open on your phone:\n${DECK_URL}\n\nMeaning cards (tap any word you don't know), spelling, grammar, pronunciation with audio.`);
+  await sendButtons(
+    '📖 *Your study deck* — meaning cards (tap any word you don\'t know), spelling, grammar, ' +
+      'and pronunciation with audio. Tap to open inside Telegram:',
+    [{ text: 'Open study deck', url: DECK_URL }]
+  );
 }
 
 // ---------- command router hook ----------
