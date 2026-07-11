@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>Personal OS</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root{
+    --paper:#EDF1F1; --surface:#FFFFFF; --ink:#17242B; --muted:#5E6B72; --faint:#8A979D; --line:#DBE3E4;
+    --teal:#0E7C86; --teal-tint:#E1F0F0; --coral:#BC4A34; --coral-tint:#F3E3DE; --violet:#5A4AB7; --violet-tint:#EAE7FA;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --serif:"Iowan Old Style",Georgia,"Palatino Linotype",Palatino,serif;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --paper:#0F1519; --surface:#182229; --ink:#E7ECEE; --muted:#93A2A8; --faint:#6F7E84; --line:#26333A;
+      --teal:#38B6C1; --teal-tint:#123037; --coral:#E0705A; --coral-tint:#2C1712; --violet:#8F82E6; --violet-tint:#1E1B33;
+    }
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{background:var(--paper);color:var(--ink);font-family:var(--sans);line-height:1.5;
+    padding:0 16px calc(28px + env(safe-area-inset-bottom));-webkit-text-size-adjust:100%}
+  .wrap{max-width:560px;margin:0 auto}
+  header{padding:26px 4px 12px}
+  .kicker{font-size:.72rem;letter-spacing:.16em;text-transform:uppercase;color:var(--teal);font-weight:600}
+  h1{font-family:var(--serif);font-weight:600;font-size:1.85rem;margin:.15rem 0 .15rem}
+  .sub{color:var(--muted);font-size:.94rem;margin:0}
+  .tiles{display:flex;flex-direction:column;gap:12px;margin-top:18px}
+  a.tile{display:flex;align-items:center;gap:14px;text-decoration:none;background:var(--surface);
+    border:1px solid var(--line);border-radius:16px;padding:18px;color:var(--ink);
+    -webkit-tap-highlight-color:transparent;transition:transform .08s ease}
+  a.tile:active{transform:scale(.985)}
+  .ic{width:46px;height:46px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px;flex:none}
+  .ic.t{background:var(--teal-tint)} .ic.c{background:var(--coral-tint)} .ic.v{background:var(--violet-tint)}
+  .tl{flex:1;min-width:0}
+  .tl .n{font-weight:600;font-size:1.08rem}
+  .tl .d{color:var(--muted);font-size:.88rem;margin-top:1px}
+  .chev{color:var(--faint);font-size:1.3rem}
+  .tile.soon{opacity:.72}
+  .tile.soon .badge{font-size:.68rem;font-weight:600;text-transform:uppercase;letter-spacing:.06em;
+    color:var(--violet);background:var(--violet-tint);border-radius:20px;padding:3px 9px}
+  .note{margin:20px 4px 0;color:var(--muted);font-size:.9rem;background:var(--surface);
+    border:1px solid var(--line);border-radius:12px;padding:13px 15px}
+  .note b{color:var(--ink)}
+  footer{text-align:center;color:var(--faint);font-size:.78rem;margin-top:22px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="kicker">Personal OS</div>
+    <h1 id="hi">Your OS</h1>
+    <p class="sub">Everything in one place. Tap what you need.</p>
+  </header>
+
+  <nav class="tiles">
+    <a class="tile" href="/deck">
+      <div class="ic t">📖</div>
+      <div class="tl"><div class="n">Study deck</div><div class="d">Words, spelling, grammar, pronunciation</div></div>
+      <div class="chev">›</div>
+    </a>
+    <a class="tile" href="/body">
+      <div class="ic c">🧍</div>
+      <div class="tl"><div class="n">Body map</div><div class="d">Tap where it hurts, log it, talk it through</div></div>
+      <div class="chev">›</div>
+    </a>
+    <span class="tile soon">
+      <div class="ic v">📈</div>
+      <div class="tl"><div class="n">Progress</div><div class="d">Your English trend, body log, System stats</div></div>
+      <span class="badge">soon</span>
+    </span>
+  </nav>
+
+  <div class="note"><b>Talking happens in the chat.</b> For your English tutor and your coach, just message the bot — this app is your tools and dashboard.</div>
+
+  <footer id="foot">Personal OS</footer>
+</div>
+
+<script>
+  (function(){
+    var tg = window.Telegram && window.Telegram.WebApp;
+    if(!tg) return; // also works as a normal web page
+    try{
+      tg.ready(); tg.expand();
+      // Sync Telegram's theme onto our variables so the app matches the user's Telegram.
+      var p = tg.themeParams || {};
+      var r = document.documentElement.style;
+      if(p.bg_color){ r.setProperty('--paper', p.bg_color); }
+      if(p.secondary_bg_color){ r.setProperty('--surface', p.secondary_bg_color); }
+      if(p.text_color){ r.setProperty('--ink', p.text_color); }
+      if(p.hint_color){ r.setProperty('--muted', p.hint_color); }
+      if(p.link_color){ r.setProperty('--teal', p.link_color); }
+      if(tg.setHeaderColor && p.bg_color){ try{ tg.setHeaderColor(p.bg_color); }catch(e){} }
+      tg.BackButton && tg.BackButton.hide();
+      var name = tg.initDataUnsafe && tg.initDataUnsafe.user && tg.initDataUnsafe.user.first_name;
+      if(name){ document.getElementById('hi').textContent = 'Hi, ' + name; }
+    }catch(e){ /* never break the page on SDK quirks */ }
+  })();
+</script>
+</body>
+</html>
