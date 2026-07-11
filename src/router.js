@@ -1,5 +1,6 @@
 import * as water from './agents/water.js';
 import * as bookCoach from './agents/bookCoach.js';
+import * as english from './agents/english.js';
 import * as coach from './coach.js';
 import * as system from './system.js';
 import { send } from './telegram.js';
@@ -12,6 +13,17 @@ export async function route({ chatId, text, image }) {
     await coach.handle(text || '', image); // a photo — let the coach see and respond
     return;
   }
+
+  // English tutor commands (/english, /done, /englishreport, /library, /deck, /book).
+  if (text.startsWith('/') && (await english.command(text))) return;
+
+  // While in English mode, plain text is a conversation with the tutor. Slash-commands
+  // still fall through to the normal handlers below (so /status etc. keep working).
+  if (!text.startsWith('/') && (await english.isActive())) {
+    await english.handle(text);
+    return;
+  }
+
   if (/^\/(start|help)\b/i.test(text)) {
     await send(
       '*Personal OS* 🧠\n\n' +
@@ -29,6 +41,12 @@ export async function route({ chatId, text, image }) {
         '`/progress <note>` — reading progress\n' +
         '`/finished` — finish the current book\n' +
         '`/suggest` — get a book suggestion\n\n' +
+        '🎧 *English → C2*\n' +
+        '`/english` — talk with your tutor (scored, honest)\n' +
+        '`/done` — leave English mode\n' +
+        '`/englishreport` — your honest trend over time\n' +
+        '`/library` — books you\'ve read + how well you got them\n' +
+        '`/deck` — open your study deck\n\n' +
         '`/help` — show this list',
       chatId
     );

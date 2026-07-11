@@ -189,6 +189,20 @@ export function awardsFor(action) {
       const xp = action.depth === 'deep' ? 28 : action.depth === 'light' ? 5 : 14;
       return [['mind', xp]];
     }
+    case 'log_english': {
+      // Honest: a weak exchange barely moves Mind; a sharp, deep one earns real ground.
+      // The five 1–5 scores average into XP, floored at 0 — the Mind stat never goes negative,
+      // so decline shows honestly in /englishreport and via detraining when he stops, not as a
+      // corrupted stat. A poor conversation is worth almost nothing, which is the truth.
+      const sc = action.scores || {};
+      const vals = ['clarity', 'grammar', 'vocab', 'concise', 'register']
+        .map((k) => Number(sc[k]))
+        .filter((n) => !Number.isNaN(n));
+      const avg = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 3;
+      const base = Math.round((avg - 2) * 8); // avg 2→0, 3→8, 4→16, 5→24
+      const bonus = base > 0 ? (action.depth === 'deep' ? 8 : action.depth === 'light' ? 0 : 4) : 0;
+      return [['mind', Math.max(0, base + bonus)]];
+    }
     case 'log_note':
       return [['mind', 2]];
     default:
@@ -202,7 +216,7 @@ export function questsFromLogs(logs) {
   return {
     hydrate: water >= 2,
     move: logs.some((l) => l.type === 'move'),
-    read: logs.some((l) => l.type === 'book' || l.type === 'essay' || l.type === 'study'),
+    read: logs.some((l) => l.type === 'book' || l.type === 'essay' || l.type === 'study' || l.type === 'english'),
     build: logs.some((l) => l.type === 'work'),
   };
 }
@@ -214,7 +228,7 @@ export function questProgress(logs) {
   const count = (types) => logs.filter((l) => types.includes(l.type)).length;
   const mk = (met, text) => ({ met, text });
   const moveN = count(['move']);
-  const readN = count(['book', 'essay', 'study']);
+  const readN = count(['book', 'essay', 'study', 'english']);
   const buildN = count(['work']);
   return {
     hydrate: mk(water >= 2, `${r1(water)}/2L`),
@@ -227,7 +241,7 @@ export function questProgress(logs) {
 // Which life-domain (stat) each log type feeds — used for breadth/balance.
 const TYPE_DOMAIN = {
   water: 'body', sleep: 'body', meal: 'body', move: 'body',
-  book: 'mind', essay: 'mind', study: 'mind', note: 'mind',
+  book: 'mind', essay: 'mind', study: 'mind', note: 'mind', english: 'mind',
   work: 'forge',
   mood: 'spirit', social: 'spirit', reflect: 'spirit',
   restraint: 'discipline',
@@ -505,6 +519,7 @@ const DOMAIN_BY_ACTION = {
   finish_book: 'mind',
   log_essay: 'mind',
   log_study: 'mind',
+  log_english: 'mind',
 };
 
 // Current decayed condition for a domain (null if he's never trained it — no debuff then).

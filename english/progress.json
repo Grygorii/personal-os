@@ -1,0 +1,67 @@
+{
+  "_comment": "The brain. Claude reads/writes this every class. 'bucket': new|learning|review|mastered. 'due' is the next date to test (YYYY-MM-DD). Intervals grow with 'streak': 0->+1d, 1->+3d, 2->+7d, 3->+16d, 4->+35d, then mastered.",
+  "learner": {
+    "name": "Гріша",
+    "context": "Team Lead at Accenture (EMEA collections); 5 years in Ireland",
+    "goal": "Cambridge C2 Proficiency",
+    "profile": "Conversationally fluent from immersion; formal grammar knowledge limited; vocabulary precision and spelling under normal typing pull the picture down. Wants a foundational rebuild from parts of speech up, not just error-patching."
+  },
+  "level": {
+    "placement": "B1-B2",
+    "note": "Structure trends B2/C1 when slowed down; spelling + vocab precision at typing speed pull it down. Learner thinks the placement may be generous. Re-assess every ~10 classes."
+  },
+  "session_count": 0,
+  "updated": "2026-07-11",
+  "items": {
+    "rule:parts-of-speech": {
+      "type": "rule", "ref": "rules/00-parts-of-speech.md",
+      "bucket": "learning", "streak": 0, "last": null, "due": "2026-07-11",
+      "note": "Lesson 1, in progress. Only loose familiarity with the 8 categories."
+    },
+    "rule:articles-institutions": {
+      "type": "rule", "ref": "rules/01-articles.md#institutions",
+      "bucket": "review", "streak": 2, "last": "2026-07-11", "due": "2026-07-18",
+      "note": "Drilled ~5/6 correct. Strong. Spot-check only."
+    },
+    "rule:comma-splice": {
+      "type": "rule", "ref": "rules/02-comma-splices.md",
+      "bucket": "learning", "streak": 0, "last": null, "due": "2026-07-11",
+      "note": "His single most frequent punctuation error, casual and work writing."
+    },
+    "pattern:tense-shift": {
+      "type": "pattern", "ref": "patterns.md#tense-shift",
+      "bucket": "learning", "streak": 0, "last": null, "due": "2026-07-11",
+      "note": "Tense switches mid-sentence under typing speed."
+    },
+    "word:to-too": {
+      "type": "word", "ref": "words.md#to-too-two",
+      "bucket": "learning", "streak": 0, "last": null, "due": "2026-07-11",
+      "note": "Persists even under focused testing — not just a speed issue."
+    },
+    "word:son-sun": {
+      "type": "word", "ref": "words.md#son-sun",
+      "bucket": "learning", "streak": 0, "last": null, "due": "2026-07-11",
+      "note": "Surfaced in a real work message to his manager. Real vocab gap, not a typo."
+    },
+    "word:knew-new": {
+      "type": "word", "ref": "words.md#knew-new",
+      "bucket": "learning", "streak": 0, "last": null, "due": "2026-07-11",
+      "note": "Wrote 'new' for the past tense of 'know'."
+    },
+    "pattern:spelling-precision": {
+      "type": "pattern", "ref": "patterns.md#spelling-precision",
+      "bucket": "learning", "streak": 0, "last": null, "due": "2026-07-11",
+      "note": "Cluster of high-frequency misspellings at typing speed (see words.md typo list)."
+    },
+    "rule:immerse-reflexive": {
+      "type": "rule", "ref": "rules/03-reflexive-verbs.md#immerse",
+      "bucket": "learning", "streak": 0, "last": null, "due": "2026-07-11",
+      "note": "'immerse myself in', not 'immerse in'. Introduced."
+    },
+    "word:checkout-check-out": {
+      "type": "word", "ref": "words.md#checkout-check-out",
+      "bucket": "learning", "streak": 0, "last": null, "due": "2026-07-11",
+      "note": "'checkout' noun/adj; 'check out' verb (two words). Introduced."
+    }
+  }
+}

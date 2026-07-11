@@ -1,0 +1,431 @@
+<title>English → C2 study deck</title>
+<style>
+  :root{
+    --paper:#EDF1F0; --surface:#FFFFFF; --raise:#F6F8F8;
+    --ink:#16232A; --muted:#5C6B72; --faint:#8A979C; --line:#DBE3E3;
+    --accent:#0E7C86; --accent-strong:#0A5C64; --accent-tint:#E1F0F0;
+    --good:#2E9E5E; --good-tint:#E4F3EA;
+    --warn:#B98511; --warn-tint:#F6ECD6;
+    --bad:#CE4A3E; --bad-tint:#F7E4E1;
+    --serif:"Iowan Old Style",Georgia,"Palatino Linotype",Palatino,"Times New Roman",serif;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --mono:ui-monospace,"SF Mono","Cascadia Code",Menlo,Consolas,monospace;
+    --radius:12px;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --paper:#0E1518; --surface:#172127; --raise:#1E2A30;
+      --ink:#E7ECEC; --muted:#93A2A7; --faint:#6E7E83; --line:#27353B;
+      --accent:#38B6C1; --accent-strong:#5FCbd4; --accent-tint:#123037;
+      --good:#43B571; --good-tint:#12291C;
+      --warn:#DBAE45; --warn-tint:#2C2410;
+      --bad:#E1685C; --bad-tint:#301715;
+    }
+  }
+  :root[data-theme="light"]{
+    --paper:#EDF1F0; --surface:#FFFFFF; --raise:#F6F8F8;
+    --ink:#16232A; --muted:#5C6B72; --faint:#8A979C; --line:#DBE3E3;
+    --accent:#0E7C86; --accent-strong:#0A5C64; --accent-tint:#E1F0F0;
+    --good:#2E9E5E; --good-tint:#E4F3EA; --warn:#B98511; --warn-tint:#F6ECD6;
+    --bad:#CE4A3E; --bad-tint:#F7E4E1;
+  }
+  :root[data-theme="dark"]{
+    --paper:#0E1518; --surface:#172127; --raise:#1E2A30;
+    --ink:#E7ECEC; --muted:#93A2A7; --faint:#6E7E83; --line:#27353B;
+    --accent:#38B6C1; --accent-strong:#5FCbd4; --accent-tint:#123037;
+    --good:#43B571; --good-tint:#12291C; --warn:#DBAE45; --warn-tint:#2C2410;
+    --bad:#E1685C; --bad-tint:#301715;
+  }
+  *{box-sizing:border-box}
+  .wrap{max-width:600px;margin:0 auto;padding:0 16px 64px;color:var(--ink);
+    font-family:var(--sans);line-height:1.6;-webkit-text-size-adjust:100%}
+  .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+  header{padding:22px 2px 14px}
+  .kicker{font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);font-weight:600}
+  h1{font-family:var(--serif);font-weight:600;font-size:1.7rem;margin:.15rem 0 .1rem;letter-spacing:-.01em}
+  .sub{color:var(--muted);font-size:.9rem;margin:0}
+  nav{display:flex;gap:6px;background:var(--raise);border:1px solid var(--line);
+    border-radius:var(--radius);padding:5px;position:sticky;top:8px;z-index:5}
+  nav button{flex:1;border:0;background:transparent;color:var(--muted);
+    font-family:var(--sans);font-size:.9rem;font-weight:600;padding:9px 4px;border-radius:9px;cursor:pointer}
+  nav button[aria-selected="true"]{background:var(--surface);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.08)}
+  nav button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .panel{margin-top:18px}
+  .panel[hidden]{display:none}
+  .meter{height:6px;background:var(--line);border-radius:99px;overflow:hidden;margin:2px 2px 16px}
+  .meter i{display:block;height:100%;background:var(--accent);width:0;transition:width .35s ease;border-radius:99px}
+  .count{display:flex;justify-content:space-between;align-items:center;font-size:.8rem;color:var(--muted);margin:0 2px 8px}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:26px 22px;min-height:250px;display:flex;flex-direction:column}
+  .card.mark-green{border-color:var(--good)} .card.mark-yellow{border-color:var(--warn)} .card.mark-red{border-color:var(--bad)}
+  .pos{font-size:.75rem;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);font-weight:600}
+  .term{font-family:var(--serif);font-size:2.3rem;font-weight:600;line-height:1.15;margin:.25rem 0 .1rem;letter-spacing:-.01em;text-wrap:balance}
+  .prompt-think{color:var(--muted);font-size:.92rem;margin-top:4px}
+  .reveal{margin-top:14px;padding-top:14px;border-top:1px dashed var(--line)}
+  .sense{margin:0 0 10px;font-size:1.05rem}
+  .eg{font-family:var(--serif);font-style:italic;color:var(--muted);font-size:1.02rem;margin:2px 0 0}
+  .flag-note{margin-top:12px;font-size:.82rem;color:var(--muted);background:var(--raise);border:1px solid var(--line);border-radius:9px;padding:8px 10px}
+  .def-word{cursor:pointer;border-radius:3px;padding:0 1px}
+  .def-word.hasgloss{border-bottom:1px dotted var(--faint)}
+  .def-word:hover{background:var(--accent-tint)}
+  .def-word.flag{background:var(--bad-tint);border-bottom:2px solid var(--bad);color:var(--bad)}
+  .say{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 12px}
+  .say .lab{font-family:var(--sans);font-size:.7rem;letter-spacing:.1em;text-transform:uppercase;color:var(--faint)}
+  .say .phon{font-family:var(--mono);font-size:1rem;font-weight:600;color:var(--accent-strong)}
+  .hear{border:1px solid var(--line);background:var(--raise);color:var(--accent-strong);font-family:var(--sans);font-weight:600;font-size:.8rem;padding:5px 11px;border-radius:8px;cursor:pointer}
+  .hear:hover{background:var(--accent-tint)} .hear:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .tap-hint{font-size:.8rem;color:var(--accent-strong);margin-top:14px;display:flex;align-items:center;gap:6px}
+  .tray{margin-top:8px;display:flex;flex-direction:column;gap:6px}
+  .tray:empty{display:none}
+  .tray .row{font-size:.9rem;background:var(--raise);border:1px solid var(--line);border-radius:9px;padding:8px 11px;line-height:1.45}
+  .tray .row b{font-family:var(--serif);color:var(--ink);font-weight:600}
+  .tray .row .g{color:var(--muted)} .tray .row .ask{color:var(--bad);font-style:italic}
+  .spacer{flex:1}
+  .btn{width:100%;border:1px solid var(--accent);background:var(--accent);color:#fff;font-family:var(--sans);font-weight:600;font-size:1rem;padding:13px;border-radius:11px;cursor:pointer;margin-top:16px}
+  .btn:focus-visible{outline:2px solid var(--accent-strong);outline-offset:2px}
+  .btn.ghost{background:transparent;color:var(--accent);border-color:var(--line)}
+  .grade{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:16px}
+  .grade button{border:1px solid var(--line);border-radius:11px;padding:11px 4px;cursor:pointer;font-family:var(--sans);font-weight:600;font-size:.86rem;background:var(--surface);color:var(--ink);display:flex;flex-direction:column;align-items:center;gap:3px;line-height:1.15}
+  .grade .dot{width:11px;height:11px;border-radius:99px}
+  .g-green .dot{background:var(--good)} .g-yellow .dot{background:var(--warn)} .g-red .dot{background:var(--bad)}
+  .grade .g-green{background:var(--good-tint);border-color:var(--good)}
+  .grade .g-yellow{background:var(--warn-tint);border-color:var(--warn)}
+  .grade .g-red{background:var(--bad-tint);border-color:var(--bad)}
+  .grade small{color:var(--faint);font-weight:500;font-size:.72rem}
+  .grade button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  input[type=text]{width:100%;font-family:var(--mono);font-size:1.15rem;padding:12px 14px;border:1px solid var(--line);border-radius:11px;background:var(--raise);color:var(--ink);margin-top:14px}
+  input[type=text]:focus-visible{outline:2px solid var(--accent);outline-offset:1px;border-color:var(--accent)}
+  .verdict{margin-top:14px;font-family:var(--mono);font-size:1.05rem}
+  .verdict .ok{color:var(--good)} .verdict .no{color:var(--bad);text-decoration:line-through} .verdict .corr{color:var(--accent-strong);font-weight:600}
+  .done{text-align:center;padding:26px 8px}
+  .done h3{font-family:var(--serif);font-size:1.35rem;margin:.2rem 0 .4rem}
+  .redlist{text-align:left;margin:14px 0 0}
+  .chip{display:inline-block;background:var(--bad-tint);color:var(--bad);border-radius:8px;padding:3px 9px;margin:3px 4px 0;font-size:.85rem;font-weight:600}
+  .chip.y{background:var(--warn-tint);color:var(--warn)}
+  .rule{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px 18px 6px;margin-bottom:16px}
+  .rule h2{font-family:var(--serif);font-size:1.22rem;font-weight:600;margin:0 0 4px}
+  .rule p{font-size:.94rem;margin:.4rem 0 .8rem}
+  .rule .lead{color:var(--muted)}
+  .tbl{overflow-x:auto;margin:0 0 14px}
+  table{border-collapse:collapse;width:100%;font-size:.88rem;min-width:340px}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-size:.72rem;letter-spacing:.05em;text-transform:uppercase;color:var(--faint);font-weight:600}
+  td code,p code{font-family:var(--mono);font-size:.85em;background:var(--raise);padding:1px 5px;border-radius:5px}
+  .x{color:var(--bad);font-weight:600} .ok2{color:var(--good);font-weight:600}
+  footer{margin-top:22px;display:flex;gap:8px;flex-wrap:wrap;justify-content:center;font-size:.82rem;color:var(--faint)}
+  footer button{background:transparent;border:1px solid var(--line);color:var(--muted);border-radius:9px;padding:8px 12px;font-family:var(--sans);font-weight:600;font-size:.82rem;cursor:pointer}
+  .toast{position:sticky;bottom:14px;margin:14px auto 0;max-width:340px;text-align:center;background:var(--ink);color:var(--paper);border-radius:10px;padding:10px 14px;font-size:.86rem;opacity:0;transition:opacity .3s;pointer-events:none}
+  .toast.show{opacity:1}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap">
+  <h2 class="sr">English to C2 study — meaning flashcards where you can tap any word you don't know, a spelling quiz, and a grammar reference.</h2>
+  <header>
+    <div class="kicker">English &rarr; C2 &middot; for Гріша</div>
+    <h1>Your study deck</h1>
+    <p class="sub">Think first, then reveal. Tap any word you don't know — even inside the explanation.</p>
+  </header>
+
+  <nav role="tablist" aria-label="Study modes">
+    <button role="tab" id="tab-meaning" aria-selected="true" aria-controls="p-meaning">Meaning</button>
+    <button role="tab" id="tab-spelling" aria-selected="false" aria-controls="p-spelling">Spelling</button>
+    <button role="tab" id="tab-grammar" aria-selected="false" aria-controls="p-grammar">Grammar</button>
+  </nav>
+
+  <section id="p-meaning" class="panel" role="tabpanel" aria-labelledby="tab-meaning">
+    <div class="count"><span id="m-count">Card 1</span><span id="m-known">—</span></div>
+    <div class="meter"><i id="m-meter"></i></div>
+    <div id="m-slot"></div>
+  </section>
+
+  <section id="p-spelling" class="panel" role="tabpanel" aria-labelledby="tab-spelling" hidden>
+    <div class="count"><span id="s-count">Word 1</span><span id="s-known">—</span></div>
+    <div class="meter"><i id="s-meter"></i></div>
+    <div id="s-slot"></div>
+  </section>
+
+  <section id="p-grammar" class="panel" role="tabpanel" aria-labelledby="tab-grammar" hidden>
+    <div id="g-slot"></div>
+  </section>
+
+  <footer>
+    <button id="export">Copy results for Claude</button>
+    <button id="reset">Reset progress</button>
+    <button id="theme">Toggle light/dark</button>
+  </footer>
+  <div class="toast" id="toast" role="status"></div>
+</div>
+
+<script>
+const VOCAB = [
+  {w:"holistic",pos:"adjective",senses:["Looking at the whole thing and all its parts together, not just one part."],eg:"We took a holistic view of the account, not just the one overdue invoice.",flag:"The word that sent your answer the wrong way. Very common at C2."},
+  {w:"mitigate",pos:"verb",senses:["To make something bad less strong — to reduce the harm or risk."],eg:"We set up a payment plan to mitigate the risk.",flag:"Useful at work. Not the same as 'militate'."},
+  {w:"nuance",pos:"noun",senses:["A very small difference in meaning or feeling that is easy to miss."],eg:"His feedback had a nuance the summary missed.",flag:"'subtle' means so small it is hard to notice — tap it if unsure."},
+  {w:"prone",pos:"adjective",senses:["Likely to do or get something, usually something bad. Used as 'prone to'.","Lying flat with your face down."],eg:"This process is prone to errors when we rush.",flag:"Two meanings — know both."},
+  {w:"tedious",pos:"adjective",senses:["Boring because it is slow, long, or repeats a lot."],eg:"Checking the ledger by hand is tedious.",flag:""},
+  {w:"redundant",pos:"adjective",senses:["Not needed because it repeats something already there.","(UK/Ireland, about a job) no longer needed, so the person loses their job — 'made redundant'."],eg:"That line is redundant — you already said it above.",flag:"The 'made redundant' meaning is common in Irish work English."},
+  {w:"thorough",pos:"adjective",senses:["Complete and careful, leaving nothing out."],eg:"She did a thorough review before sending it.",flag:"Spelling: thorough ≠ through ≠ though."},
+  {w:"deliberate",pos:"adjective / verb",senses:["(adjective) Done on purpose.","(adjective) Slow and careful, not rushed.","(verb, said 'de-LIB-er-ate') to think about something carefully before you decide."],eg:"That was a deliberate choice, not a mistake.",flag:"The adjective and verb sound different."},
+  {w:"ambiguous",pos:"adjective",senses:["Having more than one possible meaning, so it is not clear which one is meant."],eg:"The request was ambiguous, so I asked him to clarify.",flag:""},
+  {w:"arguably",pos:"adverb",senses:["A word used to say something can reasonably be argued — 'you could make the case that…'."],eg:"Arguably, this is the best approach we have.",flag:"A strong, careful word for essays."},
+  {w:"scope",pos:"noun / verb",senses:["(noun) how much something covers — its range.","(verb) 'to scope out' = to check or look into something."],eg:"That is outside the scope of this ticket.",flag:""},
+  {w:"whether / weather",pos:"pair",senses:["<b>whether</b> — introduces a choice, like 'if': I don't know whether to stay or go.","<b>weather</b> — rain, sun, temperature; also 'to weather a storm' = get through a hard time."],eg:"I'm not sure whether the weather will hold.",flag:"Homophones — sound the same, different words."},
+  {w:"son / sun",pos:"pair",senses:["<b>son</b> — a male child.","<b>sun</b> — the star, sunlight."],eg:"Her son played in the sun.",flag:"This one slipped into a real message to your manager."},
+  {w:"immerse",pos:"verb",senses:["To put yourself fully into something — you need 'yourself': 'immerse myself in English'.","To put something fully into a liquid."],eg:"I immerse myself in English every day.",flag:"Not 'I immerse in English'. Also: 'I am immersed in English'."}
+];
+
+const GLOSS = {
+  whole:"all of it, every part together", part:"one piece of something bigger",
+  reduce:"make it smaller or less", harm:"damage or hurt",
+  risk:"the chance that something bad happens", likely:"will probably happen",
+  repeats:"says or does the same thing again", repeat:"say or do the same thing again",
+  purpose:"done because you wanted to, not by accident",
+  range:"how far it goes, from one end to the other",
+  reasonably:"in a fair, sensible way", argued:"gave reasons for or against something",
+  argue:"give reasons for or against something", obvious:"very easy to see or notice",
+  notice:"to see something or become aware of it", subtle:"so small it is hard to notice",
+  tone:"the feeling behind how something is said", register:"how formal or casual your language is",
+  liquid:"something that flows, like water", overdue:"late; past the time it should have happened",
+  clarify:"make something clearer", ledger:"a book or record of money in and out",
+  approach:"a way of dealing with something", errors:"mistakes"
+};
+
+const SAY = {
+  "holistic":"hoh-LISS-tik",
+  "mitigate":"MIT-ih-gayt",
+  "nuance":"NEW-ahnss",
+  "prone":"prohn (rhymes with 'own')",
+  "tedious":"TEE-dee-us",
+  "redundant":"rih-DUN-dunt",
+  "thorough":"THUH-ruh — the 'gh' is silent",
+  "deliberate":"adj: dih-LIB-er-it  ·  verb: dih-LIB-er-ayt",
+  "ambiguous":"am-BIG-yoo-us",
+  "arguably":"AR-gyoo-uh-blee",
+  "scope":"skohp",
+  "whether / weather":"both sound the same: WEH-ther",
+  "son / sun":"both sound the same: sun",
+  "immerse":"ih-MURSS"
+};
+
+const SPELL = [
+  {a:"phrases",hint:"groups of words that belong together, not full sentences",typo:"frazes"},
+  {a:"rules",hint:"the fixed statements of how grammar works",typo:"rools"},
+  {a:"sense",hint:"meaning; or 'it makes ___'",typo:"sence"},
+  {a:"spelling",hint:"writing a word with its correct letters",typo:"speling"},
+  {a:"responsible",hint:"having a duty to deal with something",typo:"responcible"},
+  {a:"sentence",hint:"a complete unit of words with a subject and verb",typo:"sentance"},
+  {a:"remotely",hint:"working from home, not the office (adverb)",typo:"remotelly"},
+  {a:"hospital",hint:"where you go when you're ill or injured",typo:"fospital"},
+  {a:"yesterday",hint:"the day before today",typo:"yestarday"},
+  {a:"service",hint:"help or work done for a customer",typo:"serivese"},
+  {a:"already",hint:"before now; by this time (one word)",typo:"aready"},
+  {a:"weather",hint:"rain, sun, temperature outside",typo:"wheater"},
+  {a:"myself",hint:"the reflexive pronoun for 'I'",typo:"myselfe"},
+  {a:"general",hint:"broad, not specific",typo:"ganaral"},
+  {a:"approach",hint:"a way of dealing with something",typo:"approuch"},
+  {a:"outsourcing",hint:"paying an outside company to do work",typo:"outsourcinge"},
+  {a:"started",hint:"began (past tense)",typo:"sturted"},
+  {a:"YouTube",hint:"the video website (mind the capitals)",typo:"youttube"}
+];
+
+const GRAMMAR = [
+  {t:"Parts of speech",lead:"Every word does one job. Grammar rules are just how these jobs fit together.",
+   rows:[["Noun","names a thing/person/idea","team, report, courage"],["Verb","action or state","send, escalate, be"],["Adjective","describes a noun","urgent, overdue"],["Adverb","describes a verb/adj","quickly, remotely"],["Pronoun","stands in for a noun","I, it, they, myself"],["Preposition","shows relation","in, to, after, of"],["Conjunction","joins clauses","and, but, because"],["Article","specific vs general","a, an, the"]],
+   note:"The same word changes job by context: <i>I <b>report</b> to my manager</i> (verb) vs <i>I sent the <b>report</b></i> (noun). Ask not 'what part is it?' but 'what is it doing here?'"},
+  {t:"Comma splices — your #1 leak",lead:"Two full sentences joined by only a comma. A comma is too weak to hold them.",
+   rows:[["Period","<i>I finished it. I sent it.</i>","separate thoughts"],["Semicolon","<i>I finished it; I sent it.</i>","tightly linked"],["Comma + FANBOYS","<i>I finished it, so I sent it.</i>","show the link"],["Subordinator","<i>After I finished, I sent it.</i>","one depends on other"]],
+   note:"FANBOYS = for, and, nor, but, or, yet, so. Self-test: cover the comma — if <b>both</b> sides could stand alone as sentences, a bare comma is wrong."},
+  {t:"Articles — a / an / the",lead:"Flags whether a noun is general (a/an), specific (the), or general-uncountable (nothing).",
+   rows:[["a / an","<i>I need <b>a</b> ticket</i>","one, not yet specific"],["the","<i>Close <b>the</b> door</i>","we both know which"],["— (zero)","<i>I like — coffee</i>","general / uncountable"],["Institutions","<i>She's at — university</i>","for its purpose = no article"]],
+   note:"'at university / in hospital' (its purpose) drop the article; 'at <b>the</b> university' (the building) takes it. Proper names — Accenture, Ireland — take no article."},
+  {t:"Reflexive verbs",lead:"Use myself/yourself/… when the subject and object are the same person.",
+   rows:[["immerse yourself in","<i>I immerse <b>myself</b> in English</i>","required"],["pride yourself on","<i>He prides <b>himself</b> on accuracy</i>","required"],["familiarize yourself with","<i>Familiarize <b>yourself</b> with it</i>","required"],["feel / relax","<i>I feel tired</i> <span class='x'>not</span> <i>I feel myself tired</i>","don't add one"]],
+   note:"Some verbs need the reflexive; many already carry the meaning and adding 'myself' is a common error. For emphasis it's fine: <i>I did it <b>myself</b></i>."}
+];
+
+const KEY="english-study-v2";
+let state=JSON.parse(localStorage.getItem(KEY)||"{}");
+state.meaning=state.meaning||{}; state.spelling=state.spelling||{}; state.flagged=state.flagged||{};
+const save=()=>localStorage.setItem(KEY,JSON.stringify(state));
+const $=id=>document.getElementById(id);
+let mi=0,si=0;
+
+function toast(msg){const t=$("toast");t.textContent=msg;t.classList.add("show");setTimeout(()=>t.classList.remove("show"),2100);}
+
+function speak(word){
+  if(!("speechSynthesis" in window)){toast("This browser can't speak — use the respelling");return;}
+  const clean=word.replace(/\s*\/\s*/g,", ");
+  const u=new SpeechSynthesisUtterance(clean);
+  u.lang="en-GB"; u.rate=0.9;
+  speechSynthesis.cancel(); speechSynthesis.speak(u);
+}
+
+function fmtText(text){
+  if(text.indexOf("<")>-1) return text;
+  return text.split(/(\s+)/).map(part=>{
+    if(part===""||/^\s+$/.test(part)) return part;
+    const m=part.match(/^([^A-Za-z]*)([A-Za-z][A-Za-z'’\-]*)([^A-Za-z]*)$/);
+    if(!m) return part;
+    const pre=m[1],word=m[2],post=m[3];
+    const key=word.toLowerCase().replace(/[’']s$/,"");
+    const g=GLOSS[key];
+    if(word.length<3 && !g) return part;
+    const fl=state.flagged[key]?" flag":"";
+    return pre+`<span class="def-word${g?" hasgloss":""}${fl}" data-w="${key}"${g?` data-g="${g.replace(/"/g,"&quot;")}"`:""}>${word}</span>`+post;
+  }).join("");
+}
+function wireWords(root){
+  root.querySelectorAll(".def-word").forEach(sp=>sp.onclick=()=>{
+    const key=sp.dataset.w;
+    const on=!state.flagged[key];
+    if(on) state.flagged[key]={g:sp.dataset.g||""}; else delete state.flagged[key];
+    save(); sp.classList.toggle("flag",on); renderTray();
+  });
+}
+function renderTray(){
+  const tray=$("m-tray"); if(!tray) return;
+  const keys=Object.keys(state.flagged);
+  tray.innerHTML=keys.map(k=>{
+    const g=state.flagged[k].g;
+    return `<div class="row"><b>${k}</b> — ${g?`<span class="g">${g}</span>`:`<span class="ask">on your list — Claude explains this deeply next class</span>`}</div>`;
+  }).join("");
+}
+
+function renderMeaning(){
+  const c=VOCAB[mi];
+  const graded=Object.keys(state.meaning).length;
+  $("m-count").textContent=`Card ${mi+1} of ${VOCAB.length}`;
+  $("m-known").textContent=graded?`${graded} rated`:"—";
+  $("m-meter").style.width=(graded/VOCAB.length*100)+"%";
+  const prev=state.meaning[c.w];
+  const senses=c.senses.map(s=>`<p class="sense">${c.senses.length>1?"&bull; ":""}${fmtText(s)}</p>`).join("");
+  $("m-slot").innerHTML=`
+    <div class="card ${prev?("mark-"+prev):""}" id="m-card">
+      <div class="pos">${c.pos}</div>
+      <div class="term">${c.w}</div>
+      <div class="prompt-think" id="m-think">Do you know what this means? Think it through, then reveal.</div>
+      <div id="m-reveal" hidden>
+        <div class="reveal">${SAY[c.w]?`<div class="say"><span class="lab">say it</span><span class="phon">${SAY[c.w]}</span><button class="hear" id="m-hear" type="button" aria-label="Hear it pronounced">&#128266; Hear it</button></div>`:""}${senses}<p class="eg">&ldquo;${fmtText(c.eg)}&rdquo;</p>${c.flag?`<div class="flag-note">${c.flag}</div>`:""}</div>
+        <div class="tap-hint">&#9755; Tap any word you don't know — even in the explanation.</div>
+        <div class="tray" id="m-tray"></div>
+        <div class="grade">
+          <button class="g-green" data-g="green"><span class="dot"></span>Knew it<small>solid</small></button>
+          <button class="g-yellow" data-g="yellow"><span class="dot"></span>Roughly<small>fuzzy</small></button>
+          <button class="g-red" data-g="red"><span class="dot"></span>New to me<small>study it</small></button>
+        </div>
+      </div>
+      <div class="spacer"></div>
+      <button class="btn" id="m-btn">Reveal meaning</button>
+    </div>`;
+  $("m-btn").onclick=()=>{$("m-reveal").hidden=false;$("m-btn").hidden=true;$("m-think").textContent="How close were you? Tap words you don't know.";};
+  wireWords($("m-slot")); renderTray();
+  const hb=$("m-hear"); if(hb) hb.onclick=()=>speak(c.w);
+  $("m-slot").querySelectorAll(".grade button").forEach(b=>b.onclick=()=>{
+    state.meaning[c.w]=b.dataset.g;save();
+    $("m-card").className="card mark-"+b.dataset.g;
+    setTimeout(()=>{ if(mi<VOCAB.length-1){mi++;renderMeaning();} else meaningDone(); },260);
+  });
+}
+function meaningDone(){
+  const reds=VOCAB.filter(c=>state.meaning[c.w]==="red").map(c=>c.w);
+  const yel=VOCAB.filter(c=>state.meaning[c.w]==="yellow").map(c=>c.w);
+  const green=VOCAB.filter(c=>state.meaning[c.w]==="green").length;
+  const dug=Object.keys(state.flagged);
+  $("m-known").textContent=`${VOCAB.length} rated`;$("m-meter").style.width="100%";
+  $("m-slot").innerHTML=`<div class="card done">
+    <h3>Deck complete</h3>
+    <p class="sub">${green} solid &middot; ${yel.length} fuzzy &middot; ${reds.length} new</p>
+    ${reds.length?`<div class="redlist"><div class="pos">Study these next</div>${reds.map(w=>`<span class="chip">${w}</span>`).join("")}</div>`:""}
+    ${yel.length?`<div class="redlist"><div class="pos">Firm these up</div>${yel.map(w=>`<span class="chip y">${w}</span>`).join("")}</div>`:""}
+    ${dug.length?`<div class="redlist"><div class="pos">Words you tapped to dig into</div>${dug.map(w=>`<span class="chip">${w}</span>`).join("")}</div>`:""}
+    <button class="btn ghost" id="m-again">Go through again</button>
+  </div>`;
+  $("m-again").onclick=()=>{mi=0;renderMeaning();};
+}
+
+function renderSpelling(){
+  const c=SPELL[si];
+  const graded=Object.keys(state.spelling).length;
+  $("s-count").textContent=`Word ${si+1} of ${SPELL.length}`;
+  $("s-known").textContent=graded?`${graded} done`:"—";
+  $("s-meter").style.width=(graded/SPELL.length*100)+"%";
+  $("s-slot").innerHTML=`
+    <div class="card" id="s-card">
+      <div class="pos">Type the word</div>
+      <div class="prompt-think" style="font-size:1.05rem;color:var(--ink);margin-top:6px">${c.hint}</div>
+      <input type="text" id="s-input" autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="off" placeholder="your spelling…" aria-label="Type the word">
+      <div id="s-verdict"></div>
+      <div class="spacer"></div>
+      <button class="btn" id="s-btn">Check</button>
+    </div>`;
+  const input=$("s-input");input.focus();
+  input.onkeydown=e=>{if(e.key==="Enter")$("s-btn").click();};
+  $("s-btn").onclick=()=>{
+    const val=input.value.trim();
+    if(!val)return;
+    const ok=val.toLowerCase()===c.a.toLowerCase();
+    state.spelling[c.a]=ok?"green":"red";save();
+    $("s-verdict").innerHTML=ok
+      ? `<div class="verdict"><span class="ok">&check; ${c.a}</span></div>`
+      : `<div class="verdict"><span class="no">${val}</span> &rarr; <span class="corr">${c.a}</span></div>`;
+    $("s-card").className="card mark-"+(ok?"green":"red");
+    input.disabled=true;
+    const btn=$("s-btn");btn.textContent=si<SPELL.length-1?"Next word":"Finish";
+    btn.onclick=()=>{ if(si<SPELL.length-1){si++;renderSpelling();} else spellingDone(); };
+  };
+}
+function spellingDone(){
+  const missed=SPELL.filter(c=>state.spelling[c.a]==="red").map(c=>c.a);
+  const right=SPELL.length-missed.length;
+  $("s-known").textContent=`${SPELL.length} done`;$("s-meter").style.width="100%";
+  $("s-slot").innerHTML=`<div class="card done">
+    <h3>${right} / ${SPELL.length} correct</h3>
+    ${missed.length?`<div class="redlist"><div class="pos">Re-drill these</div>${missed.map(w=>`<span class="chip">${w}</span>`).join("")}</div>`:`<p class="sub">Clean sweep. This set is retired for now.</p>`}
+    <button class="btn ghost" id="s-again">Go again</button>
+  </div>`;
+  $("s-again").onclick=()=>{si=0;renderSpelling();};
+}
+
+function renderGrammar(){
+  $("g-slot").innerHTML=GRAMMAR.map(g=>`
+    <div class="rule">
+      <h2>${g.t}</h2>
+      <p class="lead">${g.lead}</p>
+      <div class="tbl"><table><tbody>
+        ${g.rows.map(r=>`<tr>${r.map((cell,i)=>i===0?`<th scope="row" style="text-transform:none;color:var(--ink);font-size:.86rem;letter-spacing:0">${cell}</th>`:`<td>${cell}</td>`).join("")}</tr>`).join("")}
+      </tbody></table></div>
+      <p>${g.note}</p>
+    </div>`).join("");
+}
+
+const tabs=[["tab-meaning","p-meaning"],["tab-spelling","p-spelling"],["tab-grammar","p-grammar"]];
+tabs.forEach(([tab,pan])=>{
+  $(tab).onclick=()=>{
+    tabs.forEach(([t,p])=>{$(t).setAttribute("aria-selected",t===tab);$(p).hidden=(p!==pan);});
+    if(pan==="p-spelling"&&$("s-input"))$("s-input").focus();
+  };
+});
+
+$("export").onclick=()=>{
+  const mr=VOCAB.filter(c=>state.meaning[c.w]==="red").map(c=>c.w);
+  const my=VOCAB.filter(c=>state.meaning[c.w]==="yellow").map(c=>c.w);
+  const sm=SPELL.filter(c=>state.spelling[c.a]==="red").map(c=>c.a);
+  const dug=Object.keys(state.flagged);
+  const d=new Date().toISOString().slice(0,10);
+  const txt=`English study results — ${d}\n`+
+    `Meaning · new to me (red): ${mr.join(", ")||"none"}\n`+
+    `Meaning · fuzzy (yellow): ${my.join(", ")||"none"}\n`+
+    `Spelling · missed: ${sm.join(", ")||"none"}\n`+
+    `Words I tapped inside explanations (go deeper): ${dug.join(", ")||"none"}\n`+
+    `Please explain the tapped words simply, add every one to my word bank with all senses, and build my next class around these.`;
+  navigator.clipboard.writeText(txt).then(()=>toast("Copied — paste it to Claude"),()=>toast("Copy failed — long-press to select"));
+};
+$("reset").onclick=()=>{if(confirm("Clear all your ratings and tapped words?")){state={meaning:{},spelling:{},flagged:{}};save();mi=0;si=0;renderMeaning();renderSpelling();toast("Progress cleared");}};
+$("theme").onclick=()=>{
+  const cur=document.documentElement.getAttribute("data-theme");
+  const next=cur==="dark"?"light":cur==="light"?"dark":(matchMedia("(prefers-color-scheme: dark)").matches?"light":"dark");
+  document.documentElement.setAttribute("data-theme",next);
+};
+
+renderMeaning();renderSpelling();renderGrammar();
+</script>

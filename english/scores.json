@@ -1,0 +1,4 @@
+{
+  "_comment": "Longitudinal record of scored conversations. One entry per conversation. Scores are 1-5 on: clarity, grammar, vocab, concise, register. See conversation-method.md for the method and full schema. Empty until the first scored conversation.",
+  "conversations": []
+}
