@@ -45,9 +45,10 @@
   h1{font-family:var(--serif);font-weight:600;font-size:1.7rem;margin:.15rem 0 .1rem;letter-spacing:-.01em}
   .sub{color:var(--muted);font-size:.9rem;margin:0}
   nav{display:flex;gap:6px;background:var(--raise);border:1px solid var(--line);
-    border-radius:var(--radius);padding:5px;position:sticky;top:8px;z-index:5}
-  nav button{flex:1;border:0;background:transparent;color:var(--muted);
-    font-family:var(--sans);font-size:.9rem;font-weight:600;padding:9px 4px;border-radius:9px;cursor:pointer}
+    border-radius:var(--radius);padding:5px;position:sticky;top:8px;z-index:5;overflow-x:auto;scrollbar-width:none}
+  nav::-webkit-scrollbar{display:none}
+  nav button{flex:0 0 auto;border:0;background:transparent;color:var(--muted);white-space:nowrap;
+    font-family:var(--sans);font-size:.9rem;font-weight:600;padding:9px 14px;border-radius:9px;cursor:pointer}
   nav button[aria-selected="true"]{background:var(--surface);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.08)}
   nav button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
   .panel{margin-top:18px}
@@ -101,8 +102,21 @@
   .redlist{text-align:left;margin:14px 0 0}
   .chip{display:inline-block;background:var(--bad-tint);color:var(--bad);border-radius:8px;padding:3px 9px;margin:3px 4px 0;font-size:.85rem;font-weight:600}
   .chip.y{background:var(--warn-tint);color:var(--warn)}
-  .rule{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px 18px 6px;margin-bottom:16px}
-  .rule h2{font-family:var(--serif);font-size:1.22rem;font-weight:600;margin:0 0 4px}
+  /* lessons */
+  .lmenu{display:flex;flex-direction:column;gap:10px}
+  .lcard{display:flex;align-items:center;gap:13px;text-align:left;width:100%;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px 15px;cursor:pointer;font-family:var(--sans);color:var(--ink)}
+  .lcard:hover{border-color:var(--accent)}
+  .lcard:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .lnum{width:36px;height:36px;border-radius:10px;background:var(--accent-tint);color:var(--accent-strong);font-weight:600;display:flex;align-items:center;justify-content:center;flex:none;font-family:var(--serif);font-size:1.1rem}
+  .lt{flex:1;min-width:0}
+  .lt .ltag{font-size:.7rem;color:var(--faint);text-transform:uppercase;letter-spacing:.06em;font-weight:600}
+  .lt .lname{font-weight:600;font-size:1.05rem;font-family:var(--serif)}
+  .lt .llead{color:var(--muted);font-size:.85rem;margin-top:1px}
+  .lchev{color:var(--faint);font-size:1.2rem}
+  .lback{background:transparent;border:0;color:var(--accent);font-weight:600;font-size:.92rem;cursor:pointer;padding:4px 2px;margin-bottom:8px;font-family:var(--sans)}
+  .lwhy{background:var(--accent-tint);border-radius:10px;padding:12px 14px;font-size:.92rem;color:var(--accent-strong);margin:0 0 14px;line-height:1.5}
+  .rule{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px 18px 6px}
+  .rule h2{font-family:var(--serif);font-size:1.32rem;font-weight:600;margin:0 0 4px}
   .rule p{font-size:.94rem;margin:.4rem 0 .8rem}
   .rule .lead{color:var(--muted)}
   .tbl{overflow-x:auto;margin:0 0 14px}
@@ -111,6 +125,11 @@
   th{font-size:.72rem;letter-spacing:.05em;text-transform:uppercase;color:var(--faint);font-weight:600}
   td code,p code{font-family:var(--mono);font-size:.85em;background:var(--raise);padding:1px 5px;border-radius:5px}
   .x{color:var(--bad);font-weight:600} .ok2{color:var(--good);font-weight:600}
+  /* use of english */
+  .cloze-sent{font-family:var(--serif);font-size:1.28rem;line-height:1.55;margin:8px 0 2px}
+  .cloze-gap{display:inline-block;min-width:74px;border-bottom:2px solid var(--accent);vertical-align:baseline}
+  .cloze-why{margin-top:14px;background:var(--raise);border:1px solid var(--line);border-radius:10px;padding:12px 14px;font-size:.92rem;line-height:1.55}
+  .cloze-why b{color:var(--accent-strong);font-family:var(--serif)}
   footer{margin-top:22px;display:flex;gap:8px;flex-wrap:wrap;justify-content:center;font-size:.82rem;color:var(--faint)}
   footer button{background:transparent;border:1px solid var(--line);color:var(--muted);border-radius:9px;padding:8px 12px;font-family:var(--sans);font-weight:600;font-size:.82rem;cursor:pointer}
   .toast{position:sticky;bottom:14px;margin:14px auto 0;max-width:340px;text-align:center;background:var(--ink);color:var(--paper);border-radius:10px;padding:10px 14px;font-size:.86rem;opacity:0;transition:opacity .3s;pointer-events:none}
@@ -119,17 +138,18 @@
 </style>
 
 <div class="wrap">
-  <h2 class="sr">English to C2 study — meaning flashcards where you can tap any word you don't know, a spelling quiz, and a grammar reference.</h2>
+  <h2 class="sr">English to C2 study — meaning flashcards, a spelling quiz, a structured lessons library, and Use of English gap-fill practice.</h2>
   <header>
     <div class="kicker">English &rarr; C2 &middot; for Гріша</div>
     <h1>Your study deck</h1>
-    <p class="sub">Think first, then reveal. Tap any word you don't know — even inside the explanation.</p>
+    <p class="sub">Words, lessons, and Use of English — your C2 practice, in one place.</p>
   </header>
 
   <nav role="tablist" aria-label="Study modes">
     <button role="tab" id="tab-meaning" aria-selected="true" aria-controls="p-meaning">Meaning</button>
     <button role="tab" id="tab-spelling" aria-selected="false" aria-controls="p-spelling">Spelling</button>
-    <button role="tab" id="tab-grammar" aria-selected="false" aria-controls="p-grammar">Grammar</button>
+    <button role="tab" id="tab-lessons" aria-selected="false" aria-controls="p-lessons">Lessons</button>
+    <button role="tab" id="tab-use" aria-selected="false" aria-controls="p-use">Use of English</button>
   </nav>
 
   <section id="p-meaning" class="panel" role="tabpanel" aria-labelledby="tab-meaning">
@@ -144,8 +164,14 @@
     <div id="s-slot"></div>
   </section>
 
-  <section id="p-grammar" class="panel" role="tabpanel" aria-labelledby="tab-grammar" hidden>
-    <div id="g-slot"></div>
+  <section id="p-lessons" class="panel" role="tabpanel" aria-labelledby="tab-lessons" hidden>
+    <div id="l-slot"></div>
+  </section>
+
+  <section id="p-use" class="panel" role="tabpanel" aria-labelledby="tab-use" hidden>
+    <div class="count"><span id="u-count">Sentence 1</span><span id="u-known">—</span></div>
+    <div class="meter"><i id="u-meter"></i></div>
+    <div id="u-slot"></div>
   </section>
 
   <footer>
@@ -228,27 +254,57 @@ const SPELL = [
   {a:"YouTube",hint:"the video website (mind the capitals)",typo:"youttube"}
 ];
 
-const GRAMMAR = [
-  {t:"Parts of speech",lead:"Every word does one job. Grammar rules are just how these jobs fit together.",
+const LESSONS = [
+  {n:1,tag:"Foundation",t:"Parts of speech",lead:"The 8 jobs every word can do.",
+   why:"Every grammar rule is written in these words. Make them automatic and the rules read like plain instructions.",
    rows:[["Noun","names a thing/person/idea","team, report, courage"],["Verb","action or state","send, escalate, be"],["Adjective","describes a noun","urgent, overdue"],["Adverb","describes a verb/adj","quickly, remotely"],["Pronoun","stands in for a noun","I, it, they, myself"],["Preposition","shows relation","in, to, after, of"],["Conjunction","joins clauses","and, but, because"],["Article","specific vs general","a, an, the"]],
    note:"The same word changes job by context: <i>I <b>report</b> to my manager</i> (verb) vs <i>I sent the <b>report</b></i> (noun). Ask not 'what part is it?' but 'what is it doing here?'"},
-  {t:"Comma splices — your #1 leak",lead:"Two full sentences joined by only a comma. A comma is too weak to hold them.",
-   rows:[["Period","<i>I finished it. I sent it.</i>","separate thoughts"],["Semicolon","<i>I finished it; I sent it.</i>","tightly linked"],["Comma + FANBOYS","<i>I finished it, so I sent it.</i>","show the link"],["Subordinator","<i>After I finished, I sent it.</i>","one depends on other"]],
-   note:"FANBOYS = for, and, nor, but, or, yet, so. Self-test: cover the comma — if <b>both</b> sides could stand alone as sentences, a bare comma is wrong."},
-  {t:"Articles — a / an / the",lead:"Flags whether a noun is general (a/an), specific (the), or general-uncountable (nothing).",
+  {n:2,tag:"Foundation",t:"Articles — a / an / the",lead:"General, specific, or nothing.",
+   why:"A tiny word natives place without thinking — getting it right is a quiet mark of real fluency.",
    rows:[["a / an","<i>I need <b>a</b> ticket</i>","one, not yet specific"],["the","<i>Close <b>the</b> door</i>","we both know which"],["— (zero)","<i>I like — coffee</i>","general / uncountable"],["Institutions","<i>She's at — university</i>","for its purpose = no article"]],
    note:"'at university / in hospital' (its purpose) drop the article; 'at <b>the</b> university' (the building) takes it. Proper names — Accenture, Ireland — take no article."},
-  {t:"Reflexive verbs",lead:"Use myself/yourself/… when the subject and object are the same person.",
+  {n:3,tag:"Punctuation",t:"Comma splices",lead:"Two sentences held by one weak comma.",
+   why:"Your #1 leak — and fixing it teaches you clauses, which all of C2 grammar is built on.",
+   rows:[["Period","<i>I finished it. I sent it.</i>","separate thoughts"],["Semicolon","<i>I finished it; I sent it.</i>","tightly linked"],["Comma + FANBOYS","<i>I finished it, so I sent it.</i>","show the link"],["Subordinator","<i>After I finished, I sent it.</i>","one depends on other"]],
+   note:"FANBOYS = for, and, nor, but, or, yet, so. Self-test: cover the comma — if <b>both</b> sides could stand alone as sentences, a bare comma is wrong."},
+  {n:4,tag:"Precision",t:"Reflexive verbs",lead:"myself, yourself — and when NOT to.",
+   why:"'I immerse myself', not 'I immerse'. Small word, but its absence sounds off to a native ear.",
    rows:[["immerse yourself in","<i>I immerse <b>myself</b> in English</i>","required"],["pride yourself on","<i>He prides <b>himself</b> on accuracy</i>","required"],["familiarize yourself with","<i>Familiarize <b>yourself</b> with it</i>","required"],["feel / relax","<i>I feel tired</i> <span class='x'>not</span> <i>I feel myself tired</i>","don't add one"]],
-   note:"Some verbs need the reflexive; many already carry the meaning and adding 'myself' is a common error. For emphasis it's fine: <i>I did it <b>myself</b></i>."}
+   note:"Some verbs need the reflexive; many already carry the meaning and adding 'myself' is a common error. For emphasis it's fine: <i>I did it <b>myself</b></i>."},
+  {n:5,tag:"Speaking",t:"Pronunciation & silent letters",lead:"Say it right, sound sure.",
+   why:"A mispronounced word makes a fluent speaker sound unsure. Stress and silent letters are the traps.",
+   rows:[["Silent b","su<b>b</b>tle, dou<b>b</b>t, com<b>b</b>","written, not said"],["Silent k","<b>k</b>now, <b>k</b>nee, <b>k</b>nife","the k is silent"],["Silent gh","thorou<b>gh</b>, thou<b>gh</b>, hi<b>gh</b>","not pronounced"],["Stress flips meaning","<b>RE</b>cord (noun) / re<b>CORD</b> (verb)","move the stress"]],
+   note:"We write sounds in CAPS for the stressed part — <i>nuance → NEW-ahnss</i>, <i>subtle → SUT-ul</i> — no strange symbols."},
+  {n:6,tag:"Foundation",t:"Present perfect vs past",lead:"'I did' vs 'I have done'.",
+   why:"The mix-up that most marks a non-native — English cares a lot whether the time is finished.",
+   rows:[["Past simple","<i>I sent it yesterday.</i>","finished time (said or clear)"],["Present perfect","<i>I have sent it.</i>","no time given / still relevant now"],["Signal words","ago, yesterday, in 2020 → <b>past</b>","already, yet, ever, since → <b>perfect</b>"]],
+   note:"If the time is finished and stated, use past simple. If it connects to now, or no time is given, use present perfect."}
+];
+
+// Use of English — the precise word. Built from Гриша's 'quarrel vs reason' insight:
+// the word you reach for feels close but isn't the one. 'answer' is the target; 'accept'
+// are weaker words he might reach for; 'why' teaches the precision.
+const CLOZE = [
+  {text:"He would ___ with anyone over the smallest thing.",answer:"quarrel",accept:["argue","bicker","fight"],hint:"a small, angry argument",
+   why:"to argue angrily about something small or petty. You reached for 'reason' — but reason is about logic or cause, not fighting. They only *felt* close."},
+  {text:"We put a plan in place to ___ the risk of default.",answer:"mitigate",accept:["reduce","lessen","lower"],hint:"make something bad less severe",
+   why:"to make something bad less severe. 'reduce' is close but plainer; 'mitigate' is the precise, professional word for softening a risk or harm."},
+  {text:"She is ___ about every detail in the report.",answer:"meticulous",accept:["careful","thorough","precise"],hint:"extremely careful and precise",
+   why:"extremely careful and precise about detail. 'careful' is weaker; 'meticulous' carries the intensity."},
+  {text:"Keep the email ___ — no wasted words.",answer:"concise",accept:["short","brief","tight"],hint:"short AND clear, nothing wasted",
+   why:"short and clear with nothing wasted. 'short' is only about length; 'concise' adds 'and every word earns its place' — your north star."},
+  {text:"He was ___ to take on any more work.",answer:"reluctant",accept:["unwilling","hesitant"],hint:"not really wanting to",
+   why:"unwilling, holding back. One precise word for 'he didn't really want to'."},
+  {text:"With that workload, burnout was ___.",answer:"inevitable",accept:["unavoidable","certain","coming"],hint:"certain, impossible to avoid",
+   why:"certain to happen and impossible to avoid. Tighter and stronger than 'it was going to happen'."}
 ];
 
 const KEY="english-study-v2";
 let state=JSON.parse(localStorage.getItem(KEY)||"{}");
-state.meaning=state.meaning||{}; state.spelling=state.spelling||{}; state.flagged=state.flagged||{};
+state.meaning=state.meaning||{}; state.spelling=state.spelling||{}; state.flagged=state.flagged||{}; state.cloze=state.cloze||{};
 const save=()=>localStorage.setItem(KEY,JSON.stringify(state));
 const $=id=>document.getElementById(id);
-let mi=0,si=0;
+let mi=0,si=0,ui=0;
 
 function toast(msg){const t=$("toast");t.textContent=msg;t.classList.add("show");setTimeout(()=>t.classList.remove("show"),2100);}
 
@@ -386,23 +442,97 @@ function spellingDone(){
   $("s-again").onclick=()=>{si=0;renderSpelling();};
 }
 
-function renderGrammar(){
-  $("g-slot").innerHTML=GRAMMAR.map(g=>`
+/* ---- Lessons: a structured, navigable library ---- */
+function renderLessons(){
+  const items=LESSONS.map((l,i)=>`<button class="lcard" data-i="${i}">
+      <span class="lnum">${l.n}</span>
+      <span class="lt"><span class="ltag">${l.tag}</span><span class="lname">${l.t}</span><span class="llead">${l.lead}</span></span>
+      <span class="lchev">›</span>
+    </button>`).join("");
+  $("l-slot").innerHTML=`<p class="sub" style="margin:0 2px 12px">Your curriculum — tap a lesson to open it.</p><div class="lmenu">${items}</div>`;
+  $("l-slot").querySelectorAll(".lcard").forEach(b=>b.onclick=()=>openLesson(+b.dataset.i));
+}
+function openLesson(i){
+  const l=LESSONS[i];
+  $("l-slot").innerHTML=`<button class="lback" id="l-back">&lsaquo; All lessons</button>
     <div class="rule">
-      <h2>${g.t}</h2>
-      <p class="lead">${g.lead}</p>
-      <div class="tbl"><table><tbody>
-        ${g.rows.map(r=>`<tr>${r.map((cell,i)=>i===0?`<th scope="row" style="text-transform:none;color:var(--ink);font-size:.86rem;letter-spacing:0">${cell}</th>`:`<td>${cell}</td>`).join("")}</tr>`).join("")}
-      </tbody></table></div>
-      <p>${g.note}</p>
-    </div>`).join("");
+      <div class="ltag" style="color:var(--accent);margin-bottom:2px">${l.tag} &middot; Lesson ${l.n}</div>
+      <h2>${l.t}</h2>
+      <p class="lead">${l.lead}</p>
+      ${l.why?`<div class="lwhy">${l.why}</div>`:""}
+      ${l.rows?`<div class="tbl"><table><tbody>${l.rows.map(r=>`<tr>${r.map((cell,j)=>j===0?`<th scope="row" style="text-transform:none;color:var(--ink);font-size:.86rem;letter-spacing:0">${cell}</th>`:`<td>${cell}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`:""}
+      ${l.note?`<p>${l.note}</p>`:""}
+    </div>`;
+  $("l-back").onclick=()=>renderLessons();
+  $("p-lessons").scrollIntoView({behavior:"smooth",block:"start"});
 }
 
-const tabs=[["tab-meaning","p-meaning"],["tab-spelling","p-spelling"],["tab-grammar","p-grammar"]];
+/* ---- Use of English: fill the gap with the precise word ---- */
+function renderUse(){
+  const c=CLOZE[ui];
+  const done=Object.keys(state.cloze).length;
+  $("u-count").textContent=`Sentence ${ui+1} of ${CLOZE.length}`;
+  $("u-known").textContent=done?`${done} practised`:"—";
+  $("u-meter").style.width=(done/CLOZE.length*100)+"%";
+  const sentence=c.text.replace("___",'<span class="cloze-gap">&nbsp;</span>');
+  $("u-slot").innerHTML=`
+    <div class="card" id="u-card">
+      <div class="pos">Fill the gap — the precise word</div>
+      <p class="cloze-sent">${sentence}</p>
+      ${c.hint?`<div class="prompt-think">meaning: ${c.hint}</div>`:""}
+      <input type="text" id="u-input" autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="off" placeholder="the word that fits…" aria-label="Type the word">
+      <div id="u-verdict"></div>
+      <div class="spacer"></div>
+      <button class="btn" id="u-btn">Check</button>
+    </div>`;
+  const input=$("u-input"); input.focus();
+  input.onkeydown=e=>{if(e.key==="Enter")$("u-btn").click();};
+  $("u-btn").onclick=()=>submitCloze(c,input);
+}
+function submitCloze(c,input){
+  const val=input.value.trim();
+  if(!val)return;
+  const low=val.toLowerCase();
+  const exact=low===c.answer.toLowerCase();
+  const near=(c.accept||[]).map(a=>a.toLowerCase()).includes(low);
+  let verdict;
+  if(exact) verdict=`<span class="ok">&check; ${c.answer}</span> — spot on.`;
+  else if(near) verdict=`<span class="corr">${val}</span> works, but the sharper word is <span class="corr">${c.answer}</span>.`;
+  else verdict=`<span class="no">${val}</span> &rarr; the word is <span class="corr">${c.answer}</span>.`;
+  $("u-verdict").innerHTML=`<div class="verdict">${verdict}</div>
+    <div class="cloze-why"><b>${c.answer}</b> — ${c.why}</div>
+    <div class="grade" id="u-grade">
+      <button class="g-green" data-g="green"><span class="dot"></span>Had it<small>solid</small></button>
+      <button class="g-yellow" data-g="yellow"><span class="dot"></span>Close<small>fuzzy</small></button>
+      <button class="g-red" data-g="red"><span class="dot"></span>Missed<small>practise</small></button>
+    </div>`;
+  input.disabled=true;
+  $("u-card").className="card mark-"+(exact?"green":near?"yellow":"red");
+  $("u-btn").hidden=true;
+  $("u-grade").querySelectorAll("button").forEach(b=>b.onclick=()=>{
+    state.cloze[c.answer]={rating:b.dataset.g,why:c.why,ts:Date.now()}; save();
+    if(ui<CLOZE.length-1){ui++;renderUse();} else useDone();
+  });
+}
+function useDone(){
+  const words=Object.keys(state.cloze);
+  const practise=words.filter(w=>state.cloze[w].rating!=="green");
+  $("u-known").textContent=`${words.length} practised`;$("u-meter").style.width="100%";
+  $("u-slot").innerHTML=`<div class="card done">
+    <h3>Set complete</h3>
+    <p class="sub">${words.length} precise words worked</p>
+    ${practise.length?`<div class="redlist"><div class="pos">Add these to practice</div>${practise.map(w=>`<span class="chip">${w}</span>`).join("")}</div>`:`<p class="sub">All sharp. Nice.</p>`}
+    <button class="btn ghost" id="u-again">Go again</button>
+  </div>`;
+  $("u-again").onclick=()=>{ui=0;renderUse();};
+}
+
+const tabs=[["tab-meaning","p-meaning"],["tab-spelling","p-spelling"],["tab-lessons","p-lessons"],["tab-use","p-use"]];
 tabs.forEach(([tab,pan])=>{
   $(tab).onclick=()=>{
     tabs.forEach(([t,p])=>{$(t).setAttribute("aria-selected",t===tab);$(p).hidden=(p!==pan);});
     if(pan==="p-spelling"&&$("s-input"))$("s-input").focus();
+    if(pan==="p-use"&&$("u-input"))$("u-input").focus();
   };
 });
 
@@ -411,21 +541,23 @@ $("export").onclick=()=>{
   const my=VOCAB.filter(c=>state.meaning[c.w]==="yellow").map(c=>c.w);
   const sm=SPELL.filter(c=>state.spelling[c.a]==="red").map(c=>c.a);
   const dug=Object.keys(state.flagged);
+  const cw=Object.keys(state.cloze).filter(w=>state.cloze[w].rating!=="green");
   const d=new Date().toISOString().slice(0,10);
   const txt=`English study results — ${d}\n`+
     `Meaning · new to me (red): ${mr.join(", ")||"none"}\n`+
     `Meaning · fuzzy (yellow): ${my.join(", ")||"none"}\n`+
     `Spelling · missed: ${sm.join(", ")||"none"}\n`+
     `Words I tapped inside explanations (go deeper): ${dug.join(", ")||"none"}\n`+
+    `Use of English · precise words to practise: ${cw.join(", ")||"none"}\n`+
     `Please explain the tapped words simply, add every one to my word bank with all senses, and build my next class around these.`;
   navigator.clipboard.writeText(txt).then(()=>toast("Copied — paste it to Claude"),()=>toast("Copy failed — long-press to select"));
 };
-$("reset").onclick=()=>{if(confirm("Clear all your ratings and tapped words?")){state={meaning:{},spelling:{},flagged:{}};save();mi=0;si=0;renderMeaning();renderSpelling();toast("Progress cleared");}};
+$("reset").onclick=()=>{if(confirm("Clear all your ratings and tapped words?")){state={meaning:{},spelling:{},flagged:{},cloze:{}};save();mi=0;si=0;ui=0;renderMeaning();renderSpelling();renderUse();toast("Progress cleared");}};
 $("theme").onclick=()=>{
   const cur=document.documentElement.getAttribute("data-theme");
   const next=cur==="dark"?"light":cur==="light"?"dark":(matchMedia("(prefers-color-scheme: dark)").matches?"light":"dark");
   document.documentElement.setAttribute("data-theme",next);
 };
 
-renderMeaning();renderSpelling();renderGrammar();
+renderMeaning();renderSpelling();renderLessons();renderUse();
 </script>
