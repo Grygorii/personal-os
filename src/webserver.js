@@ -12,6 +12,7 @@ const ROUTES = {
   '/home': { file: '../webapp/home.html' },
   '/deck': { file: '../english/study.html', homeBar: true },
   '/body': { file: '../body/map.html', homeBar: true },
+  '/reading': { file: '../reading/journal.html', homeBar: true },
 };
 
 // The deck and body pages are HTML fragments (authored for the Artifact host, which adds

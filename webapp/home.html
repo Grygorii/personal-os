@@ -9,14 +9,14 @@
 <style>
   :root{
     --paper:#EDF1F1; --surface:#FFFFFF; --ink:#17242B; --muted:#5E6B72; --faint:#8A979D; --line:#DBE3E4;
-    --teal:#0E7C86; --teal-tint:#E1F0F0; --coral:#BC4A34; --coral-tint:#F3E3DE; --violet:#5A4AB7; --violet-tint:#EAE7FA;
+    --teal:#0E7C86; --teal-tint:#E1F0F0; --coral:#BC4A34; --coral-tint:#F3E3DE; --violet:#5A4AB7; --violet-tint:#EAE7FA; --amber-tint:#F4EAD3;
     --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
     --serif:"Iowan Old Style",Georgia,"Palatino Linotype",Palatino,serif;
   }
   @media (prefers-color-scheme:dark){
     :root{
       --paper:#0F1519; --surface:#182229; --ink:#E7ECEE; --muted:#93A2A8; --faint:#6F7E84; --line:#26333A;
-      --teal:#38B6C1; --teal-tint:#123037; --coral:#E0705A; --coral-tint:#2C1712; --violet:#8F82E6; --violet-tint:#1E1B33;
+      --teal:#38B6C1; --teal-tint:#123037; --coral:#E0705A; --coral-tint:#2C1712; --violet:#8F82E6; --violet-tint:#1E1B33; --amber-tint:#2C2510;
     }
   }
   *{box-sizing:border-box}
@@ -34,7 +34,7 @@
     -webkit-tap-highlight-color:transparent;transition:transform .08s ease}
   a.tile:active{transform:scale(.985)}
   .ic{width:46px;height:46px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px;flex:none}
-  .ic.t{background:var(--teal-tint)} .ic.c{background:var(--coral-tint)} .ic.v{background:var(--violet-tint)}
+  .ic.t{background:var(--teal-tint)} .ic.c{background:var(--coral-tint)} .ic.v{background:var(--violet-tint)} .ic.a{background:var(--amber-tint)}
   .tl{flex:1;min-width:0}
   .tl .n{font-weight:600;font-size:1.08rem}
   .tl .d{color:var(--muted);font-size:.88rem;margin-top:1px}
@@ -65,6 +65,11 @@
     <a class="tile" href="/body">
       <div class="ic c">🧍</div>
       <div class="tl"><div class="n">Body map</div><div class="d">Tap where it hurts, log it, talk it through</div></div>
+      <div class="chev">›</div>
+    </a>
+    <a class="tile" href="/reading">
+      <div class="ic a">📚</div>
+      <div class="tl"><div class="n">Reading journal</div><div class="d">Your books, stats, and the thoughts they spark</div></div>
       <div class="chev">›</div>
     </a>
     <span class="tile soon">

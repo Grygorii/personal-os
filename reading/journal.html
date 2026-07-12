@@ -1,0 +1,275 @@
+<title>Reading journal</title>
+<style>
+  :root{
+    --paper:#EEEDE8; --surface:#FFFFFF; --raise:#F6F4EE;
+    --ink:#26221A; --muted:#6B6459; --faint:#9A9488; --line:#DED9CF;
+    --accent:#B0791E; --accent-strong:#855808; --accent-tint:#F4EAD3; --star:#C8971F;
+    --good:#2E9E5E; --good-tint:#E4F3EA; --bad:#CE4A3E; --bad-tint:#F7E4E1;
+    --serif:"Iowan Old Style",Georgia,"Palatino Linotype",Palatino,"Times New Roman",serif;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --radius:12px;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --paper:#14130F; --surface:#1D1B16; --raise:#26241D;
+      --ink:#ECE8DF; --muted:#9C9686; --faint:#6E695C; --line:#2C2A22;
+      --accent:#D9AE4A; --accent-strong:#E8C56A; --accent-tint:#2C2510; --star:#D9AE4A;
+      --good:#43B571; --good-tint:#12291C; --bad:#E1685C; --bad-tint:#301715;
+    }
+  }
+  :root[data-theme="light"]{
+    --paper:#EEEDE8; --surface:#FFFFFF; --raise:#F6F4EE; --ink:#26221A; --muted:#6B6459;
+    --faint:#9A9488; --line:#DED9CF; --accent:#B0791E; --accent-strong:#855808; --accent-tint:#F4EAD3;
+    --star:#C8971F; --good:#2E9E5E; --good-tint:#E4F3EA; --bad:#CE4A3E; --bad-tint:#F7E4E1;
+  }
+  :root[data-theme="dark"]{
+    --paper:#14130F; --surface:#1D1B16; --raise:#26241D; --ink:#ECE8DF; --muted:#9C9686;
+    --faint:#6E695C; --line:#2C2A22; --accent:#D9AE4A; --accent-strong:#E8C56A; --accent-tint:#2C2510;
+    --star:#D9AE4A; --good:#43B571; --good-tint:#12291C; --bad:#E1685C; --bad-tint:#301715;
+  }
+  *{box-sizing:border-box}
+  .wrap{max-width:600px;margin:0 auto;padding:0 16px calc(56px + env(safe-area-inset-bottom));color:var(--ink);font-family:var(--sans);line-height:1.6;-webkit-text-size-adjust:100%}
+  .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+  header{padding:22px 2px 6px}
+  .kicker{font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);font-weight:600}
+  h1{font-family:var(--serif);font-weight:600;font-size:1.7rem;margin:.12rem 0 .1rem}
+  .sub{color:var(--muted);font-size:.9rem;margin:0}
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:16px 0 6px}
+  .stat{background:var(--raise);border-radius:10px;padding:10px 6px;text-align:center}
+  .stat .n{font-size:1.35rem;font-weight:600;font-family:var(--serif)}
+  .stat .l{font-size:.68rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+  .btn{width:100%;border:1px solid var(--accent);background:var(--accent);color:#231a05;font-family:var(--sans);font-weight:600;font-size:1rem;padding:12px;border-radius:11px;cursor:pointer}
+  .btn.ghost{background:transparent;color:var(--accent-strong);border-color:var(--line)}
+  .btn.danger{background:transparent;color:var(--bad);border-color:var(--bad)}
+  .btn:focus-visible{outline:2px solid var(--accent-strong);outline-offset:2px}
+  .addrow{margin:8px 0 2px}
+  .form{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:15px;margin-top:10px}
+  .form[hidden]{display:none}
+  label{display:block;font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);font-weight:600;margin:10px 0 4px}
+  input,textarea,select{width:100%;font-family:var(--sans);font-size:1rem;padding:10px 12px;border:1px solid var(--line);border-radius:9px;background:var(--raise);color:var(--ink)}
+  input:focus-visible,textarea:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+  textarea{min-height:64px;resize:vertical;line-height:1.5}
+  .two{display:flex;gap:8px} .two>div{flex:1}
+  .list{display:flex;flex-direction:column;gap:10px;margin-top:14px}
+  .book{display:flex;gap:13px;align-items:flex-start;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px 15px;cursor:pointer}
+  .book:hover{border-color:var(--accent)}
+  .spine{width:6px;align-self:stretch;border-radius:4px;background:var(--accent);flex:none}
+  .spine.finished{background:var(--good)} .spine.want{background:var(--faint)}
+  .bmain{flex:1;min-width:0}
+  .btitle{font-family:var(--serif);font-weight:600;font-size:1.12rem;line-height:1.25}
+  .bauthor{color:var(--muted);font-size:.86rem}
+  .bmeta{display:flex;flex-wrap:wrap;gap:6px 12px;margin-top:7px;font-size:.8rem;color:var(--muted);align-items:center}
+  .pill{font-size:.68rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em;padding:3px 8px;border-radius:20px;background:var(--accent-tint);color:var(--accent-strong)}
+  .pill.finished{background:var(--good-tint);color:var(--good)} .pill.want{background:var(--raise);color:var(--faint)}
+  .stars{color:var(--star);letter-spacing:1px}
+  .stars .off{color:var(--line)}
+  .empty{text-align:center;color:var(--faint);font-size:.9rem;padding:26px 10px}
+  /* detail */
+  .back{background:transparent;border:0;color:var(--accent-strong);font-weight:600;font-size:.92rem;cursor:pointer;padding:6px 2px;font-family:var(--sans)}
+  .dethead{font-family:var(--serif);font-weight:600;font-size:1.7rem;line-height:1.2;margin:6px 0 2px}
+  .rate{display:flex;gap:4px;margin-top:4px}
+  .rate button{background:transparent;border:0;font-size:1.5rem;color:var(--line);cursor:pointer;padding:0;line-height:1}
+  .rate button.on{color:var(--star)}
+  .segs{display:flex;gap:6px;margin-top:4px}
+  .segs button{flex:1;border:1px solid var(--line);background:var(--surface);color:var(--muted);font-family:var(--sans);font-weight:600;font-size:.82rem;padding:8px 4px;border-radius:9px;cursor:pointer}
+  .segs button.on{background:var(--accent-tint);border-color:var(--accent);color:var(--accent-strong)}
+  .sec{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:15px;margin-top:14px}
+  .sec h3{font-family:var(--serif);font-size:1.15rem;margin:0 0 4px;font-weight:600}
+  .note{border-top:1px solid var(--line);padding:11px 0 2px;margin-top:8px}
+  .note:first-of-type{border-top:0}
+  .note .ntop{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+  .note .npage{font-size:.72rem;font-weight:600;color:var(--accent-strong);background:var(--accent-tint);padding:2px 8px;border-radius:20px;white-space:nowrap}
+  .note .ndate{font-size:.72rem;color:var(--faint)}
+  .note .ntext{font-size:.96rem;margin-top:5px;white-space:pre-wrap;word-wrap:break-word}
+  .note .nrm{background:transparent;border:0;color:var(--faint);cursor:pointer;font-size:.8rem;margin-top:4px;padding:0}
+  footer{margin-top:20px;display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+  footer button{background:transparent;border:1px solid var(--line);color:var(--muted);border-radius:9px;padding:8px 12px;font-family:var(--sans);font-weight:600;font-size:.82rem;cursor:pointer}
+  .toast{position:sticky;bottom:14px;margin:14px auto 0;max-width:330px;text-align:center;background:var(--ink);color:var(--paper);border-radius:10px;padding:10px 14px;font-size:.86rem;opacity:0;transition:opacity .3s;pointer-events:none}
+  .toast.show{opacity:1}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap">
+  <h2 class="sr">A reading journal — your books with stats, and thoughts you can tag to a page.</h2>
+  <header>
+    <div class="kicker">Personal OS · Reading</div>
+    <h1>Reading journal</h1>
+    <p class="sub">Your books, what you're getting from them, and the thoughts they spark.</p>
+  </header>
+
+  <section id="view-library">
+    <div class="stats">
+      <div class="stat"><div class="n" id="st-books">0</div><div class="l">Books</div></div>
+      <div class="stat"><div class="n" id="st-reading">0</div><div class="l">Reading</div></div>
+      <div class="stat"><div class="n" id="st-finished">0</div><div class="l">Finished</div></div>
+      <div class="stat"><div class="n" id="st-notes">0</div><div class="l">Thoughts</div></div>
+    </div>
+    <div class="addrow"><button class="btn" id="add-toggle">＋ Add a book</button></div>
+    <div class="form" id="addbook" hidden>
+      <label for="ab-title">Title</label>
+      <input id="ab-title" placeholder="e.g. Antifragile">
+      <label for="ab-author">Author</label>
+      <input id="ab-author" placeholder="e.g. Nassim Taleb">
+      <div class="two">
+        <div><label for="ab-total">Total pages</label><input id="ab-total" type="number" inputmode="numeric" placeholder="optional"></div>
+        <div><label for="ab-status">Status</label>
+          <select id="ab-status"><option value="reading">Reading</option><option value="want">Want to read</option><option value="finished">Finished</option></select>
+        </div>
+      </div>
+      <div style="margin-top:14px"><button class="btn" id="ab-save">Add book</button></div>
+    </div>
+    <div class="list" id="book-list"></div>
+  </section>
+
+  <section id="view-book" hidden></section>
+
+  <footer>
+    <button id="export">Copy for Claude</button>
+    <button id="theme">Light / dark</button>
+  </footer>
+  <div class="toast" id="toast" role="status"></div>
+</div>
+
+<script>
+const KEY="reading-journal-v1";
+let state=JSON.parse(localStorage.getItem(KEY)||"{}"); state.books=state.books||[];
+const save=()=>localStorage.setItem(KEY,JSON.stringify(state));
+const $=id=>document.getElementById(id);
+const esc=s=>(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+const STATUS={reading:"Reading",finished:"Finished",want:"Want to read"};
+let openId=null;
+
+function toast(m){const t=$("toast");t.textContent=m;t.classList.add("show");setTimeout(()=>t.classList.remove("show"),1900);}
+function stars(n){let s="";for(let i=1;i<=5;i++)s+=`<span class="${i<=n?"":"off"}">★</span>`;return s;}
+function fmtDate(ts){return new Date(ts).toLocaleDateString(undefined,{day:"numeric",month:"short"});}
+
+function renderStats(){
+  $("st-books").textContent=state.books.length;
+  $("st-reading").textContent=state.books.filter(b=>b.status==="reading").length;
+  $("st-finished").textContent=state.books.filter(b=>b.status==="finished").length;
+  $("st-notes").textContent=state.books.reduce((s,b)=>s+(b.notes?b.notes.length:0),0);
+}
+function renderLibrary(){
+  renderStats();
+  const list=$("book-list");
+  if(!state.books.length){list.innerHTML='<div class="empty">No books yet. Add one above — then log the thoughts it sparks.</div>';return;}
+  const order={reading:0,want:1,finished:2};
+  const books=[...state.books].sort((a,b)=>(order[a.status]-order[b.status])||(b.updated||0)-(a.updated||0));
+  list.innerHTML=books.map(b=>{
+    const prog=b.total?`p.${b.page||0}/${b.total}`:(b.page?`p.${b.page}`:"");
+    const nc=b.notes&&b.notes.length?`${b.notes.length} thought${b.notes.length>1?"s":""}`:"";
+    return `<div class="book" data-id="${b.id}">
+      <span class="spine ${b.status}"></span>
+      <div class="bmain">
+        <div class="btitle">${esc(b.title)}</div>
+        ${b.author?`<div class="bauthor">${esc(b.author)}</div>`:""}
+        <div class="bmeta"><span class="pill ${b.status}">${STATUS[b.status]}</span>
+          ${b.rating?`<span class="stars">${stars(b.rating)}</span>`:""}
+          ${prog?`<span>${prog}</span>`:""}${nc?`<span>${nc}</span>`:""}</div>
+      </div></div>`;
+  }).join("");
+  list.querySelectorAll(".book").forEach(el=>el.onclick=()=>openBook(el.dataset.id));
+}
+
+function openBook(id){
+  openId=id;
+  const b=state.books.find(x=>x.id===id); if(!b)return;
+  $("view-library").hidden=true; $("view-book").hidden=false;
+  const notes=(b.notes||[]).slice().reverse();
+  $("view-book").innerHTML=`
+    <button class="back" id="b-back">‹ All books</button>
+    <div class="dethead">${esc(b.title)}</div>
+    ${b.author?`<div class="bauthor" style="font-size:.95rem">${esc(b.author)}</div>`:""}
+    <div class="rate" id="b-rate" aria-label="Rating">${[1,2,3,4,5].map(i=>`<button data-r="${i}" class="${b.rating>=i?"on":""}">★</button>`).join("")}</div>
+    <div class="segs" id="b-status">${Object.keys(STATUS).map(s=>`<button data-s="${s}" class="${b.status===s?"on":""}">${STATUS[s]}</button>`).join("")}</div>
+    <div class="sec">
+      <h3>Progress</h3>
+      <div class="two" style="align-items:flex-end">
+        <div><label for="b-page">Current page</label><input id="b-page" type="number" inputmode="numeric" value="${b.page||""}" placeholder="0"></div>
+        <div><label for="b-total">Total pages</label><input id="b-total" type="number" inputmode="numeric" value="${b.total||""}" placeholder="—"></div>
+      </div>
+      <div style="margin-top:12px"><button class="btn ghost" id="b-savep">Save progress</button></div>
+    </div>
+    <div class="sec">
+      <h3>Thoughts</h3>
+      <p class="sub" style="margin:0 0 6px">A thought from your reading — tag the page it came from.</p>
+      <label for="n-text">Your thought</label>
+      <textarea id="n-text" placeholder="What struck you? An idea, a question, a line worth keeping…"></textarea>
+      <div class="two" style="margin-top:6px;align-items:flex-end">
+        <div style="max-width:120px"><label for="n-page">Page</label><input id="n-page" type="number" inputmode="numeric" placeholder="e.g. 42"></div>
+        <div><button class="btn" id="n-add">Add thought</button></div>
+      </div>
+      <div id="notes-list" style="margin-top:12px">
+        ${notes.length?notes.map((n,revIdx)=>{
+          const realIdx=b.notes.length-1-revIdx;
+          return `<div class="note">
+            <div class="ntop"><span>${n.page?`<span class="npage">p.${esc(String(n.page))}</span>`:`<span class="ndate">no page</span>`}</span><span class="ndate">${fmtDate(n.ts)}</span></div>
+            <div class="ntext">${esc(n.text)}</div>
+            <button class="nrm" data-i="${realIdx}">remove</button>
+          </div>`;
+        }).join(""):'<div class="empty" style="padding:10px">No thoughts yet.</div>'}
+      </div>
+    </div>
+    <div style="margin-top:16px"><button class="btn danger" id="b-del">Delete this book</button></div>`;
+
+  $("b-back").onclick=()=>{openId=null;$("view-book").hidden=true;$("view-library").hidden=false;renderLibrary();};
+  $("b-rate").querySelectorAll("button").forEach(bt=>bt.onclick=()=>{patch(id,{rating:+bt.dataset.r});openBook(id);});
+  $("b-status").querySelectorAll("button").forEach(bt=>bt.onclick=()=>{
+    const s=bt.dataset.s; const p={status:s}; if(s==="finished"&&!b.finished)p.finished=Date.now();
+    patch(id,p);openBook(id);
+  });
+  $("b-savep").onclick=()=>{
+    const page=parseInt($("b-page").value,10); const total=parseInt($("b-total").value,10);
+    patch(id,{page:isNaN(page)?0:page, total:isNaN(total)?null:total}); toast("Progress saved");
+  };
+  $("n-add").onclick=()=>{
+    const text=$("n-text").value.trim(); if(!text){toast("Write a thought first");return;}
+    const page=parseInt($("n-page").value,10);
+    const bk=state.books.find(x=>x.id===id); bk.notes=bk.notes||[];
+    bk.notes.push({text,page:isNaN(page)?null:page,ts:Date.now()}); bk.updated=Date.now(); save();
+    openBook(id); toast("Thought added");
+  };
+  $("notes-list").querySelectorAll(".nrm").forEach(bt=>bt.onclick=()=>{
+    const bk=state.books.find(x=>x.id===id); bk.notes.splice(+bt.dataset.i,1); bk.updated=Date.now(); save(); openBook(id);
+  });
+  $("b-del").onclick=()=>{ if(confirm("Delete this book and its thoughts?")){ state.books=state.books.filter(x=>x.id!==id); save(); $("b-back").click(); } };
+}
+
+function patch(id,p){const b=state.books.find(x=>x.id===id);if(!b)return;Object.assign(b,p,{updated:Date.now()});save();}
+
+$("add-toggle").onclick=()=>{const f=$("addbook");f.hidden=!f.hidden;if(!f.hidden)$("ab-title").focus();};
+$("ab-save").onclick=()=>{
+  const title=$("ab-title").value.trim(); if(!title){toast("A title, at least");return;}
+  const total=parseInt($("ab-total").value,10);
+  state.books.push({id:uid(),title,author:$("ab-author").value.trim(),total:isNaN(total)?null:total,page:0,
+    status:$("ab-status").value,rating:0,notes:[],started:Date.now(),updated:Date.now()});
+  save();
+  $("ab-title").value="";$("ab-author").value="";$("ab-total").value="";$("ab-status").value="reading";
+  $("addbook").hidden=true; renderLibrary(); toast("Book added");
+};
+
+$("export").onclick=()=>{
+  if(!state.books.length){toast("No books to copy yet");return;}
+  const d=new Date().toISOString().slice(0,10);
+  let txt=`Reading journal — ${d}\n\nBOOKS:\n`;
+  for(const b of state.books){
+    const prog=b.total?`p.${b.page||0}/${b.total}`:(b.page?`p.${b.page}`:"");
+    txt+=`- ${b.title}${b.author?` by ${b.author}`:""} — ${STATUS[b.status]}${prog?`, ${prog}`:""}${b.rating?`, ${b.rating}/5`:""}\n`;
+  }
+  const withNotes=state.books.filter(b=>b.notes&&b.notes.length);
+  if(withNotes.length){
+    txt+=`\nTHOUGHTS:\n`;
+    for(const b of withNotes) for(const n of b.notes) txt+=`- [${b.title}${n.page?` p.${n.page}`:""}] ${n.text}\n`;
+  }
+  txt+=`\nPull the key vocabulary and ideas from these into my word bank / knowledge, tell me if any book is worth a re-read, and let's discuss.`;
+  navigator.clipboard.writeText(txt).then(()=>toast("Copied — paste it to your coach"),()=>toast("Copy failed — long-press to select"));
+};
+$("theme").onclick=()=>{
+  const cur=document.documentElement.getAttribute("data-theme");
+  const next=cur==="dark"?"light":cur==="light"?"dark":(matchMedia("(prefers-color-scheme: dark)").matches?"light":"dark");
+  document.documentElement.setAttribute("data-theme",next);
+};
+
+renderLibrary();
+</script>
