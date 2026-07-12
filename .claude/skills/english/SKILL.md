@@ -76,6 +76,12 @@ word's part of speech (RE-cord vs re-CORD). The deck shows respelling + a "Hear 
 audio button. Full guide: `rules/04-pronunciation.md`. Treat a mispronunciation as a
 tracked item — it's one of the four aspects, and it's a signal of level for his goal.
 
+**ALWAYS spell a new word out** (he asked for this explicitly). Whenever you introduce
+or correct a word, write its letters one by one — *holistic → h-o-l-i-s-t-i-c* — so he
+learns to spell it, not just say it. He struggles with spelling; the letters are not
+optional. The deck now shows a written "spell it" line + a "Spell it" audio button on
+every word card.
+
 ## His real goal (frame everything to it)
 
 He's not job-hunting — he wants to be **the person companies chase**, and eventually a
