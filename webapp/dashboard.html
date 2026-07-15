@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>Dashboard</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root{
+    --paper:#EDECF2; --surface:#FFFFFF; --raise:#F5F4FA; --ink:#1E1B2E; --muted:#63607A; --faint:#928FA8; --line:#DEDCE9;
+    --accent:#5A4AB7; --accent-strong:#40348C; --accent-tint:#EAE7FA;
+    --good:#2E9E5E; --warn:#B98511; --bad:#CE4A3E;
+    --serif:"Iowan Old Style",Georgia,"Palatino Linotype",Palatino,serif;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --paper:#0F0E15; --surface:#191722; --raise:#211E2C; --ink:#EAE8F2; --muted:#9A96AE; --faint:#6C6980; --line:#2A2738;
+      --accent:#8F82E6; --accent-strong:#AaA0F0; --accent-tint:#1E1B33; --good:#43B571; --warn:#DBAE45; --bad:#E1685C;
+    }
+  }
+  :root[data-theme="light"]{--paper:#EDECF2;--surface:#FFFFFF;--raise:#F5F4FA;--ink:#1E1B2E;--muted:#63607A;--faint:#928FA8;--line:#DEDCE9;--accent:#5A4AB7;--accent-strong:#40348C;--accent-tint:#EAE7FA;--good:#2E9E5E;--warn:#B98511;--bad:#CE4A3E;}
+  :root[data-theme="dark"]{--paper:#0F0E15;--surface:#191722;--raise:#211E2C;--ink:#EAE8F2;--muted:#9A96AE;--faint:#6C6980;--line:#2A2738;--accent:#8F82E6;--accent-strong:#AaA0F0;--accent-tint:#1E1B33;--good:#43B571;--warn:#DBAE45;--bad:#E1685C;}
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{background:var(--paper);color:var(--ink);font-family:var(--sans);line-height:1.5;
+    padding:0 16px calc(30px + env(safe-area-inset-bottom));-webkit-text-size-adjust:100%}
+  .wrap{max-width:560px;margin:0 auto}
+  .topbar{padding:12px 2px 2px}
+  .topbar a{color:var(--accent);text-decoration:none;font-weight:600;font-size:15px}
+  header{padding:8px 2px 6px}
+  .kicker{font-size:.72rem;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);font-weight:600}
+  h1{font-family:var(--serif);font-weight:600;font-size:1.9rem;margin:.1rem 0 0}
+  .rankline{color:var(--muted);font-size:.92rem}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px;margin-top:14px}
+  .card h3{margin:0 0 10px;font-size:.74rem;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);font-weight:600}
+  .row{display:flex;align-items:center;gap:12px}
+  .grow{flex:1;min-width:0}
+  .barwrap{height:10px;background:var(--line);border-radius:99px;overflow:hidden;margin-top:4px}
+  .bar{height:100%;border-radius:99px;transition:width .4s}
+  .big{font-size:1.5rem;font-weight:600;font-family:var(--serif)}
+  .mut{color:var(--muted);font-size:.85rem}
+  .chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+  .chip{background:var(--raise);border-radius:20px;padding:5px 12px;font-size:.84rem;font-weight:600}
+  .chip .k{color:var(--faint);font-weight:500}
+  svg.wheel{width:100%;max-width:320px;height:auto;display:block;margin:2px auto 0}
+  .ring{fill:none;stroke:var(--line);stroke-width:1}
+  .axis{stroke:var(--line);stroke-width:1}
+  .wdata{fill:var(--accent);fill-opacity:.26;stroke:var(--accent);stroke-width:2;stroke-linejoin:round}
+  .dot{fill:var(--accent)}
+  .wlabel{fill:var(--ink);font-size:12px;font-weight:600;font-family:var(--sans)}
+  .wval{fill:var(--muted);font-size:11px;font-family:var(--sans)}
+  .legend{display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;margin-top:8px}
+  .legend div{font-size:.82rem;color:var(--muted)} .legend b{color:var(--ink);font-weight:600}
+  .quest{display:flex;align-items:center;gap:10px;padding:7px 0;border-top:1px solid var(--line)}
+  .quest:first-child{border-top:0}
+  .qmark{width:22px;height:22px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-weight:700;flex:none;font-size:.9rem}
+  .qmark.on{background:var(--good);color:#fff} .qmark.off{background:var(--raise);color:var(--faint);border:1px solid var(--line)}
+  .qtext{flex:1} .qamt{color:var(--muted);font-size:.85rem}
+  .trend{display:flex;align-items:flex-end;gap:4px;height:46px;margin-top:8px}
+  .trend .tb{flex:1;background:var(--accent);border-radius:3px 3px 0 0;min-height:3px;opacity:.85}
+  .eff{font-size:.85rem;padding:8px 0;border-top:1px solid var(--line)}
+  .eff:first-child{border-top:0} .eff.d{color:var(--bad)} .eff.b{color:var(--good)}
+  .msg{text-align:center;color:var(--muted);padding:48px 20px;font-size:.95rem}
+  .skl{color:var(--faint);text-align:center;padding:40px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar"><a href="/">&lsaquo; Home</a></div>
+  <div id="app"><div class="skl">Loading your System…</div></div>
+</div>
+
+<script>
+const DEMO = {
+  level:14, rank:"Adept", stats:{vitality:420,mind:680,forge:210,discipline:150,spirit:90},
+  domainRanks:{vitality:"Apprentice",mind:"Adept",forge:"Apprentice",discipline:"Novice",spirit:"Novice"},
+  streak:6, energy:72, sleep:7, water:1.2,
+  quests:[{label:"Hydrate",met:false,text:"1.2/2L"},{label:"Move",met:true,text:"1/1"},{label:"Learn",met:true,text:"1/1"},{label:"Build",met:false,text:"0/1"}],
+  english:{count:5, avg:2.8, level:"B1", trend:[{d:"07-05",avg:2.2},{d:"07-06",avg:2.6},{d:"07-08",avg:2.5},{d:"07-10",avg:3.0},{d:"07-11",avg:2.8}]},
+  debuffs:[], buffs:[{label:"WELL-RESTED",note:"7h+ sleep"}]
+};
+
+const ORDER=[["vitality","Body"],["mind","Mind"],["forge","Craft"],["discipline","Discipline"],["spirit","Spirit"]];
+function polar(cx,cy,r,deg){const a=deg*Math.PI/180;return [cx+r*Math.cos(a), cy+r*Math.sin(a)];}
+function wheel(stats){
+  const cx=160,cy=150,R=98, ang=i=>-90+i*72;
+  const max=Math.max(1,...ORDER.map(([k])=>stats[k]||0));
+  let grid="";[0.34,0.67,1].forEach(f=>{grid+=`<polygon class="ring" points="${ORDER.map((_,i)=>polar(cx,cy,R*f,ang(i)).map(n=>n.toFixed(1)).join(",")).join(" ")}"/>`;});
+  let axes="";ORDER.forEach((_,i)=>{const[x,y]=polar(cx,cy,R,ang(i));axes+=`<line class="axis" x1="${cx}" y1="${cy}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}"/>`;});
+  const data=ORDER.map(([k],i)=>polar(cx,cy,R*Math.max(0.06,(stats[k]||0)/max),ang(i)).map(n=>n.toFixed(1)).join(",")).join(" ");
+  let dots="";ORDER.forEach(([k],i)=>{const[x,y]=polar(cx,cy,R*Math.max(0.06,(stats[k]||0)/max),ang(i));dots+=`<circle class="dot" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.5"/>`;});
+  let lab="";ORDER.forEach(([k,name],i)=>{const[x,y]=polar(cx,cy,R+22,ang(i));const anc=Math.abs(x-cx)<12?"middle":(x>cx?"start":"end");lab+=`<text class="wlabel" x="${x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="${anc}">${name}</text><text class="wval" x="${x.toFixed(1)}" y="${(y+13).toFixed(1)}" text-anchor="${anc}">${stats[k]||0}</text>`;});
+  return `<svg class="wheel" viewBox="0 0 320 300" role="img" aria-label="Your five stats as a wheel">${grid}${axes}<polygon class="wdata" points="${data}"/>${dots}${lab}</svg>`;
+}
+function energyColor(e){return e>=66?"var(--good)":e>=33?"var(--warn)":"var(--bad)";}
+function esc(s){return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;");}
+
+function render(d){
+  const eng=d.english||{count:0};
+  const trendMax=eng.trend&&eng.trend.length?Math.max(5,...eng.trend.map(t=>t.avg||0)):5;
+  const app=document.getElementById("app");
+  app.innerHTML=`
+    <header>
+      <div class="kicker">Your System</div>
+      <h1>Level ${d.level} · ${esc(d.rank)}</h1>
+      <div class="rankline">🔥 ${d.streak}-day streak</div>
+    </header>
+
+    <div class="card">
+      <h3>Energy</h3>
+      <div class="row"><div class="grow">
+        <div class="barwrap"><div class="bar" style="width:${Math.max(3,d.energy)}%;background:${energyColor(d.energy)}"></div></div>
+      </div><div class="big">${d.energy}</div></div>
+      <div class="mut" style="margin-top:6px">Sleep ${d.sleep!=null?d.sleep+"h":"—"} · Water ${d.water!=null?d.water.toFixed(1)+"L":"—"} today</div>
+    </div>
+
+    <div class="card">
+      <h3>The Wheel — your balance</h3>
+      ${wheel(d.stats)}
+      <div class="legend">${ORDER.map(([k,n])=>`<div><b>${n}</b> · ${esc((d.domainRanks&&d.domainRanks[k])||"")}</div>`).join("")}</div>
+    </div>
+
+    <div class="card">
+      <h3>Today's quests</h3>
+      ${(d.quests||[]).map(q=>`<div class="quest"><span class="qmark ${q.met?"on":"off"}">${q.met?"✓":""}</span><span class="qtext">${esc(q.label)}</span><span class="qamt">${esc(q.text||"")}</span></div>`).join("")||'<div class="mut">No quests loaded.</div>'}
+    </div>
+
+    <div class="card">
+      <h3>English → C2</h3>
+      ${eng.count?`<div class="row"><div class="grow"><div class="big">${eng.avg}<span class="mut" style="font-size:1rem">/5</span></div><div class="mut">honest average · ${eng.count} conversation${eng.count>1?"s":""}${eng.level?" · reads "+esc(eng.level):""}</div></div></div>
+      ${eng.trend&&eng.trend.length?`<div class="trend">${eng.trend.map(t=>`<div class="tb" title="${esc(t.d)}: ${t.avg}" style="height:${Math.round((t.avg||0)/trendMax*100)}%"></div>`).join("")}</div>`:""}`
+      :`<div class="mut">No scored conversations yet. Type /english in the chat and just talk.</div>`}
+    </div>
+
+    ${(d.debuffs&&d.debuffs.length)||(d.buffs&&d.buffs.length)?`<div class="card"><h3>Active effects</h3>
+      ${(d.debuffs||[]).map(x=>`<div class="eff d">⚠ ${esc(x.label)}${x.note?" — "+esc(x.note):""}</div>`).join("")}
+      ${(d.buffs||[]).map(x=>`<div class="eff b">✦ ${esc(x.label)}${x.note?" — "+esc(x.note):""}</div>`).join("")}</div>`:""}
+  `;
+}
+
+(function(){
+  const tg=window.Telegram&&window.Telegram.WebApp;
+  if(tg){ try{ tg.ready(); tg.expand();
+    const p=tg.themeParams||{}, r=document.documentElement.style;
+    if(p.bg_color)r.setProperty("--paper",p.bg_color);
+    if(p.secondary_bg_color)r.setProperty("--surface",p.secondary_bg_color);
+    if(p.text_color)r.setProperty("--ink",p.text_color);
+    if(p.hint_color)r.setProperty("--muted",p.hint_color);
+  }catch(e){} }
+  const demo=new URLSearchParams(location.search).has("demo");
+  if(demo){ render(DEMO); return; }
+  if(tg && tg.initData){
+    fetch("/api/dashboard",{headers:{"X-Telegram-Init-Data":tg.initData}})
+      .then(r=>r.ok?r.json():Promise.reject(r.status))
+      .then(render)
+      .catch(err=>{document.getElementById("app").innerHTML=`<div class="msg">Couldn't load your data (${esc(String(err))}). Reopen from Telegram, or make sure the bot has deployed.</div>`;});
+  } else {
+    document.getElementById("app").innerHTML=`<div class="msg">Open this from your Telegram app (the menu button) to see your live stats.<br><br><a href="?demo=1" style="color:var(--accent)">Preview with sample data</a></div>`;
+  }
+})();
+</script>
+</body>
+</html>
