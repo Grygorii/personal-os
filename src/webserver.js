@@ -18,6 +18,7 @@ const ROUTES = {
   '/deck': { file: '../english/study.html', homeBar: true },
   '/body': { file: '../body/map.html', homeBar: true },
   '/reading': { file: '../reading/journal.html', homeBar: true },
+  '/routine': { file: '../routines/today.html', homeBar: true },
   '/dashboard': { file: '../webapp/dashboard.html' },
 };
 

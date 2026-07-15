@@ -1,0 +1,138 @@
+<title>Routine</title>
+<style>
+  :root{
+    --paper:#ECEFEA; --surface:#FFFFFF; --raise:#F3F7F1; --ink:#1B241C; --muted:#5C6A5D; --faint:#8C988C; --line:#DBE3D9;
+    --accent:#2F8A4E; --accent-strong:#1F6B3A; --accent-tint:#E3F2E9; --warn:#B98511;
+    --serif:"Iowan Old Style",Georgia,"Palatino Linotype",Palatino,serif;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --radius:12px;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --paper:#0F140F; --surface:#18201A; --raise:#1F2A20; --ink:#E7ECE7; --muted:#95A296; --faint:#6C786C; --line:#28332A;
+      --accent:#52B776; --accent-strong:#6FCB90; --accent-tint:#12291C; --warn:#DBAE45;
+    }
+  }
+  :root[data-theme="light"]{--paper:#ECEFEA;--surface:#FFFFFF;--raise:#F3F7F1;--ink:#1B241C;--muted:#5C6A5D;--faint:#8C988C;--line:#DBE3D9;--accent:#2F8A4E;--accent-strong:#1F6B3A;--accent-tint:#E3F2E9;--warn:#B98511;}
+  :root[data-theme="dark"]{--paper:#0F140F;--surface:#18201A;--raise:#1F2A20;--ink:#E7ECE7;--muted:#95A296;--faint:#6C786C;--line:#28332A;--accent:#52B776;--accent-strong:#6FCB90;--accent-tint:#12291C;--warn:#DBAE45;}
+  *{box-sizing:border-box}
+  .wrap{max-width:600px;margin:0 auto;padding:0 16px calc(52px + env(safe-area-inset-bottom));color:var(--ink);font-family:var(--sans);line-height:1.55;-webkit-text-size-adjust:100%}
+  header{padding:20px 2px 4px}
+  .kicker{font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);font-weight:600}
+  h1{font-family:var(--serif);font-weight:600;font-size:1.7rem;margin:.12rem 0 .1rem}
+  .sub{color:var(--muted);font-size:.9rem;margin:0}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px;margin-top:14px}
+  .card h3{margin:0 0 4px;font-family:var(--serif);font-size:1.15rem;font-weight:600}
+  .card .lead{color:var(--muted);font-size:.86rem;margin:0 0 10px}
+  input[type=text]{width:100%;font-family:var(--sans);font-size:1rem;padding:10px 12px;border:1px solid var(--line);border-radius:9px;background:var(--raise);color:var(--ink)}
+  input:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+  .p3{display:flex;gap:8px;align-items:center;margin-top:8px}
+  .p3 .num{width:26px;height:26px;border-radius:7px;background:var(--accent-tint);color:var(--accent-strong);font-weight:700;display:flex;align-items:center;justify-content:center;flex:none;font-family:var(--serif)}
+  .checks{display:flex;flex-direction:column}
+  .chk{display:flex;align-items:center;gap:12px;padding:11px 0;border-top:1px solid var(--line);cursor:pointer}
+  .chk:first-child{border-top:0}
+  .box{width:24px;height:24px;border-radius:7px;border:1.5px solid var(--line);flex:none;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:.95rem}
+  .chk.on .box{background:var(--accent);border-color:var(--accent)}
+  .chk .t{flex:1} .chk .t .n{font-weight:600} .chk .t .d{color:var(--muted);font-size:.82rem}
+  .chk.on .t .n{color:var(--muted);text-decoration:line-through}
+  .prog{font-size:.8rem;color:var(--muted);float:right;font-weight:600}
+  .rule{background:var(--accent-tint);border-radius:10px;padding:12px 14px;font-size:.92rem;color:var(--accent-strong);line-height:1.5}
+  .rule b{font-weight:700}
+  .wk{display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-top:1px solid var(--line);font-size:.92rem}
+  .wk:first-child{border-top:0} .wk .dot{color:var(--accent);font-weight:700}
+  .unif label{display:block;font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);font-weight:600;margin:10px 0 4px}
+  .times{display:flex;gap:8px}.times>div{flex:1}
+  footer{margin-top:18px;display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+  footer button{background:transparent;border:1px solid var(--line);color:var(--muted);border-radius:9px;padding:8px 12px;font-family:var(--sans);font-weight:600;font-size:.82rem;cursor:pointer}
+  .toast{position:sticky;bottom:14px;margin:14px auto 0;max-width:320px;text-align:center;background:var(--ink);color:var(--paper);border-radius:10px;padding:10px 14px;font-size:.86rem;opacity:0;transition:opacity .3s;pointer-events:none}
+  .toast.show{opacity:1}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap">
+  <h2 style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">Your routine — today's three priorities, a daily recovery checklist, weekly rhythm, and pre-decided defaults.</h2>
+  <header>
+    <div class="kicker">Personal OS · Routine</div>
+    <h1 id="hi">Today</h1>
+    <p class="sub">Your day, pre-decided. Follow it — don't spend fuel re-deciding.</p>
+  </header>
+
+  <div class="card">
+    <h3>Today's 3</h3>
+    <p class="lead">The few things that matter today. Decide once, then just do them.</p>
+    <div id="p3"></div>
+  </div>
+
+  <div class="card">
+    <h3>Daily rhythm <span class="prog" id="prog">0/7</span></h3>
+    <div class="rule" style="margin-bottom:10px"><b>The one rule:</b> no short-form video as "rest." It's stimulation, not recovery.</div>
+    <div class="checks" id="checks"></div>
+  </div>
+
+  <div class="card">
+    <h3>This week</h3>
+    <div class="wk"><span class="dot">·</span><div><b>Cycle 2–3×</b> — mostly easy (Zone 2, could hold a conversation), ~30–45 min. Best brain maintenance there is.</div></div>
+    <div class="wk"><span class="dot">·</span><div><b>Airsoft 1×</b> when you can — active, outdoors, social. Real recovery.</div></div>
+    <div class="wk"><span class="dot">·</span><div><b>Family</b> — protected blocks, phone away. Presence, not productivity.</div></div>
+    <div class="wk"><span class="dot">·</span><div><b>Sunday review</b> — read your System's week-in-review.</div></div>
+  </div>
+
+  <div class="card unif">
+    <h3>Your uniform</h3>
+    <p class="lead">Pre-decide these once so they never cost a morning again.</p>
+    <div class="times">
+      <div><label for="u-wake">Wake at</label><input type="text" id="u-wake" placeholder="06:45"></div>
+      <div><label for="u-bed">In bed by</label><input type="text" id="u-bed" placeholder="23:00"></div>
+    </div>
+    <label for="u-breakfast">Default breakfast</label><input type="text" id="u-breakfast" placeholder="the one you don't rethink">
+    <label for="u-clothes">Default clothes</label><input type="text" id="u-clothes" placeholder="your standard set / rotation">
+    <label for="u-workout">Default movement</label><input type="text" id="u-workout" placeholder="if unsure: Zone-2 cycle 40 min, or a walk">
+    <label for="u-evening">Evening default</label><input type="text" id="u-evening" placeholder="reading beats shorts">
+  </div>
+
+  <footer>
+    <button id="reset">Reset today</button>
+    <button id="theme">Light / dark</button>
+  </footer>
+  <div class="toast" id="toast" role="status"></div>
+</div>
+
+<script>
+const RHYTHM=[
+  ["Daylight + water on waking","fixes your body clock — the biggest sleep lever"],
+  ["Deep work in ~90-min blocks","one thing per block; a real break between (not the phone)"],
+  ["Move — a walk, cycle, or airsoft","best brain maintenance there is"],
+  ["Family — phone in another room","presence, not productivity"],
+  ["No short-form video today","the one rule that matters most"],
+  ["Wind-down + read a real book","protects the 2 hours you keep losing"],
+  ["In bed on time","consistency matters as much as hours"]
+];
+const KEY="routine-v1";
+const $=id=>document.getElementById(id);
+const todayStr=()=>new Date().toISOString().slice(0,10);
+let state=JSON.parse(localStorage.getItem(KEY)||"{}");
+state.defaults=state.defaults||{};
+if(state.date!==todayStr()){ state.date=todayStr(); state.ticks={}; state.priorities=["","",""]; }
+state.ticks=state.ticks||{}; state.priorities=state.priorities||["","",""];
+const save=()=>localStorage.setItem(KEY,JSON.stringify(state));
+function toast(m){const t=$("toast");t.textContent=m;t.classList.add("show");setTimeout(()=>t.classList.remove("show"),1700);}
+
+function renderP3(){
+  $("p3").innerHTML=[0,1,2].map(i=>`<div class="p3"><span class="num">${i+1}</span><input type="text" data-i="${i}" value="${(state.priorities[i]||"").replace(/"/g,"&quot;")}" placeholder="${i===0?"the one that matters most":"…"}"></div>`).join("");
+  $("p3").querySelectorAll("input").forEach(inp=>inp.oninput=()=>{state.priorities[+inp.dataset.i]=inp.value;save();});
+}
+function renderChecks(){
+  $("checks").innerHTML=RHYTHM.map((r,i)=>`<div class="chk ${state.ticks[i]?"on":""}" data-i="${i}"><span class="box">${state.ticks[i]?"✓":""}</span><span class="t"><span class="n">${r[0]}</span><span class="d">${r[1]}</span></span></div>`).join("");
+  $("checks").querySelectorAll(".chk").forEach(el=>el.onclick=()=>{const i=el.dataset.i;state.ticks[i]=!state.ticks[i];save();renderChecks();updateProg();});
+  updateProg();
+}
+function updateProg(){const n=Object.values(state.ticks).filter(Boolean).length;$("prog").textContent=`${n}/${RHYTHM.length}`;}
+
+function bindDefault(id,key){const el=$(id);el.value=state.defaults[key]||"";el.oninput=()=>{state.defaults[key]=el.value;save();};}
+
+renderP3(); renderChecks();
+[["u-wake","wake"],["u-bed","bed"],["u-breakfast","breakfast"],["u-clothes","clothes"],["u-workout","workout"],["u-evening","evening"]].forEach(([id,k])=>bindDefault(id,k));
+
+$("reset").onclick=()=>{if(confirm("Clear today's ticks and priorities? (Your uniform stays.)")){state.ticks={};state.priorities=["","",""];save();renderP3();renderChecks();toast("Today reset");}};
+$("theme").onclick=()=>{const cur=document.documentElement.getAttribute("data-theme");const next=cur==="dark"?"light":cur==="light"?"dark":(matchMedia("(prefers-color-scheme: dark)").matches?"light":"dark");document.documentElement.setAttribute("data-theme",next);};
+</script>

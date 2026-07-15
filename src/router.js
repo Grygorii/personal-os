@@ -3,12 +3,13 @@ import * as bookCoach from './agents/bookCoach.js';
 import * as english from './agents/english.js';
 import * as body from './agents/body.js';
 import * as reading from './agents/reading.js';
+import * as routine from './agents/routine.js';
 import * as coach from './coach.js';
 import * as system from './system.js';
 import { send } from './telegram.js';
 
 // Slash-commands are quick shortcuts. Everything else goes to the coach.
-const shortcuts = [water, bookCoach, body, reading];
+const shortcuts = [water, bookCoach, body, reading, routine];
 
 export async function route({ chatId, text, image }) {
   if (image) {
@@ -53,6 +54,8 @@ export async function route({ chatId, text, image }) {
         '`/body` — open your body map (log what hurts, then talk it through)\n\n' +
         '📚 *Reading*\n' +
         '`/reading` — your reading journal (books, stats, thoughts)\n\n' +
+        '✅ *Routine*\n' +
+        '`/routine` — today\'s 3, your daily rhythm, defaults\n\n' +
         '`/help` — show this list',
       chatId
     );
