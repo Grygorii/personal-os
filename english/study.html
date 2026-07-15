@@ -74,9 +74,6 @@
   .say .phon{font-family:var(--mono);font-size:1rem;font-weight:600;color:var(--accent-strong)}
   .hear{border:1px solid var(--line);background:var(--raise);color:var(--accent-strong);font-family:var(--sans);font-weight:600;font-size:.8rem;padding:5px 11px;border-radius:8px;cursor:pointer}
   .hear:hover{background:var(--accent-tint)} .hear:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-  .spell{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 12px}
-  .spell .lab{font-family:var(--sans);font-size:.7rem;letter-spacing:.1em;text-transform:uppercase;color:var(--faint)}
-  .spell .letters{font-family:var(--mono);font-size:1.02rem;font-weight:600;color:var(--ink);letter-spacing:.06em}
   .tap-hint{font-size:.8rem;color:var(--accent-strong);margin-top:14px;display:flex;align-items:center;gap:6px}
   .tray{margin-top:8px;display:flex;flex-direction:column;gap:6px}
   .tray:empty{display:none}
@@ -318,18 +315,6 @@ function speak(word){
   u.lang="en-GB"; u.rate=0.9;
   speechSynthesis.cancel(); speechSynthesis.speak(u);
 }
-// Written spelling, e.g. "holistic" -> "h·o·l·i·s·t·i·c" (pairs split on '/').
-function spellDisplay(term){
-  return term.split("/").map(w=>w.trim().split("").join("·")).join("  /  ");
-}
-// Speak the letters one by one, slowly.
-function spellAloud(term){
-  if(!("speechSynthesis" in window)){toast("This browser can't speak — read the letters");return;}
-  const s=term.split("/").map(w=>w.trim().toUpperCase().split("").join(", ")).join(".  ");
-  const u=new SpeechSynthesisUtterance(s);
-  u.lang="en-GB"; u.rate=0.6;
-  speechSynthesis.cancel(); speechSynthesis.speak(u);
-}
 
 function fmtText(text){
   if(text.indexOf("<")>-1) return text;
@@ -376,7 +361,7 @@ function renderMeaning(){
       <div class="term">${c.w}</div>
       <div class="prompt-think" id="m-think">Do you know what this means? Think it through, then reveal.</div>
       <div id="m-reveal" hidden>
-        <div class="reveal">${SAY[c.w]?`<div class="say"><span class="lab">say it</span><span class="phon">${SAY[c.w]}</span><button class="hear" id="m-hear" type="button" aria-label="Hear it pronounced">&#128266; Hear it</button></div>`:""}<div class="spell"><span class="lab">spell it</span><span class="letters">${spellDisplay(c.w)}</span><button class="hear" id="m-spell" type="button" aria-label="Spell it aloud">&#128266; Spell it</button></div>${senses}<p class="eg">&ldquo;${fmtText(c.eg)}&rdquo;</p>${c.flag?`<div class="flag-note">${c.flag}</div>`:""}</div>
+        <div class="reveal">${SAY[c.w]?`<div class="say"><span class="lab">say it</span><span class="phon">${SAY[c.w]}</span><button class="hear" id="m-hear" type="button" aria-label="Hear it pronounced">&#128266; Hear it</button></div>`:""}${senses}<p class="eg">&ldquo;${fmtText(c.eg)}&rdquo;</p>${c.flag?`<div class="flag-note">${c.flag}</div>`:""}</div>
         <div class="tap-hint">&#9755; Tap any word you don't know — even in the explanation.</div>
         <div class="tray" id="m-tray"></div>
         <div class="grade">
@@ -391,7 +376,6 @@ function renderMeaning(){
   $("m-btn").onclick=()=>{$("m-reveal").hidden=false;$("m-btn").hidden=true;$("m-think").textContent="How close were you? Tap words you don't know.";};
   wireWords($("m-slot")); renderTray();
   const hb=$("m-hear"); if(hb) hb.onclick=()=>speak(c.w);
-  const sb=$("m-spell"); if(sb) sb.onclick=()=>spellAloud(c.w);
   $("m-slot").querySelectorAll(".grade button").forEach(b=>b.onclick=()=>{
     state.meaning[c.w]=b.dataset.g;save();
     $("m-card").className="card mark-"+b.dataset.g;
