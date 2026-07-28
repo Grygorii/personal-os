@@ -13,7 +13,8 @@ import { runAs } from './ctx.js';
 import { config } from './config.js';
 import { runBackup } from './runtime.js';
 import * as moderation from './moderation.js';
-import { rawCol } from './db.js';
+import { rawCol, dbStats } from './db.js';
+import { isEncryptionReady } from './crypto.js';
 
 // The last few things they said — used to spot someone hammering the same message.
 async function recentUserTexts(userId) {
@@ -257,6 +258,7 @@ async function handle({ chatId, text, image, user, messageId, callbackId }) {
         { text: '👥 Users', data: '/users' },
         { text: '🗄 Backup now', data: '/backup' },
       ]);
+      rows.splice(rows.length - 1, 0, [{ text: '🩺 System check', data: '/health' }]);
       rows.splice(rows.length - 1, 0, [
         { text: user.product === 'books' ? '🧠 Back to full OS' : '📕 Preview book product', data: '/preview' },
       ]);
@@ -422,6 +424,35 @@ async function handle({ chatId, text, image, user, messageId, callbackId }) {
   }
 
   // ---- owner-only tenant admin ----
+  // "Is everything actually configured?" answered from the running server, not from a
+  // list of variable names you can't see the values of.
+  if (user.role === 'owner' && /^\/health\b/i.test(text)) {
+    const [counts, stats, boot, lastBackup] = await Promise.all([
+      users.countByStatus(),
+      dbStats().catch(() => null),
+      rawCol('meta').findOne({ _id: 'boot' }),
+      rawCol('agents').findOne({ id: 'backup' }),
+    ]);
+    const yes = (b) => (b ? '✅' : '❌');
+    const ai = config.provider === 'gemini' && config.geminiKey ? 'Gemini (fallback: Claude)' : config.anthropicKey ? 'Claude' : 'none';
+    const lines = [
+      `BUILD      ${boot?.version || '?'}`,
+      `AI         ${ai}`,
+      `  Claude   ${yes(!!config.anthropicKey)}   Gemini ${yes(!!config.geminiKey)}`,
+      `DOORS      ${config.multiTenant ? 'OPEN' : 'closed'}${config.multiTenant ? ` · auto-accept ${config.autoAccept ? 'on' : 'off'}` : ''}`,
+      `ENCRYPTION ${yes(isEncryptionReady())} ${isEncryptionReady() ? '(tenant keys can be stored)' : '(/mykey will refuse)'}`,
+      `BOT LINK   ${config.botUsername ? '@' + config.botUsername : '❌ unknown'}`,
+      '',
+      `USERS      ${counts.active} active · ${counts.pending} waiting · ${counts.blocked} blocked`,
+      stats ? `STORAGE    ${stats.totalMB.toFixed(1)} MB of 512 MB free tier` : 'STORAGE    unavailable',
+      `BACKUP     ${lastBackup?.lastRun ? new Date(lastBackup.lastRun).toISOString().slice(0, 16).replace('T', ' ') : 'not taken yet'}`,
+    ];
+    await sendInline('```\n⟦  S Y S T E M   C H E C K  ⟧\n' + lines.join('\n') + '\n```', [
+      [{ text: '🗄 Backup now', data: '/backup' }, { text: '👥 Users', data: '/users' }],
+      [{ text: '‹ Settings', data: '/settings' }],
+    ], chatId);
+    return;
+  }
   if (user.role === 'owner' && /^\/backup\b/i.test(text)) {
     await send('🗄 Taking a backup…', chatId);
     await runBackup();

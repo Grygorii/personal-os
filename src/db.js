@@ -45,6 +45,12 @@ export async function ensureIndexes() {
   }
 }
 
+// Storage used vs the Atlas free-tier ceiling — worth watching as tenants arrive.
+export async function dbStats() {
+  const s = await db.command({ dbStats: 1 });
+  return { dataMB: s.dataSize / 1048576, indexMB: s.indexSize / 1048576, totalMB: (s.dataSize + s.indexSize) / 1048576 };
+}
+
 // Raw, unscoped access. Only for migrations and global collections — never for user data.
 export function rawCol(name) {
   if (!db) throw new Error('DB not connected. Call connect() first.');
