@@ -11,6 +11,7 @@ import * as users from './users.js';
 import { maskKey } from './crypto.js';
 import { runAs } from './ctx.js';
 import { config } from './config.js';
+import { runBackup } from './runtime.js';
 
 // Slash-commands are quick shortcuts. Everything else goes to the coach.
 const shortcuts = [water, bookCoach, body, reading, routine];
@@ -152,9 +153,16 @@ async function handle({ chatId, text, image, user, messageId, callbackId }) {
   }
 
   if (/^\/settings\b/i.test(text)) {
+    const rows = [...SETTINGS];
+    if (user.role === 'owner') {
+      rows.splice(rows.length - 1, 0, [
+        { text: '👥 Users', data: '/users' },
+        { text: '🗄 Backup now', data: '/backup' },
+      ]);
+    }
     await sendInline(
       `⚙️ *Settings*\n\nAI: ${user.llm?.hint ? `your own *${user.llm.provider}* key` : 'shared'} · Timezone: \`${user.tz}\``,
-      SETTINGS,
+      rows,
       chatId
     );
     return;
@@ -288,6 +296,11 @@ async function handle({ chatId, text, image, user, messageId, callbackId }) {
   }
 
   // ---- owner-only tenant admin ----
+  if (user.role === 'owner' && /^\/backup\b/i.test(text)) {
+    await send('🗄 Taking a backup…', chatId);
+    await runBackup();
+    return;
+  }
   if (user.role === 'owner' && /^\/users\b/i.test(text)) {
     const rows = await users.listUsers();
     const out = rows.map((u) => {

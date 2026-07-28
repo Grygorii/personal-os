@@ -1,5 +1,7 @@
 import cron from 'node-cron';
 import { col } from './db.js';
+import { config } from './config.js';
+import { sendDocument } from './telegram.js';
 import * as coach from './coach.js';
 import * as users from './users.js';
 import { runAs } from './ctx.js';
@@ -10,7 +12,26 @@ const runners = {
   'coach-morning': () => coach.checkIn('morning'),
   'coach-evening': () => coach.checkIn('evening'),
   'coach-weekly': () => coach.weeklyReview(),
+  backup: () => runBackup(),
 };
+
+// Atlas's free tier has no backups, so we make our own: every user's full record, dumped
+// to JSON and delivered to the owner as a file. Costs nothing, and it's a real recovery
+// path — the export format is the same one /export produces.
+export async function runBackup() {
+  const all = await users.listUsers();
+  const dump = { takenAt: new Date().toISOString(), users: [] };
+  for (const u of all) dump.users.push(await users.exportUserData(u._id));
+  const json = JSON.stringify(dump);
+  const rows = dump.users.reduce((n, u) => n + Object.values(u.collections).reduce((m, c) => m + c.length, 0), 0);
+  await sendDocument(
+    `personal-os-backup-${new Date().toISOString().slice(0, 10)}.json`,
+    json,
+    `🗄 Weekly backup — ${all.length} user(s), ${rows} records, ${(json.length / 1024).toFixed(0)} KB.\nKeep this message; it's your restore point.`,
+    config.telegramChatId
+  );
+  console.log(`[backup] ${all.length} users, ${rows} records`);
+}
 
 // Canonical agents, upserted on boot so new ones register on deploy without a
 // manual re-seed. $setOnInsert means existing rows (and any custom schedules) are left alone.
@@ -18,6 +39,7 @@ const DEFAULT_AGENTS = [
   { id: 'coach-morning', enabled: true, schedule: '0 8 * * *', channel: 'telegram', description: 'Morning check-in — opens the day.' },
   { id: 'coach-evening', enabled: true, schedule: '0 21 * * *', channel: 'telegram', description: 'Evening check-in — closes today, nods at tomorrow.' },
   { id: 'coach-weekly', enabled: true, schedule: '0 19 * * 0', channel: 'telegram', description: 'Sunday week-in-review — trends over time.' },
+  { id: 'backup', enabled: true, schedule: '30 3 * * 1', ownerOnly: true, channel: 'telegram', description: 'Weekly backup of every user, delivered to the owner.' },
 ];
 
 async function ensureAgents() {
@@ -67,6 +89,7 @@ export async function scheduleAgents() {
     for (const u of active) {
       const now = users.localNow(u.tz);
       for (const agent of agents) {
+        if (agent.ownerOnly && u.role !== 'owner') continue; // e.g. the backup runs once
         if (!scheduleMatches(agent.schedule, now)) continue;
         if (users.alreadyRan(u, agent.id, now.date)) continue;
         try {
