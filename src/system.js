@@ -189,6 +189,11 @@ export function awardsFor(action) {
       const xp = action.depth === 'deep' ? 28 : action.depth === 'light' ? 5 : 14;
       return [['mind', xp]];
     }
+    case 'log_exam': {
+      // A graded book exam — honest proof of understanding. XP follows the real score.
+      const s = Number(action.score) || 0;
+      return [['mind', s >= 80 ? 35 : s >= 60 ? 22 : s >= 40 ? 12 : 6]];
+    }
     case 'log_english': {
       // Honest: a weak exchange barely moves Mind; a sharp, deep one earns real ground.
       // The five 1–5 scores average into XP, floored at 0 — the Mind stat never goes negative,
@@ -216,7 +221,7 @@ export function questsFromLogs(logs) {
   return {
     hydrate: water >= 2,
     move: logs.some((l) => l.type === 'move'),
-    read: logs.some((l) => l.type === 'book' || l.type === 'essay' || l.type === 'study' || l.type === 'english'),
+    read: logs.some((l) => l.type === 'book' || l.type === 'essay' || l.type === 'study' || l.type === 'english' || l.type === 'exam'),
     build: logs.some((l) => l.type === 'work'),
   };
 }
@@ -241,7 +246,7 @@ export function questProgress(logs) {
 // Which life-domain (stat) each log type feeds — used for breadth/balance.
 const TYPE_DOMAIN = {
   water: 'body', sleep: 'body', meal: 'body', move: 'body',
-  book: 'mind', essay: 'mind', study: 'mind', note: 'mind', english: 'mind',
+  book: 'mind', essay: 'mind', study: 'mind', note: 'mind', english: 'mind', exam: 'mind',
   work: 'forge',
   mood: 'spirit', social: 'spirit', reflect: 'spirit',
   restraint: 'discipline',

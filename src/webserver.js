@@ -2,10 +2,35 @@ import http from 'http';
 import crypto from 'crypto';
 import { readFile } from 'fs/promises';
 import { fileURLToPath } from 'url';
-import { col, getProfile } from './db.js';
+import { col, getProfile, logEvent } from './db.js';
 import { config } from './config.js';
 import { chat } from './llm.js';
+import { sendPings } from './telegram.js';
 import * as system from './system.js';
+
+// Read a small JSON request body (exam answers etc.). Hard 200KB cap.
+function readJson(req) {
+  return new Promise((resolve) => {
+    let data = '';
+    req.on('data', (c) => {
+      data += c;
+      if (data.length > 200000) req.destroy();
+    });
+    req.on('end', () => {
+      try { resolve(JSON.parse(data || '{}')); } catch { resolve({}); }
+    });
+    req.on('error', () => resolve({}));
+  });
+}
+
+// Tolerant JSON extraction from a model reply (same pattern as the coach).
+function parseModelJson(raw) {
+  const clean = raw.trim().replace(/^```json\s*/i, '').replace(/^```\s*/, '').replace(/```$/, '').trim();
+  try { return JSON.parse(clean); } catch { /* try embedded */ }
+  const m = clean.match(/\{[\s\S]*\}/);
+  if (m) try { return JSON.parse(m[0]); } catch { /* no */ }
+  return null;
+}
 
 // A tiny static server for the Telegram Mini App: serves the home hub and tool pages, plus
 // (Phase B) a single authenticated /api/dashboard endpoint that returns his LIVE System data
@@ -121,6 +146,49 @@ Reply with ONLY JSON, no fences: {"recs":[{"title":"...","author":"...","why":".
   return { recs, at: new Date() };
 }
 
+// ---- Book knowledge exam: honest questions, honest grading ----
+// Generate: 5 questions that test real understanding of THIS book — comprehension,
+// application to HIS life/mission, and one pushback. Grade: radical honesty (his standing
+// order) — vague answers score low, with the weak spot named. Results feed Mind XP.
+async function generateExam({ title, author }) {
+  if (!title) throw new Error('no title');
+  const profile = await getProfile();
+  const sys = `You are Гриша's reading examiner. Write an exam for the book "${title}"${author ? ` by ${author}` : ''} that tests whether he ACTUALLY understood and can USE it — not trivia.
+Exactly 5 questions, each answerable in 2-4 sentences:
+- Q1-Q2: the book's core ideas (comprehension — could he explain them to a colleague?)
+- Q3-Q4: application to HIS real life and mission (${profile.mission || 'his growth'}) — make him use the idea, not recite it
+- Q5: pushback — where might the author be wrong, or what's the strongest counter-argument?
+Reply ONLY JSON, no fences: {"questions":["...","...","...","...","..."]}`;
+  const raw = await chat({ system: sys, messages: [{ role: 'user', content: 'Write the exam.' }], maxTokens: 600 });
+  const parsed = parseModelJson(raw);
+  if (!parsed || !Array.isArray(parsed.questions) || parsed.questions.length < 3) throw new Error('exam generation failed');
+  const eid = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  const questions = parsed.questions.slice(0, 5).map(String);
+  await col('book_exams').insertOne({ eid, title, author: author || '', questions, ts: new Date(), status: 'open' });
+  return { eid, questions };
+}
+
+async function gradeExam({ eid, answers }) {
+  const exam = await col('book_exams').findOne({ eid });
+  if (!exam) throw new Error('unknown exam');
+  const list = exam.questions.map((q, i) => `Q${i + 1}: ${q}\nHIS ANSWER: ${String((answers || [])[i] || '(no answer)')}`).join('\n\n');
+  const sys = `You are grading Гриша's exam on "${exam.title}". His STANDING ORDER is radical honesty: real scores, never inflated, never cruel — precise. A vague, generic, or bluffed answer scores under 40. A solid answer with the book's actual idea scores 60-80. Genuine insight applied to his own life scores higher. For each answer: a 0-100 score and ONE sharp sentence of feedback (name the weak spot or what landed). Then an overall 0-100 (weighted judgment, not just the average) and a one-sentence verdict he'd thank you for.
+Reply ONLY JSON, no fences: {"grades":[{"score":70,"feedback":"..."}],"overall":72,"verdict":"..."}`;
+  const raw = await chat({ system: sys, messages: [{ role: 'user', content: list }], maxTokens: 900 });
+  const parsed = parseModelJson(raw);
+  if (!parsed || !Array.isArray(parsed.grades)) throw new Error('grading failed');
+  const overall = Math.max(0, Math.min(100, Math.round(Number(parsed.overall) || 0)));
+  await col('book_exams').updateOne(
+    { eid },
+    { $set: { answers, grades: parsed.grades, overall, verdict: parsed.verdict || '', gradedAt: new Date(), status: 'graded' } }
+  );
+  // Feed the life-System: the exam is real Mind work — and System pings still reach his chat.
+  await logEvent('exam', { title: exam.title, score: overall });
+  const pings = await system.recordAction({ type: 'log_exam', score: overall });
+  await sendPings(pings);
+  return { grades: parsed.grades, overall, verdict: parsed.verdict || '' };
+}
+
 // The deck and body pages are HTML fragments (authored for the Artifact host, which adds
 // <head>). When we serve them ourselves we wrap them in a real document so mobile viewport,
 // charset, and (for sub-pages) a "‹ Home" link all work.
@@ -151,7 +219,7 @@ export function startServer(port = process.env.PORT || 8080) {
       res.end('ok');
       return;
     }
-    if (path === '/api/dashboard' || path === '/api/words' || path === '/api/bookrecs') {
+    if (path === '/api/dashboard' || path === '/api/words' || path === '/api/bookrecs' || path === '/api/bookexam' || path === '/api/bookexam/grade') {
       const user = verifyInitData(req.headers['x-telegram-init-data'] || '', config.telegramToken);
       if (!user || String(user.id) !== String(config.telegramChatId)) {
         res.writeHead(401, { 'Content-Type': 'application/json' });
@@ -175,6 +243,10 @@ export function startServer(port = process.env.PORT || 8080) {
             );
         } else if (path === '/api/bookrecs') {
           data = await gatherBookRecs(/[?&]refresh=1/.test(req.url || ''));
+        } else if (path === '/api/bookexam') {
+          data = await generateExam(await readJson(req));
+        } else if (path === '/api/bookexam/grade') {
+          data = await gradeExam(await readJson(req));
         } else {
           data = await gatherDashboard();
         }

@@ -44,6 +44,7 @@ function summarizeLogs(logs) {
     else if (l.type === 'reflect') byDay[day].push(`reflected: ${l.note || ''}`);
     else if (l.type === 'restraint') byDay[day].push(`held back from ${l.habit || l.note || 'a vice'}`);
     else if (l.type === 'study') byDay[day].push(`brain work: ${l.note || 'a thinking task'}`);
+    else if (l.type === 'exam') byDay[day].push(`book exam: ${l.title} — ${l.score}%`);
     else if (l.type === 'english') byDay[day].push(`English practice${l.avg != null ? ` (${Number(l.avg).toFixed(1)}/5${l.level ? ', ' + l.level : ''})` : ''}`);
     else byDay[day].push(l.type);
   }

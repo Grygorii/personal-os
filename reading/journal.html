@@ -187,6 +187,7 @@ function renderLibrary(){
         ${b.author?`<div class="bauthor">${esc(b.author)}</div>`:""}
         <div class="bmeta"><span class="pill ${b.status}">${STATUS[b.status]}</span>
           ${b.rating?`<span class="stars">${stars(b.rating)}</span>`:""}
+          ${b.exam?`<span class="pill" style="background:var(--good-tint);color:var(--good)">🎓 ${b.exam.score}%</span>`:""}
           ${prog?`<span>${prog}</span>`:""}${nc?`<span>${nc}</span>`:""}</div>
       </div></div>`;
   }).join("");
@@ -232,6 +233,19 @@ function openBook(id){
         }).join(""):'<div class="empty" style="padding:10px">No thoughts yet.</div>'}
       </div>
     </div>
+    <div class="sec">
+      <h3>Knowledge exam</h3>
+      ${b.exam
+        ?`<p class="sub" style="margin:0 0 8px">Last result: <b style="color:var(--good)">${b.exam.score}%</b> · ${fmtDate(b.exam.ts)}${b.exam.verdict?`<br><span style="color:var(--muted)">${esc(b.exam.verdict)}</span>`:""}</p>`
+        :`<p class="sub" style="margin:0 0 8px">Prove you own this book — honest questions, honestly graded.</p>`}
+      <div id="exam-area"></div>
+      <div style="margin-top:10px"><button class="btn ghost" id="b-exam">🎓 ${b.exam?"Retake the exam":"Test my knowledge"}</button></div>
+    </div>
+    <div class="sec">
+      <h3>Share your take</h3>
+      <p class="sub" style="margin:0 0 8px">Send your rating, thoughts${b.exam?", exam result":""} to a friend who read it — then compare.</p>
+      <button class="btn ghost" id="b-share">📤 Share with a friend</button>
+    </div>
     <div style="margin-top:16px"><button class="btn danger" id="b-del">Delete this book</button></div>`;
 
   $("b-back").onclick=()=>{openId=null;$("view-book").hidden=true;$("view-library").hidden=false;renderLibrary();};
@@ -255,6 +269,70 @@ function openBook(id){
     const bk=state.books.find(x=>x.id===id); bk.notes.splice(+bt.dataset.i,1); bk.updated=Date.now(); save(); openBook(id);
   });
   $("b-del").onclick=()=>{ if(confirm("Delete this book and its thoughts?")){ state.books=state.books.filter(x=>x.id!==id); save(); $("b-back").click(); } };
+  $("b-exam").onclick=()=>startExam(id);
+  $("b-share").onclick=()=>shareBook(id);
+}
+
+/* ---- Knowledge exam: honest questions, honestly graded ---- */
+function tgInit(){return (window.Telegram&&Telegram.WebApp&&Telegram.WebApp.initData)||"";}
+async function startExam(id){
+  const b=state.books.find(x=>x.id===id); if(!b)return;
+  const initData=tgInit();
+  if(!initData){toast("Open this inside Telegram to take the exam");return;}
+  const btn=$("b-exam"),area=$("exam-area");
+  btn.disabled=true;btn.textContent="✍️ Writing your exam…";
+  try{
+    const r=await fetch("/api/bookexam",{method:"POST",headers:{"x-telegram-init-data":initData,"Content-Type":"application/json"},body:JSON.stringify({title:b.title,author:b.author||""})});
+    if(!r.ok)throw 0;
+    const ex=await r.json();
+    btn.hidden=true;
+    area.innerHTML=`<p class="sub" style="margin:8px 0 4px;color:var(--muted)">Answer in your own words — 2–4 sentences each. Graded honestly: bluff scores low.</p>`+
+      ex.questions.map((q,i)=>`<div style="margin-top:12px">
+        <label style="text-transform:none;font-size:.9rem;letter-spacing:0;color:var(--ink)"><b>Q${i+1}.</b> ${esc(q)}</label>
+        <textarea class="exam-ans" data-i="${i}" placeholder="your answer…"></textarea>
+      </div>`).join("")+
+      `<div style="margin-top:14px"><button class="btn" id="exam-submit">Submit for honest grading</button></div>`;
+    $("exam-submit").onclick=async()=>{
+      const answers=[...area.querySelectorAll(".exam-ans")].map(t=>t.value.trim());
+      if(answers.every(a=>!a)){toast("Answer at least one question");return;}
+      const sb=$("exam-submit");sb.disabled=true;sb.textContent="⚖️ Grading honestly…";
+      try{
+        const g=await fetch("/api/bookexam/grade",{method:"POST",headers:{"x-telegram-init-data":initData,"Content-Type":"application/json"},body:JSON.stringify({eid:ex.eid,answers})});
+        if(!g.ok)throw 0;
+        const res=await g.json();
+        patch(id,{exam:{score:res.overall,ts:Date.now(),verdict:res.verdict||""}});
+        area.innerHTML=`<div style="text-align:center;padding:14px 4px 6px">
+            <div style="font-family:var(--serif);font-size:2.2rem;font-weight:600;color:${res.overall>=60?"var(--good)":"var(--bad)"}">${res.overall}%</div>
+            ${res.verdict?`<p class="sub" style="margin:4px 0 0">${esc(res.verdict)}</p>`:""}
+          </div>`+
+          res.grades.map((gr,i)=>`<div class="note">
+            <div class="ntop"><span class="npage">Q${i+1} · ${gr.score}%</span></div>
+            <div class="ntext" style="color:var(--muted)">${esc(gr.feedback||"")}</div>
+          </div>`).join("")+
+          `<div style="margin-top:12px"><button class="btn ghost" id="exam-done">Done</button></div>`;
+        $("exam-done").onclick=()=>openBook(id);
+        toast("Result saved to this book");
+      }catch(e){sb.disabled=false;sb.textContent="Submit for honest grading";toast("Grading failed — try again");}
+    };
+  }catch(e){btn.disabled=false;btn.textContent="🎓 Test my knowledge";toast("Couldn't create the exam — try again");}
+}
+
+/* ---- Share your take with a friend ---- */
+function shareBook(id){
+  const b=state.books.find(x=>x.id===id); if(!b)return;
+  const top=(b.notes||[]).slice(-3).map(n=>`• ${n.page?`p.${n.page} — `:""}${n.text}`).join("\n");
+  const txt=`📚 ${b.title}${b.author?` — ${b.author}`:""}\n`+
+    `${b.rating?"★".repeat(b.rating)+"☆".repeat(5-b.rating):""}${b.status==="finished"?"  (finished)":""}\n`+
+    (b.exam?`🎓 Knowledge exam: ${b.exam.score}% (honestly graded)\n`:"")+
+    (top?`\nMy thoughts:\n${top}\n`:"")+
+    `\nHave you read it? Let's compare — I had to *prove* I understood it 😄`;
+  const done=()=>toast("Your take is ready to send");
+  if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(txt).then(done,()=>{});}
+  try{
+    const tg=window.Telegram&&Telegram.WebApp;
+    if(tg&&tg.openTelegramLink){tg.openTelegramLink("https://t.me/share/url?url=&text="+encodeURIComponent(txt));return;}
+  }catch(e){}
+  toast("Copied — paste it to your friend");
 }
 
 function patch(id,p){const b=state.books.find(x=>x.id===id);if(!b)return;Object.assign(b,p,{updated:Date.now()});save();}
