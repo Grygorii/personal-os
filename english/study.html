@@ -361,7 +361,7 @@ function renderMeaning(){
       <div class="term">${c.w}</div>
       <div class="prompt-think" id="m-think">Do you know what this means? Think it through, then reveal.</div>
       <div id="m-reveal" hidden>
-        <div class="reveal">${SAY[c.w]?`<div class="say"><span class="lab">say it</span><span class="phon">${SAY[c.w]}</span><button class="hear" id="m-hear" type="button" aria-label="Hear it pronounced">&#128266; Hear it</button></div>`:""}${senses}<p class="eg">&ldquo;${fmtText(c.eg)}&rdquo;</p>${c.flag?`<div class="flag-note">${c.flag}</div>`:""}</div>
+        <div class="reveal">${SAY[c.w]?`<div class="say"><span class="lab">say it</span><span class="phon">${SAY[c.w]}</span><button class="hear" id="m-hear" type="button" aria-label="Hear it pronounced">&#128266; Hear it</button></div>`:""}${senses}${c.eg?`<p class="eg">&ldquo;${fmtText(c.eg)}&rdquo;</p>`:""}${c.flag?`<div class="flag-note">${c.flag}</div>`:""}</div>
         <div class="tap-hint">&#9755; Tap any word you don't know — even in the explanation.</div>
         <div class="tray" id="m-tray"></div>
         <div class="grade">
@@ -559,5 +559,34 @@ $("theme").onclick=()=>{
   document.documentElement.setAttribute("data-theme",next);
 };
 
-renderMeaning();renderSpelling();renderLessons();renderUse();
+/* ---- Live words: the deck grows by itself ----
+   Words the tutor catches you missing in chat (and the curriculum word bank) come from
+   the bot's /api/words. New chat-caught words go FIRST, so the deck visibly grows the
+   moment a conversation surfaces a gap. Offline / outside Telegram → built-ins only. */
+async function loadLiveWords(){
+  try{
+    const initData=(window.Telegram&&Telegram.WebApp&&Telegram.WebApp.initData)||"";
+    if(!initData) return;
+    const r=await fetch("/api/words",{headers:{"x-telegram-init-data":initData}});
+    if(!r.ok) return;
+    const rows=await r.json();
+    if(!Array.isArray(rows)) return;
+    const have=new Set(VOCAB.map(c=>c.w.toLowerCase()));
+    const fresh=[];
+    for(const row of rows){
+      const key=(row.word||"").toLowerCase().trim();
+      if(!key||have.has(key)) continue;
+      have.add(key);
+      fresh.push({
+        w:key,
+        pos:row.source==="curriculum"?"word bank":"caught in conversation",
+        senses:[row.note||"You reached for this in a real conversation and it wasn't there. Ask your tutor to go deep on it."],
+        eg:"",
+        flag:row.source!=="curriculum"&&row.count>1?`Missed ${row.count} times in conversation.`:""
+      });
+    }
+    if(fresh.length) VOCAB.unshift(...fresh); // newest gaps become card 1 — the deck is alive
+  }catch(e){}
+}
+loadLiveWords().finally(()=>{renderMeaning();renderSpelling();renderLessons();renderUse();});
 </script>

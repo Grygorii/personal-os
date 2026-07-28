@@ -547,19 +547,36 @@ export async function weeklyReview() {
 // An honest, all-directions portrait the coach writes from real OBSERVATION (not his CV),
 // saved each time so he can re-read it in a month and measure how he's actually changed.
 export async function portrait() {
-  const [profile, state, history, logs] = await Promise.all([
+  // Sample the WHOLE archive, not just the recent tail — the portrait should see his arc:
+  // how he talked at the start, in the middle, and now. Plus the weekly stat snapshots and
+  // the previous portrait, so it can measure change instead of re-describing him from zero.
+  const total = await col('conversation').countDocuments();
+  const [profile, state, early, middle, recent, logs, snaps, prev] = await Promise.all([
     getProfile(),
     system.currentState(),
-    col('conversation').find().sort({ ts: -1 }).limit(80).toArray(),
+    col('conversation').find().sort({ ts: 1 }).limit(15).toArray(),
+    col('conversation').find().sort({ ts: 1 }).skip(Math.max(0, Math.floor(total / 2) - 8)).limit(15).toArray(),
+    col('conversation').find().sort({ ts: -1 }).limit(50).toArray(),
     recentLogs(30),
+    col('snapshots').find().sort({ ts: 1 }).toArray(),
+    col('portraits').findOne({}, { sort: { ts: -1 } }),
   ]);
-  const convo = history
-    .reverse()
-    .map((m) => `[${m.role}] ${(m.text || '').slice(0, 200)}`)
-    .join('\n')
-    .slice(-7000);
+  const line = (m) => `${new Date(m.ts).toISOString().slice(0, 10)} [${m.role}] ${(m.text || '').slice(0, 180)}`;
+  const arc =
+    `— EARLIEST DAYS —\n${early.map(line).join('\n')}\n\n` +
+    `— MIDWAY —\n${middle.map(line).join('\n')}\n\n` +
+    `— RECENT (most recent last) —\n${recent.reverse().map(line).join('\n')}`;
+  const trend = snaps.length
+    ? snaps.map((s) => `${new Date(s.ts).toISOString().slice(0, 10)}: L${s.level} xp${s.xp} ${JSON.stringify(s.stats)}`).join('\n')
+    : 'no weekly snapshots yet';
 
   const sys = `You are writing an HONEST, multi-dimensional PORTRAIT of Гриша — for HIM to read, to study himself and measure progress over the coming months. He has granted FULL permission: hold nothing back, no flattery, no overreaction, hard truths where they are real. Ground EVERYTHING in what you have actually OBSERVED — his behaviour, his words, his data — NOT his CV or credentials (he says his formal education doesn't reflect what he actually knows today).
+
+HOW TO WRITE IT — analysis, not horoscope:
+- EVERY claim must be anchored in concrete evidence: quote his own words (short), cite a real pattern from the logs or the arc below. If you can't point at evidence, don't write the claim.
+- No generic lines that could describe anyone ("you are hard-working but sometimes tired"). If a sentence would fit a stranger, cut it.
+- Weigh the ARC: how he talked in the earliest days vs midway vs now — name what actually shifted, and what hasn't despite him wanting it to.
+- End every section with one measurable MARKER to re-check in the next portrait ("Marker: ...").
 
 Write it warmly but unflinchingly — a mirror for growth, never a wound, yet never softening what's true. Short sections, each with a heading:
 - MIND — how he actually thinks; real knowledge depth and where it's thin
@@ -568,18 +585,24 @@ Write it warmly but unflinchingly — a mirror for growth, never a wound, yet ne
 - CHARACTER & EMOTION — his drives, his fears, how he handles hard things
 - CRAFT & WORK — how he builds; his initiative and his crutches
 - BLIND SPOTS — what he doesn't seem to see about himself
-- TRAJECTORY — where this is heading, and the one or two changes that would most move him toward the professional companies hunt
+- TRAJECTORY — where this is heading, and the one or two changes that would most move him toward the professional companies hunt${prev ? `
+- SINCE THE LAST PORTRAIT (${new Date(prev.ts).toISOString().slice(0, 10)}) — compare against it honestly: what moved, what stalled, which of its markers he hit or missed` : ''}
 
 WHAT YOU KNOW ABOUT HIM (profile — includes insights you've gathered + his mission):
 ${JSON.stringify(profile, null, 2)}
 
-His measured stats: ${JSON.stringify(state)}.
+His measured stats now: ${JSON.stringify(state)}.
+Weekly stat snapshots over time:
+${trend}
 Activity (last 30 days): ${summarizeLogs(logs)}
 
-Recent conversation (most recent last):
-${convo}`;
+HIS ARC — sampled from the whole archive (${total} messages):
+${arc}
+${prev ? `
+THE PREVIOUS PORTRAIT (for comparison):
+${prev.text.slice(0, 3500)}` : ''}`;
 
-  const text = await chat({ system: sys, messages: [{ role: 'user', content: 'Write my honest portrait now.' }], maxTokens: 1500 });
+  const text = await chat({ system: sys, messages: [{ role: 'user', content: 'Write my honest portrait now.' }], maxTokens: 2000 });
   await sendLong("🪞 *Your portrait — honest, as I actually see you.*\n_Re-read this in a month to measure how you've moved._\n\n" + text);
   await col('portraits').insertOne({ ts: new Date(), text });
 }

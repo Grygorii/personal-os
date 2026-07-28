@@ -1,3 +1,5 @@
+import { readFile } from 'fs/promises';
+import { fileURLToPath } from 'url';
 import { chat } from '../llm.js';
 import { col, logEvent } from '../db.js';
 import { send, sendPings, sendButtons } from '../telegram.js';
@@ -8,7 +10,9 @@ import * as system from '../system.js';
 // Runtime state lives in Mongo (Railway's filesystem is ephemeral); the english/*.md
 // files are the Claude Code curriculum, not runtime state.
 
-const DECK_URL = 'https://claude.ai/code/artifact/b8abb83b-6e0f-42a8-8946-b7a2e5448b3f';
+// The self-hosted deck (was a stale claude.ai Artifact link — now the live Mini App page,
+// which also pulls the growing word bank from /api/words).
+const DECK_URL = 'https://personal-os-production-052d.up.railway.app/deck';
 const DIMS = ['clarity', 'grammar', 'vocab', 'concise', 'register'];
 
 // ---------- state ----------
@@ -266,6 +270,46 @@ async function deck() {
       'and pronunciation with audio. Tap to open inside Telegram:',
     [{ text: 'Open study deck', url: DECK_URL }]
   );
+}
+
+// ---------- curriculum sync ----------
+// Parse english/words.md (the Claude Code curriculum, deployed with the repo) into
+// english_words on boot — so words added in tutoring sessions HERE reach the live deck,
+// alongside words the bot tutor catches in chat. $setOnInsert only: never overwrites
+// what the chat tutor has learned about a word.
+export async function syncWordBank() {
+  try {
+    const abs = fileURLToPath(new URL('../../english/words.md', import.meta.url));
+    const text = await readFile(abs, 'utf8');
+    const sections = text.split(/\n## /).slice(1);
+    let added = 0;
+    for (const sec of sections) {
+      const lines = sec.split('\n');
+      const title = lines[0].replace(/\s*\(.*?\)\s*$/, '').trim();
+      if (!title) continue;
+      // Word entries define senses as "- **word** — ..." bullets; prose sections
+      // (Word web, Spelling slips) don't — skip those.
+      const firstBody = lines.slice(1).find((l) => l.trim());
+      if (!firstBody || !firstBody.trim().startsWith('- ')) continue;
+      const note = lines
+        .slice(1)
+        .join(' ')
+        .replace(/<[^>]+>/g, '')
+        .replace(/[*_`#]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 320);
+      const r = await col('english_words').updateOne(
+        { word: title.toLowerCase() },
+        { $setOnInsert: { word: title.toLowerCase(), note, source: 'curriculum', createdAt: new Date(), lastSeen: new Date(), count: 1 } },
+        { upsert: true }
+      );
+      if (r.upsertedCount) added++;
+    }
+    if (added) console.log(`[english] word bank sync: +${added} from words.md`);
+  } catch (e) {
+    console.error('[english] word bank sync failed:', e.message);
+  }
 }
 
 // ---------- command router hook ----------

@@ -102,7 +102,7 @@ export function startServer(port = process.env.PORT || 8080) {
       res.end('ok');
       return;
     }
-    if (path === '/api/dashboard') {
+    if (path === '/api/dashboard' || path === '/api/words') {
       const user = verifyInitData(req.headers['x-telegram-init-data'] || '', config.telegramToken);
       if (!user || String(user.id) !== String(config.telegramChatId)) {
         res.writeHead(401, { 'Content-Type': 'application/json' });
@@ -110,11 +110,25 @@ export function startServer(port = process.env.PORT || 8080) {
         return;
       }
       try {
-        const data = await gatherDashboard();
+        // /api/words: the LIVE word bank — words the tutor caught him missing in chat
+        // (english_words, written by the english agent) plus the curriculum words synced
+        // from english/words.md on boot. Chat-caught first, newest first, so the deck
+        // grows visibly the moment a conversation surfaces a gap.
+        const data =
+          path === '/api/words'
+            ? await col('english_words')
+                .find()
+                .sort({ source: 1, lastSeen: -1 }) // 'chat' < 'curriculum' alphabetically
+                .limit(200)
+                .toArray()
+                .then((rows) =>
+                  rows.map((r) => ({ word: r.word, note: r.why || r.note || '', count: r.count || 1, source: r.source || 'chat' }))
+                )
+            : await gatherDashboard();
         res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
         res.end(JSON.stringify(data));
       } catch (err) {
-        console.error('[web] dashboard error:', err.message);
+        console.error('[web] api error:', path, err.message);
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'server' }));
       }
