@@ -23,8 +23,12 @@ export const config = {
   geminiKey: oneLine(process.env.GEMINI_API_KEY),
   geminiModel: oneLine(process.env.GEMINI_MODEL) || 'gemini-2.5-flash',
   telegramToken: oneLine(process.env.TELEGRAM_BOT_TOKEN),
-  telegramChatId: oneLine(process.env.TELEGRAM_CHAT_ID), // your own numeric chat id
+  telegramChatId: oneLine(process.env.TELEGRAM_CHAT_ID), // the owner's numeric chat id
   timezone: process.env.TZ || 'Europe/Dublin',
+  // Master key for encrypting tenants' own AI keys at rest. Env only — never in Mongo/git.
+  encryptionKey: oneLine(process.env.ENCRYPTION_KEY),
+  // Multi-tenant switch. Off = only the owner may use the bot (current behaviour).
+  multiTenant: oneLine(process.env.MULTI_TENANT) === 'true',
 };
 
 // Warn (don't crash) on missing essentials so `npm run seed` etc. still load.

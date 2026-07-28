@@ -128,16 +128,22 @@ export async function poll(onMessage) {
       for (const update of result) {
         offset = update.update_id + 1;
         const msg = update.message;
-        if (msg?.photo?.length) {
-          let image = null;
-          try {
-            image = await fetchPhotoBase64(msg.photo[msg.photo.length - 1].file_id);
-          } catch (e) {
-            console.error('[telegram] photo download failed:', e.message);
+        // Each update is isolated: one user's failure must never skip the next person's
+        // message or stall the whole bot. Errors are logged and the loop carries on.
+        try {
+          if (msg?.photo?.length) {
+            let image = null;
+            try {
+              image = await fetchPhotoBase64(msg.photo[msg.photo.length - 1].file_id);
+            } catch (e) {
+              console.error('[telegram] photo download failed:', e.message);
+            }
+            await onMessage({ chatId: msg.chat.id, from: msg.from, text: (msg.caption || '').trim(), image });
+          } else if (msg?.text) {
+            await onMessage({ chatId: msg.chat.id, from: msg.from, text: msg.text.trim() });
           }
-          await onMessage({ chatId: msg.chat.id, text: (msg.caption || '').trim(), image });
-        } else if (msg?.text) {
-          await onMessage({ chatId: msg.chat.id, text: msg.text.trim() });
+        } catch (e) {
+          console.error(`[telegram] handling update ${update.update_id} failed:`, e.message);
         }
       }
     } catch (err) {

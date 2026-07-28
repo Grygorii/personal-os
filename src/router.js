@@ -7,7 +7,7 @@ import * as routine from './agents/routine.js';
 import * as coach from './coach.js';
 import * as system from './system.js';
 import { send, sendKeyboard } from './telegram.js';
-import { config } from './config.js';
+import * as users from './users.js';
 
 // Slash-commands are quick shortcuts. Everything else goes to the coach.
 const shortcuts = [water, bookCoach, body, reading, routine];
@@ -27,12 +27,22 @@ const LABELS = {
   '❓ Help': '/help',
 };
 
-export async function route({ chatId, text, image }) {
-  // Single-tenant guard (and the seed of the future multi-tenant allowlist): only his own
-  // chat may talk to the bot. Before this, a stranger's message would be processed into HIS
-  // data and the reply sent to HIS chat. Strangers are ignored, not answered.
-  if (config.telegramChatId && String(chatId) !== String(config.telegramChatId)) {
-    console.warn('[router] ignoring message from unknown chat:', chatId);
+export async function route({ chatId, from, text, image }) {
+  // The door. Every message is attributed to a user record first; the owner is always let
+  // in, and while MULTI_TENANT is off nobody else is — they're recorded as pending so they
+  // can be approved later, never silently processed into someone else's data.
+  const user = await users.ensureUser({
+    chatId,
+    name: [from?.first_name, from?.last_name].filter(Boolean).join(' '),
+    username: from?.username || '',
+  });
+  if (!users.isAllowed(user)) {
+    console.warn(`[router] ignoring message from ${user.status} user ${chatId}`);
+    return;
+  }
+  // A runaway loop or a spammer can't burn the API budget or drown the bot.
+  if (!users.rateLimit(user._id)) {
+    console.warn(`[router] rate limited ${user._id}`);
     return;
   }
 
@@ -117,6 +127,31 @@ export async function route({ chatId, text, image }) {
   if (/^\/portrait\b/i.test(text)) {
     await coach.portrait(); // honest, all-directions portrait from real observation (saved over time)
     return;
+  }
+
+  // ---- owner-only tenant admin ----
+  if (user.role === 'owner' && /^\/users\b/i.test(text)) {
+    const rows = await users.listUsers();
+    const out = rows.map((u) => {
+      const who = u.name || u.username || u._id;
+      return `${u.status === 'active' ? '✅' : u.status === 'blocked' ? '⛔' : '⏳'} ${who} · ${u.tier} · id ${u._id}`;
+    });
+    await send('```\n⟦  U S E R S  ⟧\n' + (out.join('\n') || 'nobody yet') + '\n\n/approve <id> · /block <id>\n```');
+    return;
+  }
+  if (user.role === 'owner') {
+    let m = text.match(/^\/approve\s+(\d+)(?:\s+(\w+))?/i);
+    if (m) {
+      await users.approve(m[1], m[2] || 'trial');
+      await send(`✅ Approved \`${m[1]}\` on the *${m[2] || 'trial'}* tier.`);
+      return;
+    }
+    m = text.match(/^\/block\s+(\d+)/i);
+    if (m) {
+      await users.block(m[1]);
+      await send(`⛔ Blocked \`${m[1]}\`.`);
+      return;
+    }
   }
 
   // Explicit slash shortcuts (fast path)
