@@ -4,15 +4,23 @@ import { poll, setCommands } from './telegram.js';
 import { route } from './router.js';
 import { startServer } from './webserver.js';
 import { syncWordBank } from './agents/english.js';
+import * as users from './users.js';
+import { runAs } from './ctx.js';
+import { config } from './config.js';
 
 // Bump on each deploy so we can confirm which build is actually live (read meta.boot).
-const VERSION = 'tenant-1';
+const VERSION = 'tenant-1b';
 
 async function main() {
   await connect();
   await col('meta').updateOne({ _id: 'boot' }, { $set: { version: VERSION, at: new Date() } }, { upsert: true });
   console.log(`[boot] ${VERSION}`);
-  await syncWordBank(); // curriculum words.md → english_words (feeds the live deck)
+  // The curriculum in english/*.md is the OWNER's study material, so it syncs into his
+  // word bank specifically — a tenant's deck starts from their own conversations.
+  if (config.telegramChatId) {
+    const owner = await users.ensureUser({ chatId: config.telegramChatId });
+    await runAs(owner, () => syncWordBank());
+  }
   // Tappable "/" menu — buttons over typing, everywhere.
   await setCommands([
     { command: 'status', description: '📊 Level, energy, quests' },

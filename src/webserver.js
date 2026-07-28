@@ -7,6 +7,8 @@ import { config } from './config.js';
 import { chat } from './llm.js';
 import { sendPings } from './telegram.js';
 import * as system from './system.js';
+import * as users from './users.js';
+import { runAs, uid } from './ctx.js';
 
 // Read a small JSON request body (exam answers etc.). Hard 200KB cap.
 function readJson(req) {
@@ -110,7 +112,9 @@ async function gatherDashboard() {
 // goals, and reading history; cached a week so it costs one model call, not one per open.
 async function gatherBookRecs(refresh) {
   const DAY = 86400000;
-  const cached = await col('meta').findOne({ _id: 'book_recs' });
+  // meta is a global collection, so this cache key must carry the user itself.
+  const cacheId = `book_recs:${uid()}`;
+  const cached = await col('meta').findOne({ _id: cacheId });
   const fresh = cached?.ts && Date.now() - new Date(cached.ts).getTime() < 7 * DAY;
   if (cached?.recs?.length && fresh && !refresh) return { recs: cached.recs, at: cached.ts };
 
@@ -150,7 +154,7 @@ Reply with ONLY JSON, no fences: {"recs":[{"title":"...","author":"...","why":".
     throw new Error('no recommendations generated');
   }
   recs = recs.slice(0, 4).map((r) => ({ title: String(r.title || ''), author: String(r.author || ''), why: String(r.why || '') }));
-  await col('meta').updateOne({ _id: 'book_recs' }, { $set: { ts: new Date(), recs } }, { upsert: true });
+  await col('meta').updateOne({ _id: cacheId }, { $set: { ts: new Date(), recs } }, { upsert: true });
   return { recs, at: new Date() };
 }
 
@@ -228,36 +232,34 @@ export function startServer(port = process.env.PORT || 8080) {
       return;
     }
     if (path === '/api/dashboard' || path === '/api/words' || path === '/api/bookrecs' || path === '/api/bookexam' || path === '/api/bookexam/grade') {
-      const user = verifyInitData(req.headers['x-telegram-init-data'] || '', config.telegramToken);
-      if (!user || String(user.id) !== String(config.telegramChatId)) {
+      const tgUser = verifyInitData(req.headers['x-telegram-init-data'] || '', config.telegramToken);
+      // A valid Telegram signature proves WHO they are; the allowlist decides whether
+      // they're allowed in. Everything below then runs as that user.
+      const acct = tgUser ? await users.ensureUser({ chatId: tgUser.id, name: tgUser.first_name || '' }) : null;
+      if (!acct || !users.isAllowed(acct)) {
         res.writeHead(401, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'unauthorized' }));
         return;
       }
       try {
-        // /api/words: the LIVE word bank — words the tutor caught him missing in chat
-        // (english_words, written by the english agent) plus the curriculum words synced
-        // from english/words.md on boot. Chat-caught first, newest first, so the deck
-        // grows visibly the moment a conversation surfaces a gap.
-        let data;
-        if (path === '/api/words') {
-          data = await col('english_words')
-            .find()
-            .sort({ source: 1, lastSeen: -1 }) // 'chat' < 'curriculum' alphabetically
-            .limit(200)
-            .toArray()
-            .then((rows) =>
-              rows.map((r) => ({ word: r.word, note: r.why || r.note || '', count: r.count || 1, source: r.source || 'chat' }))
-            );
-        } else if (path === '/api/bookrecs') {
-          data = await gatherBookRecs(/[?&]refresh=1/.test(req.url || ''));
-        } else if (path === '/api/bookexam') {
-          data = await generateExam(await readJson(req));
-        } else if (path === '/api/bookexam/grade') {
-          data = await gradeExam(await readJson(req));
-        } else {
-          data = await gatherDashboard();
-        }
+        // Everything inside runAs reads and writes only this user's data.
+        // /api/words: the LIVE word bank — words the tutor caught them missing in chat
+        // plus the curriculum words synced from english/words.md. Chat-caught first.
+        const body = path === '/api/bookexam' || path === '/api/bookexam/grade' ? await readJson(req) : null;
+        const data = await runAs(acct, async () => {
+          if (path === '/api/words') {
+            const rows = await col('english_words')
+              .find()
+              .sort({ source: 1, lastSeen: -1 }) // 'chat' < 'curriculum' alphabetically
+              .limit(200)
+              .toArray();
+            return rows.map((r) => ({ word: r.word, note: r.why || r.note || '', count: r.count || 1, source: r.source || 'chat' }));
+          }
+          if (path === '/api/bookrecs') return gatherBookRecs(/[?&]refresh=1/.test(req.url || ''));
+          if (path === '/api/bookexam') return generateExam(body);
+          if (path === '/api/bookexam/grade') return gradeExam(body);
+          return gatherDashboard();
+        });
         res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
         res.end(JSON.stringify(data));
       } catch (err) {

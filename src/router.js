@@ -8,6 +8,7 @@ import * as coach from './coach.js';
 import * as system from './system.js';
 import { send, sendKeyboard } from './telegram.js';
 import * as users from './users.js';
+import { runAs } from './ctx.js';
 
 // Slash-commands are quick shortcuts. Everything else goes to the coach.
 const shortcuts = [water, bookCoach, body, reading, routine];
@@ -27,10 +28,9 @@ const LABELS = {
   '❓ Help': '/help',
 };
 
+// The door: identify the sender, check the allowlist and rate limit, then run everything
+// else INSIDE that user's context so every read and write is automatically theirs.
 export async function route({ chatId, from, text, image }) {
-  // The door. Every message is attributed to a user record first; the owner is always let
-  // in, and while MULTI_TENANT is off nobody else is — they're recorded as pending so they
-  // can be approved later, never silently processed into someone else's data.
   const user = await users.ensureUser({
     chatId,
     name: [from?.first_name, from?.last_name].filter(Boolean).join(' '),
@@ -45,7 +45,10 @@ export async function route({ chatId, from, text, image }) {
     console.warn(`[router] rate limited ${user._id}`);
     return;
   }
+  return runAs(user, () => handle({ chatId, text, image, user }));
+}
 
+async function handle({ chatId, text, image, user }) {
   // Tapped keyboard buttons arrive as their label text — translate to the command.
   if (LABELS[text]) text = LABELS[text];
 

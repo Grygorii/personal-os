@@ -1,5 +1,6 @@
 import { MongoClient } from 'mongodb';
 import { config } from './config.js';
+import { uid } from './ctx.js';
 
 let client;
 let db;
@@ -13,12 +14,75 @@ export async function connect() {
   return db;
 }
 
-export function col(name) {
+// Collections that are the same for everyone. Everything else is per-user — the default is
+// SCOPED on purpose, so a collection added later is private unless deliberately shared.
+const GLOBAL_COLLECTIONS = new Set([
+  'users', // the tenant registry itself
+  'meta', // boot marker and other server-wide state
+  'agents', // the schedule definitions; the runtime fans them out per user
+]);
+
+// Raw, unscoped access. Only for migrations and global collections — never for user data.
+export function rawCol(name) {
   if (!db) throw new Error('DB not connected. Call connect() first.');
   return db.collection(name);
 }
 
-// The single shared-memory document every agent reads.
+// Add the current user to a query. A fixed string _id (the old singletons 'me', 'state',
+// 'current') becomes per-user — 'me' → 'me:488418318' — so every tenant has their own.
+function scopeFilter(filter = {}) {
+  const id = uid();
+  const out = { ...filter, userId: id };
+  if (typeof out._id === 'string' && !out._id.endsWith(`:${id}`)) out._id = `${out._id}:${id}`;
+  return out;
+}
+
+function scopeDoc(doc = {}) {
+  const id = uid();
+  const out = { ...doc, userId: id };
+  if (typeof out._id === 'string' && !out._id.endsWith(`:${id}`)) out._id = `${out._id}:${id}`;
+  return out;
+}
+
+// On upsert Mongo copies the filter's equality fields into the new document, so userId is
+// carried automatically. We only strip _id out of $set/$setOnInsert: the id now comes from
+// the (scoped) filter, and re-assigning it would be an immutable-field error.
+function scopeUpdate(update = {}) {
+  const out = { ...update };
+  const hasOperators = Object.keys(out).some((k) => k.startsWith('$'));
+  if (!hasOperators) return scopeDoc(out); // whole-document replacement
+  for (const op of ['$set', '$setOnInsert']) {
+    if (out[op] && typeof out[op] === 'object' && '_id' in out[op]) {
+      const copy = { ...out[op] };
+      delete copy._id;
+      if (Object.keys(copy).length) out[op] = copy;
+      else delete out[op];
+    }
+  }
+  return out;
+}
+
+// A thin per-user view of a collection. Only the methods this app actually uses are
+// exposed — anything else must go through rawCol() deliberately.
+function scoped(coll) {
+  return {
+    find: (filter = {}, options) => coll.find(scopeFilter(filter), options),
+    findOne: (filter = {}, options) => coll.findOne(scopeFilter(filter), options),
+    countDocuments: (filter = {}, options) => coll.countDocuments(scopeFilter(filter), options),
+    insertOne: (doc, options) => coll.insertOne(scopeDoc(doc), options),
+    updateOne: (filter, update, options) => coll.updateOne(scopeFilter(filter), scopeUpdate(update), options),
+    deleteOne: (filter = {}, options) => coll.deleteOne(scopeFilter(filter), options),
+    deleteMany: (filter = {}, options) => coll.deleteMany(scopeFilter(filter), options),
+  };
+}
+
+export function col(name) {
+  if (!db) throw new Error('DB not connected. Call connect() first.');
+  const coll = db.collection(name);
+  return GLOBAL_COLLECTIONS.has(name) ? coll : scoped(coll);
+}
+
+// The shared-memory document the coach reads (now one per user).
 export async function getProfile() {
   return (await col('profile').findOne({ _id: 'me' })) || {};
 }

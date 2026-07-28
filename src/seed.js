@@ -1,8 +1,16 @@
 import { connect, col } from './db.js';
+import * as users from './users.js';
+import { runAs } from './ctx.js';
+import { config } from './config.js';
 
 async function main() {
   await connect();
+  // Seeding writes user data, so it runs as the owner.
+  const owner = await users.ensureUser({ chatId: config.telegramChatId, name: 'Гриша' });
+  await runAs(owner, seed);
+}
 
+async function seed() {
   // --- shared memory: the single document the coach reads ---
   await col('profile').updateOne(
     { _id: 'me' },

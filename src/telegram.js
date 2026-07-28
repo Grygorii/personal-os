@@ -1,8 +1,16 @@
 import { config } from './config.js';
+import { currentUser } from './ctx.js';
 
 const API = `https://api.telegram.org/bot${config.telegramToken}`;
 
-export async function send(text, chatId = config.telegramChatId) {
+// Where does an un-addressed message go? To the person we're currently acting for — so a
+// tenant's check-in reaches THEM, never the owner. Falls back to the owner outside a
+// context (boot-time notices).
+function defaultChat() {
+  return currentUser()?.chatId || config.telegramChatId;
+}
+
+export async function send(text, chatId = defaultChat()) {
   if (!chatId) {
     console.warn('[telegram] no chatId set; message not sent:', text.slice(0, 60));
     return;
@@ -26,13 +34,13 @@ export async function send(text, chatId = config.telegramChatId) {
 }
 
 // Send a batch of System "ping" lines as a monospaced block (no-op if empty).
-export async function sendPings(pings, chatId = config.telegramChatId) {
+export async function sendPings(pings, chatId = defaultChat()) {
   if (!pings || !pings.length) return;
   await send('```\n' + pings.join('\n') + '\n```', chatId);
 }
 
 // Send a long message, split on line breaks into <4k chunks (Telegram's per-message cap).
-export async function sendLong(text, chatId = config.telegramChatId) {
+export async function sendLong(text, chatId = defaultChat()) {
   const MAX = 3800;
   if ((text || '').length <= MAX) return send(text, chatId);
   const parts = [];
@@ -51,7 +59,7 @@ export async function sendLong(text, chatId = config.telegramChatId) {
 
 // Send a message with tappable inline buttons that open a URL inside Telegram.
 // buttons: [{ text, url }] (one row). Falls back to plain text if Markdown trips the parser.
-export async function sendButtons(text, buttons, chatId = config.telegramChatId) {
+export async function sendButtons(text, buttons, chatId = defaultChat()) {
   if (!chatId) {
     console.warn('[telegram] no chatId set; button message not sent:', text.slice(0, 60));
     return;
@@ -74,7 +82,7 @@ export async function sendButtons(text, buttons, chatId = config.telegramChatId)
 
 // A persistent reply keyboard: labeled buttons under the input box that send their text
 // when tapped — so he taps instead of typing commands. Installed once (survives restarts).
-export async function sendKeyboard(text, rows, chatId = config.telegramChatId) {
+export async function sendKeyboard(text, rows, chatId = defaultChat()) {
   if (!chatId) return;
   const res = await fetch(`${API}/sendMessage`, {
     method: 'POST',

@@ -2,6 +2,8 @@ import cron from 'node-cron';
 import { col } from './db.js';
 import { config } from './config.js';
 import * as coach from './coach.js';
+import * as users from './users.js';
+import { runAs } from './ctx.js';
 
 // Map agent id -> scheduled handler. The coach owns the proactive pulse;
 // water/book commands still work on demand via the router (no schedule needed).
@@ -44,12 +46,18 @@ export async function scheduleAgents() {
       agent.schedule,
       async () => {
         console.log(`[runtime] running "${agent.id}"`);
-        try {
-          await runner();
-          await col('agents').updateOne({ id: agent.id }, { $set: { lastRun: new Date() } });
-        } catch (err) {
-          console.error(`[runtime] "${agent.id}" failed:`, err.message);
+        // Fan out: every active user gets their own check-in, in their own context, so the
+        // message is built from THEIR data and delivered to THEIR chat. One person's
+        // failure doesn't stop the rest.
+        const active = (await users.listUsers()).filter((u) => users.isAllowed(u));
+        for (const u of active) {
+          try {
+            await runAs(u, () => runner());
+          } catch (err) {
+            console.error(`[runtime] "${agent.id}" failed for ${u._id}:`, err.message);
+          }
         }
+        await col('agents').updateOne({ id: agent.id }, { $set: { lastRun: new Date() } });
       },
       { timezone: config.timezone }
     );

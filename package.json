@@ -8,7 +8,8 @@
   },
   "scripts": {
     "start": "node src/index.js",
-    "seed": "node src/seed.js"
+    "seed": "node src/seed.js",
+    "migrate": "node src/migrate-tenant.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.104.1",
