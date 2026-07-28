@@ -45,6 +45,18 @@ const MENU = [
   [{ text: '⚙️ Settings', data: '/settings' }],
 ];
 
+// The BOOK PRODUCT surface. Everything else we built still exists in the code — it's
+// simply not shown. One promise, one loop: read it, prove you kept it, share it.
+export const BOOKS_KEYBOARD = [['📚 My books', '🎓 Exam', '☰ Menu']];
+const BOOKS_LABELS = { '📚 My books': '/reading', '🎓 Exam': '/exam', '☰ Menu': '/menu' };
+
+const BOOKS_MENU = [
+  [{ text: '📚 My library', url: `${config.appUrl}/reading` }],
+  [{ text: '🎓 Test me on a book', url: `${config.appUrl}/reading` }],
+  [{ text: '💡 What should I read next?', data: '/suggest' }],
+  [{ text: '⚙️ Settings', data: '/settings' }],
+];
+
 const SETTINGS = [
   [{ text: '🔑 My AI key', data: '/mykey' }],
   [{ text: '🕒 Timezone', data: '/timezone' }],
@@ -91,13 +103,31 @@ export async function route({ chatId, from, text, image, messageId, callbackId }
 async function handle({ chatId, text, image, user, messageId, callbackId }) {
   // A tapped inline button: stop its spinner immediately, then treat its data as the command.
   if (callbackId) await answerCallback(callbackId);
+  const booksOnly = user.product === 'books';
+  const KB = booksOnly ? BOOKS_KEYBOARD : KEYBOARD;
   // Tapped keyboard buttons arrive as their label text — translate to the command.
-  if (LABELS[text]) text = LABELS[text];
+  if (BOOKS_LABELS[text] && booksOnly) text = BOOKS_LABELS[text];
+  else if (LABELS[text]) text = LABELS[text];
 
   // First real contact for a newly approved person: introduce the mentor and let it start
   // building their profile, rather than dropping them into a command list.
   if (!user.onboardedAt && user.role !== 'owner') {
     await users.markOnboarded(chatId);
+    if (booksOnly) {
+      // One promise, said plainly.
+      await sendKeyboard(
+        "📕 *You forget most of what you read.*\n\nI fix that.\n\n" +
+          "Tell me what you're reading. Send me the thoughts it sparks as you go. " +
+          "When you finish, I'll examine you on it — honestly — and you'll know whether you actually kept it.",
+        BOOKS_KEYBOARD,
+        chatId
+      );
+      await sendInline('Start with the book in your hands:', [
+        [{ text: '📚 Open my library', url: `${config.appUrl}/reading` }],
+        [{ text: '💡 Suggest me something', data: '/suggest' }],
+      ], chatId);
+      return;
+    }
     await sendKeyboard(
       "👋 *Welcome.* I'm your mentor — not a tracker or a chatbot.\n\n" +
         "Two things I do: get to know you properly, then help you move — a little better, every day. " +
@@ -134,21 +164,31 @@ async function handle({ chatId, text, image, user, messageId, callbackId }) {
 
   if (/^\/start\b/i.test(text)) {
     await sendKeyboard(
-      '*Personal OS* 🧠\n\nJust talk to me — sleep, water, training, reading, work, mood, ' +
-        'even a photo. I listen, remember, and coach.\n\nTap *☰ Menu* below for everything else.',
-      KEYBOARD,
+      booksOnly
+        ? "📕 Tell me what you're reading, and the thoughts it sparks. When you finish, I'll test whether you kept it."
+        : '*Personal OS* 🧠\n\nJust talk to me — sleep, water, training, reading, work, mood, ' +
+            'even a photo. I listen, remember, and coach.\n\nTap *☰ Menu* below for everything else.',
+      KB,
       chatId
     );
-    await sendInline('What do you want to open?', MENU, chatId);
+    await sendInline(booksOnly ? 'Where to?' : 'What do you want to open?', booksOnly ? BOOKS_MENU : MENU, chatId);
     return;
   }
 
   if (/^\/(menu|help)\b/i.test(text)) {
     await sendInline(
-      '☰ *Menu* — tap anything.\n\n_You never need to type a command. To log something, just say it in your own words._',
-      MENU,
+      booksOnly
+        ? "☰ *Menu*\n\n_Just talk to me about what you're reading — no commands needed._"
+        : '☰ *Menu* — tap anything.\n\n_You never need to type a command. To log something, just say it in your own words._',
+      booksOnly ? BOOKS_MENU : MENU,
       chatId
     );
+    return;
+  }
+
+  // In the book product, everything outside the reading loop simply isn't there.
+  if (booksOnly && /^\/(status|ranks?|pursuits?|review|portrait|english|done|englishreport|library|deck|body|routine|water)\b/i.test(text)) {
+    await sendInline("That's not part of this — I keep to books.", BOOKS_MENU, chatId);
     return;
   }
 
@@ -158,6 +198,9 @@ async function handle({ chatId, text, image, user, messageId, callbackId }) {
       rows.splice(rows.length - 1, 0, [
         { text: '👥 Users', data: '/users' },
         { text: '🗄 Backup now', data: '/backup' },
+      ]);
+      rows.splice(rows.length - 1, 0, [
+        { text: user.product === 'books' ? '🧠 Back to full OS' : '📕 Preview book product', data: '/preview' },
       ]);
     }
     await sendInline(
@@ -194,6 +237,31 @@ async function handle({ chatId, text, image, user, messageId, callbackId }) {
 
   if (/^\/portrait\b/i.test(text)) {
     await coach.portrait(); // honest, all-directions portrait from real observation (saved over time)
+    return;
+  }
+
+  if (/^\/exam\b/i.test(text)) {
+    await sendInline(
+      '🎓 *Test yourself on a book*\n\nOpen your library, pick the book, and tap *Test my knowledge*. ' +
+        "Five questions, graded honestly — bluffing scores low.",
+      [[{ text: '📚 Open my library', url: `${config.appUrl}/reading` }]],
+      chatId
+    );
+    return;
+  }
+
+  // Owner preview: see exactly what a reader sees, and switch back.
+  if (user.role === 'owner' && /^\/preview\b/i.test(text)) {
+    const to = user.product === 'books' ? 'full' : 'books';
+    await users.setProduct(chatId, to);
+    await sendKeyboard(
+      to === 'books'
+        ? '📕 *Book product view.* This is what a new reader gets — everything else is hidden.\nTap 📕 again (`/preview`) to return to your full OS.'
+        : '🧠 *Full OS view* restored.',
+      to === 'books' ? BOOKS_KEYBOARD : KEYBOARD,
+      chatId
+    );
+    await sendInline('Menu:', to === 'books' ? BOOKS_MENU : MENU, chatId);
     return;
   }
 

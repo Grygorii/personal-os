@@ -26,7 +26,7 @@ const GLOBAL_COLLECTIONS = new Set([
 // export and deletion — if a new user collection is added, add it here too.
 export const USER_COLLECTIONS = [
   'logs', 'conversation', 'pursuits', 'snapshots', 'portraits', 'book_exams',
-  'reading', 'system', 'profile', 'english', 'english_scores', 'english_words',
+  'books', 'reading', 'system', 'profile', 'english', 'english_scores', 'english_words',
   'english_books', 'english_convo', 'english_breakdowns',
 ];
 

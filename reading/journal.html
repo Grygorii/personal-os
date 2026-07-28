@@ -154,7 +154,35 @@
 <script>
 const KEY="reading-journal-v1";
 let state=JSON.parse(localStorage.getItem(KEY)||"{}"); state.books=state.books||[];
-const save=()=>localStorage.setItem(KEY,JSON.stringify(state));
+/* The library lives on the server so it follows you across devices, gets backed up, and
+   the mentor can see it. localStorage stays as an offline cache and a first-run migration
+   source. Saves are debounced — typing a thought shouldn't fire a request per keystroke. */
+const initData=()=>(window.Telegram&&Telegram.WebApp&&Telegram.WebApp.initData)||"";
+let syncTimer=null,syncing=false;
+async function pushBooks(){
+  const id=initData(); if(!id) return;
+  syncing=true;
+  try{
+    await fetch("/api/books",{method:"PUT",headers:{"x-telegram-init-data":id,"Content-Type":"application/json"},
+      body:JSON.stringify({books:state.books})});
+  }catch(e){ /* offline: localStorage still holds it, next save retries */ }
+  syncing=false;
+}
+const save=()=>{
+  localStorage.setItem(KEY,JSON.stringify(state));
+  clearTimeout(syncTimer); syncTimer=setTimeout(pushBooks,600);
+};
+async function loadBooks(){
+  const id=initData(); if(!id) return;             // outside Telegram: local-only, unchanged
+  try{
+    const r=await fetch("/api/books",{headers:{"x-telegram-init-data":id}});
+    if(!r.ok) return;
+    const {books}=await r.json();
+    if(Array.isArray(books)&&books.length){ state.books=books; localStorage.setItem(KEY,JSON.stringify(state)); }
+    else if(state.books.length){ await pushBooks(); }   // first run: lift the local shelf up
+    renderLibrary();
+  }catch(e){}
+}
 const $=id=>document.getElementById(id);
 const esc=s=>(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
@@ -371,6 +399,7 @@ $("theme").onclick=()=>{
 };
 
 renderLibrary();
+loadBooks();
 
 /* ---- Recommended next (live, personal) ---- */
 let recData=[];

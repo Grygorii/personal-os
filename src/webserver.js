@@ -158,6 +158,38 @@ Reply with ONLY JSON, no fences: {"recs":[{"title":"...","author":"...","why":".
   return { recs, at: new Date() };
 }
 
+// ---- The library: server-side, so it follows the reader across devices ----
+// One document per user holding their whole shelf. A library is small (tens of books),
+// so whole-document sync keeps the client trivial and the data always consistent.
+async function getBooks() {
+  const doc = await col('books').findOne({ _id: 'library' });
+  return { books: doc?.books || [], updatedAt: doc?.updatedAt || null };
+}
+
+async function saveBooks(books) {
+  if (!Array.isArray(books)) throw new Error('books must be an array');
+  if (books.length > 500) throw new Error('too many books');
+  const clean = books.slice(0, 500).map((b) => ({
+    id: String(b.id || Date.now().toString(36)),
+    title: String(b.title || '').slice(0, 300),
+    author: String(b.author || '').slice(0, 200),
+    total: b.total == null ? null : Number(b.total) || null,
+    page: Number(b.page) || 0,
+    status: ['reading', 'finished', 'want'].includes(b.status) ? b.status : 'reading',
+    rating: Math.max(0, Math.min(5, Number(b.rating) || 0)),
+    notes: (Array.isArray(b.notes) ? b.notes : []).slice(-500).map((n) => ({
+      text: String(n.text || '').slice(0, 4000),
+      page: n.page == null ? null : Number(n.page) || null,
+      ts: Number(n.ts) || Date.now(),
+    })),
+    exam: b.exam ? { score: Number(b.exam.score) || 0, ts: Number(b.exam.ts) || Date.now(), verdict: String(b.exam.verdict || '').slice(0, 600) } : null,
+    started: Number(b.started) || Date.now(),
+    updated: Number(b.updated) || Date.now(),
+  }));
+  await col('books').updateOne({ _id: 'library' }, { $set: { books: clean, updatedAt: new Date() } }, { upsert: true });
+  return { ok: true, count: clean.length };
+}
+
 // ---- Book knowledge exam: honest questions, honest grading ----
 // Generate: 5 questions that test real understanding of THIS book — comprehension,
 // application to HIS life/mission, and one pushback. Grade: radical honesty (his standing
@@ -231,7 +263,10 @@ export function startServer(port = process.env.PORT || 8080) {
       res.end('ok');
       return;
     }
-    if (path === '/api/dashboard' || path === '/api/words' || path === '/api/bookrecs' || path === '/api/bookexam' || path === '/api/bookexam/grade') {
+    if (
+      path === '/api/dashboard' || path === '/api/words' || path === '/api/bookrecs' ||
+      path === '/api/bookexam' || path === '/api/bookexam/grade' || path === '/api/books'
+    ) {
       const tgUser = verifyInitData(req.headers['x-telegram-init-data'] || '', config.telegramToken);
       // A valid Telegram signature proves WHO they are; the allowlist decides whether
       // they're allowed in. Everything below then runs as that user.
@@ -245,8 +280,11 @@ export function startServer(port = process.env.PORT || 8080) {
         // Everything inside runAs reads and writes only this user's data.
         // /api/words: the LIVE word bank — words the tutor caught them missing in chat
         // plus the curriculum words synced from english/words.md. Chat-caught first.
-        const body = path === '/api/bookexam' || path === '/api/bookexam/grade' ? await readJson(req) : null;
+        const needsBody =
+          path === '/api/bookexam' || path === '/api/bookexam/grade' || (path === '/api/books' && req.method === 'PUT');
+        const body = needsBody ? await readJson(req) : null;
         const data = await runAs(acct, async () => {
+          if (path === '/api/books') return req.method === 'PUT' ? saveBooks(body?.books) : getBooks();
           if (path === '/api/words') {
             const rows = await col('english_words')
               .find()

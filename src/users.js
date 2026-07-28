@@ -38,6 +38,9 @@ export async function ensureUser({ chatId, name = '', username = '' }) {
     name,
     username,
     role: owner ? 'owner' : 'member',
+    // What this person's bot IS. New people get the focused book product; the full life OS
+    // stays in the code, just hidden. The owner keeps everything.
+    product: owner ? 'full' : 'books',
     status: owner ? 'active' : 'pending',
     tier: owner ? 'owner' : 'trial',
     trialEndsAt: owner ? null : new Date(Date.now() + TRIAL_DAYS * DAY),
@@ -168,6 +171,11 @@ export async function recordRun(chatId, agentId, localDate) {
 }
 
 // ---------- onboarding ----------
+
+export async function setProduct(chatId, product) {
+  if (!['books', 'full'].includes(product)) throw new Error('unknown product');
+  await col('users').updateOne({ _id: String(chatId) }, { $set: { product } });
+}
 
 export async function markOnboarded(chatId) {
   await col('users').updateOne({ _id: String(chatId) }, { $set: { onboardedAt: new Date() } });
