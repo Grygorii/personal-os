@@ -14,8 +14,14 @@ const oneLine = (v) =>
 export const config = {
   mongoUri: oneLine(process.env.MONGO_URI),
   dbName: oneLine(process.env.DB_NAME) || 'personal_os',
+  // LLM_PROVIDER picks who handles everyday coaching: 'gemini' (cheap/free tier) or
+  // 'anthropic'. Deep work (portraits, exams) still prefers Claude when a key exists.
+  provider: (oneLine(process.env.LLM_PROVIDER) || 'anthropic').toLowerCase(),
   anthropicKey: oneLine(process.env.ANTHROPIC_API_KEY),
   model: oneLine(process.env.CLAUDE_MODEL) || 'claude-sonnet-4-6',
+  deepModel: oneLine(process.env.DEEP_MODEL) || oneLine(process.env.CLAUDE_MODEL) || 'claude-sonnet-4-6',
+  geminiKey: oneLine(process.env.GEMINI_API_KEY),
+  geminiModel: oneLine(process.env.GEMINI_MODEL) || 'gemini-2.5-flash',
   telegramToken: oneLine(process.env.TELEGRAM_BOT_TOKEN),
   telegramChatId: oneLine(process.env.TELEGRAM_CHAT_ID), // your own numeric chat id
   timezone: process.env.TZ || 'Europe/Dublin',
@@ -24,9 +30,11 @@ export const config = {
 // Warn (don't crash) on missing essentials so `npm run seed` etc. still load.
 const required = {
   MONGO_URI: config.mongoUri,
-  ANTHROPIC_API_KEY: config.anthropicKey,
   TELEGRAM_BOT_TOKEN: config.telegramToken,
 };
 for (const [key, value] of Object.entries(required)) {
   if (!value) console.warn(`[config] Missing env var: ${key}`);
+}
+if (!config.anthropicKey && !config.geminiKey) {
+  console.warn('[config] No LLM key set — need ANTHROPIC_API_KEY or GEMINI_API_KEY');
 }

@@ -603,7 +603,8 @@ ${prev ? `
 THE PREVIOUS PORTRAIT (for comparison):
 ${prev.text.slice(0, 3500)}` : ''}`;
 
-  const text = await chat({ system: sys, messages: [{ role: 'user', content: 'Write my honest portrait now.' }], maxTokens: 2000 });
+  // 'deep': the portrait is the highest-value analysis this app produces — always the best model.
+  const text = await chat({ system: sys, messages: [{ role: 'user', content: 'Write my honest portrait now.' }], maxTokens: 2000, tier: 'deep' });
   await sendLong("🪞 *Your portrait — honest, as I actually see you.*\n_Re-read this in a month to measure how you've moved._\n\n" + text);
   await col('portraits').insertOne({ ts: new Date(), text });
 }

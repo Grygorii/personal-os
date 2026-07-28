@@ -167,7 +167,7 @@ Exactly 5 questions, each answerable in 2-4 sentences:
 - Q3-Q4: application to HIS real life and mission (${profile.mission || 'his growth'}) — make him use the idea, not recite it
 - Q5: pushback — where might the author be wrong, or what's the strongest counter-argument?
 Reply ONLY JSON, no fences: {"questions":["...","...","...","...","..."]}`;
-  const raw = await chat({ system: sys, messages: [{ role: 'user', content: 'Write the exam.' }], maxTokens: 600 });
+  const raw = await chat({ system: sys, messages: [{ role: 'user', content: 'Write the exam.' }], maxTokens: 600, tier: 'deep' });
   const parsed = parseModelJson(raw);
   if (!parsed || !Array.isArray(parsed.questions) || parsed.questions.length < 3) throw new Error('exam generation failed');
   const eid = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -182,7 +182,7 @@ async function gradeExam({ eid, answers }) {
   const list = exam.questions.map((q, i) => `Q${i + 1}: ${q}\nHIS ANSWER: ${String((answers || [])[i] || '(no answer)')}`).join('\n\n');
   const sys = `You are grading Гриша's exam on "${exam.title}". His STANDING ORDER is radical honesty: real scores, never inflated, never cruel — precise. A vague, generic, or bluffed answer scores under 40. A solid answer with the book's actual idea scores 60-80. Genuine insight applied to his own life scores higher. For each answer: a 0-100 score and ONE sharp sentence of feedback (name the weak spot or what landed). Then an overall 0-100 (weighted judgment, not just the average) and a one-sentence verdict he'd thank you for.
 Reply ONLY JSON, no fences: {"grades":[{"score":70,"feedback":"..."}],"overall":72,"verdict":"..."}`;
-  const raw = await chat({ system: sys, messages: [{ role: 'user', content: list }], maxTokens: 900 });
+  const raw = await chat({ system: sys, messages: [{ role: 'user', content: list }], maxTokens: 900, tier: 'deep' });
   const parsed = parseModelJson(raw);
   if (!parsed || !Array.isArray(parsed.grades)) throw new Error('grading failed');
   const overall = Math.max(0, Math.min(100, Math.round(Number(parsed.overall) || 0)));
