@@ -122,16 +122,18 @@
 
     <!-- Recommended next: picked server-side from his profile + reading history -->
     <style>
+      /* Every color here is an explicit journal theme variable — never `inherit`, which
+         Telegram's WebView broke into invisible text once already. */
       .recs-head{display:flex;align-items:center;justify-content:space-between;margin:22px 2px 10px}
-      .recs-head .t{font-weight:600;font-size:1.02rem}
-      .recs-head button{background:transparent;border:1px solid var(--line,#DBE3E4);color:inherit;border-radius:9px;padding:5px 11px;cursor:pointer;font-size:.82rem}
-      .rec{background:var(--surface,#fff);border:1px solid var(--line,#DBE3E4);border-radius:14px;padding:14px 15px;margin-bottom:10px}
-      .rec .rt{font-weight:600;font-size:1.02rem}
-      .rec .ra{opacity:.65;font-size:.85rem;margin-top:1px}
-      .rec .rw{font-size:.88rem;margin-top:7px;line-height:1.45}
-      .rec .rec-add{margin-top:10px;background:transparent;border:1px solid var(--line,#DBE3E4);border-radius:9px;padding:6px 12px;cursor:pointer;font-size:.84rem;font-weight:600;color:inherit}
-      .recs-note{opacity:.55;font-size:.78rem;margin:2px 2px 0}
-      .recs-loading{opacity:.6;font-size:.9rem;padding:8px 2px}
+      .recs-head .t{font-weight:600;font-size:1.02rem;font-family:var(--serif);color:var(--ink)}
+      .recs-head button{background:var(--accent-tint);border:1px solid var(--accent);color:var(--accent-strong);border-radius:9px;padding:6px 12px;cursor:pointer;font-family:var(--sans);font-weight:600;font-size:.82rem}
+      .rec{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px 15px;margin-bottom:10px;color:var(--ink)}
+      .rec .rt{font-weight:600;font-size:1.05rem;font-family:var(--serif);color:var(--ink)}
+      .rec .ra{color:var(--muted);font-size:.85rem;margin-top:1px}
+      .rec .rw{color:var(--ink);font-size:.88rem;margin-top:7px;line-height:1.45}
+      .rec .rec-add{margin-top:10px;background:var(--accent-tint);border:1px solid var(--accent);border-radius:9px;padding:7px 13px;cursor:pointer;font-family:var(--sans);font-size:.84rem;font-weight:600;color:var(--accent-strong)}
+      .recs-note{color:var(--faint);font-size:.78rem;margin:2px 2px 0}
+      .recs-loading{color:var(--muted);font-size:.9rem;padding:8px 2px}
     </style>
     <div id="recs" hidden>
       <div class="recs-head"><span class="t">Recommended next</span><button id="recs-refresh" type="button">↻ New picks</button></div>

@@ -6,7 +6,7 @@ import { startServer } from './webserver.js';
 import { syncWordBank } from './agents/english.js';
 
 // Bump on each deploy so we can confirm which build is actually live (read meta.boot).
-const VERSION = 'ux-1';
+const VERSION = 'ux-2';
 
 async function main() {
   await connect();

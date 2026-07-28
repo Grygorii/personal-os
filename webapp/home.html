@@ -47,9 +47,9 @@
   .note b{color:var(--ink)}
   footer{text-align:center;color:var(--faint);font-size:.78rem;margin-top:22px}
   /* live pulse */
-  .pulse{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:14px 16px;margin-top:16px}
+  .pulse{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:14px 16px;margin-top:16px;color:var(--ink);text-decoration:none;display:none}
   .pulse-top{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
-  .pulse-top .lvl{font-family:var(--serif);font-weight:600;font-size:1.12rem}
+  .pulse-top .lvl{font-family:var(--serif);font-weight:600;font-size:1.12rem;color:var(--ink)}
   .pulse-top .streak{color:var(--muted);font-size:.9rem;white-space:nowrap}
   .ebar{height:7px;border-radius:5px;background:var(--line);margin:10px 0 4px;overflow:hidden}
   .ebar i{display:block;height:100%;border-radius:5px;background:var(--teal);width:0;transition:width .5s ease}
@@ -68,7 +68,7 @@
   </header>
 
   <!-- Live pulse: his real state, at a glance, before any tap -->
-  <a class="pulse" id="pulse" href="/dashboard" style="display:none;text-decoration:none;color:inherit">
+  <a class="pulse" id="pulse" href="/dashboard">
     <div class="pulse-top"><span class="lvl" id="p-lvl"></span><span class="streak" id="p-streak"></span></div>
     <div class="ebar"><i id="p-ebar"></i></div>
     <div class="elab"><span>Energy</span><span id="p-en"></span></div>
