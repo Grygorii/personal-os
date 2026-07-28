@@ -119,6 +119,25 @@
       <div style="margin-top:14px"><button class="btn" id="ab-save">Add book</button></div>
     </div>
     <div class="list" id="book-list"></div>
+
+    <!-- Recommended next: picked server-side from his profile + reading history -->
+    <style>
+      .recs-head{display:flex;align-items:center;justify-content:space-between;margin:22px 2px 10px}
+      .recs-head .t{font-weight:600;font-size:1.02rem}
+      .recs-head button{background:transparent;border:1px solid var(--line,#DBE3E4);color:inherit;border-radius:9px;padding:5px 11px;cursor:pointer;font-size:.82rem}
+      .rec{background:var(--surface,#fff);border:1px solid var(--line,#DBE3E4);border-radius:14px;padding:14px 15px;margin-bottom:10px}
+      .rec .rt{font-weight:600;font-size:1.02rem}
+      .rec .ra{opacity:.65;font-size:.85rem;margin-top:1px}
+      .rec .rw{font-size:.88rem;margin-top:7px;line-height:1.45}
+      .rec .rec-add{margin-top:10px;background:transparent;border:1px solid var(--line,#DBE3E4);border-radius:9px;padding:6px 12px;cursor:pointer;font-size:.84rem;font-weight:600;color:inherit}
+      .recs-note{opacity:.55;font-size:.78rem;margin:2px 2px 0}
+      .recs-loading{opacity:.6;font-size:.9rem;padding:8px 2px}
+    </style>
+    <div id="recs" hidden>
+      <div class="recs-head"><span class="t">Recommended next</span><button id="recs-refresh" type="button">↻ New picks</button></div>
+      <div id="recs-list"></div>
+      <div class="recs-note">Chosen for you — from your profile, goals, and what you've read.</div>
+    </div>
   </section>
 
   <section id="view-book" hidden></section>
@@ -272,4 +291,35 @@ $("theme").onclick=()=>{
 };
 
 renderLibrary();
+
+/* ---- Recommended next (live, personal) ---- */
+let recData=[];
+async function loadRecs(refresh){
+  try{
+    const initData=(window.Telegram&&Telegram.WebApp&&Telegram.WebApp.initData)||"";
+    if(!initData) return; // outside Telegram: journal works, recs simply hidden
+    const el=$("recs"),list=$("recs-list");
+    if(refresh){el.hidden=false;list.innerHTML='<div class="recs-loading">Choosing new picks…</div>';}
+    const r=await fetch("/api/bookrecs"+(refresh?"?refresh=1":""),{headers:{"x-telegram-init-data":initData}});
+    if(!r.ok) return;
+    const data=await r.json();
+    if(!Array.isArray(data.recs)||!data.recs.length) return;
+    recData=data.recs;
+    list.innerHTML=recData.map((x,i)=>`<div class="rec">
+      <div class="rt">${esc(x.title)}</div>
+      ${x.author?`<div class="ra">${esc(x.author)}</div>`:""}
+      <div class="rw">${esc(x.why||"")}</div>
+      <button class="rec-add" type="button" data-i="${i}">＋ Want to read</button>
+    </div>`).join("");
+    list.querySelectorAll(".rec-add").forEach(b=>b.onclick=()=>{
+      const x=recData[+b.dataset.i]; if(!x) return;
+      if(state.books.some(bk=>bk.title.toLowerCase()===x.title.toLowerCase())){toast("Already in your library");return;}
+      state.books.push({id:uid(),title:x.title,author:x.author||"",total:null,page:0,status:"want",rating:0,notes:[],started:Date.now(),updated:Date.now()});
+      save();renderStats();renderLibrary();toast("Added to Want to read");
+    });
+    el.hidden=false;
+  }catch(e){}
+}
+$("recs-refresh").onclick=()=>loadRecs(true);
+loadRecs(false);
 </script>

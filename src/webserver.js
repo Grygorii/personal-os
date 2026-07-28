@@ -2,8 +2,9 @@ import http from 'http';
 import crypto from 'crypto';
 import { readFile } from 'fs/promises';
 import { fileURLToPath } from 'url';
-import { col } from './db.js';
+import { col, getProfile } from './db.js';
 import { config } from './config.js';
+import { chat } from './llm.js';
 import * as system from './system.js';
 
 // A tiny static server for the Telegram Mini App: serves the home hub and tool pages, plus
@@ -72,6 +73,54 @@ async function gatherDashboard() {
   };
 }
 
+// Personal book recommendations for the Reading journal — generated from his profile,
+// goals, and reading history; cached a week so it costs one model call, not one per open.
+async function gatherBookRecs(refresh) {
+  const DAY = 86400000;
+  const cached = await col('meta').findOne({ _id: 'book_recs' });
+  const fresh = cached?.ts && Date.now() - new Date(cached.ts).getTime() < 7 * DAY;
+  if (cached?.recs?.length && fresh && !refresh) return { recs: cached.recs, at: cached.ts };
+
+  const [profile, bookLogs, engBooks, current] = await Promise.all([
+    getProfile(),
+    col('logs').find({ type: 'book' }).sort({ ts: -1 }).limit(20).toArray(),
+    col('english_books').find().sort({ lastDiscussed: -1 }).limit(10).toArray(),
+    col('reading').findOne({ _id: 'current' }),
+  ]);
+  const history =
+    [...new Set([...bookLogs.map((b) => b.title), ...engBooks.map((b) => b.title), current?.title].filter(Boolean))].join('; ') ||
+    'nothing logged yet';
+
+  const sys = `You are Гриша's reading advisor and you know him well. Recommend exactly 4 books he has NOT read, each chosen FOR HIM:
+- one that advances his mission (Collections × AI — becoming the professional companies hunt),
+- one on finance/risk/decision-making matching his taste (Taleb, Marks, Housel — substantive, multi-perspective),
+- one for the builder/founder in him (SILKILINEN),
+- one wildcard from his wider interests (history, systems thinking, psychology).
+"why" must be ONE sharp sentence (max 160 chars) tied to HIS goals — never a blurb.
+
+WHO HE IS: ${JSON.stringify({ mission: profile.mission, goals: profile.goals, readingTaste: profile.readingTaste, interests: profile.interests })}
+ALREADY READ / IN PROGRESS (never recommend these): ${history}
+
+Reply with ONLY JSON, no fences: {"recs":[{"title":"...","author":"...","why":"..."}]}`;
+
+  const raw = await chat({ system: sys, messages: [{ role: 'user', content: 'Recommend my next four books.' }], maxTokens: 700 });
+  const clean = raw.trim().replace(/^```json\s*/i, '').replace(/^```\s*/, '').replace(/```$/, '').trim();
+  let recs = null;
+  try {
+    recs = JSON.parse(clean).recs;
+  } catch {
+    const m = clean.match(/\{[\s\S]*\}/);
+    if (m) try { recs = JSON.parse(m[0]).recs; } catch { /* fall through */ }
+  }
+  if (!Array.isArray(recs) || !recs.length) {
+    if (cached?.recs?.length) return { recs: cached.recs, at: cached.ts }; // stale beats broken
+    throw new Error('no recommendations generated');
+  }
+  recs = recs.slice(0, 4).map((r) => ({ title: String(r.title || ''), author: String(r.author || ''), why: String(r.why || '') }));
+  await col('meta').updateOne({ _id: 'book_recs' }, { $set: { ts: new Date(), recs } }, { upsert: true });
+  return { recs, at: new Date() };
+}
+
 // The deck and body pages are HTML fragments (authored for the Artifact host, which adds
 // <head>). When we serve them ourselves we wrap them in a real document so mobile viewport,
 // charset, and (for sub-pages) a "‹ Home" link all work.
@@ -102,7 +151,7 @@ export function startServer(port = process.env.PORT || 8080) {
       res.end('ok');
       return;
     }
-    if (path === '/api/dashboard' || path === '/api/words') {
+    if (path === '/api/dashboard' || path === '/api/words' || path === '/api/bookrecs') {
       const user = verifyInitData(req.headers['x-telegram-init-data'] || '', config.telegramToken);
       if (!user || String(user.id) !== String(config.telegramChatId)) {
         res.writeHead(401, { 'Content-Type': 'application/json' });
@@ -114,17 +163,21 @@ export function startServer(port = process.env.PORT || 8080) {
         // (english_words, written by the english agent) plus the curriculum words synced
         // from english/words.md on boot. Chat-caught first, newest first, so the deck
         // grows visibly the moment a conversation surfaces a gap.
-        const data =
-          path === '/api/words'
-            ? await col('english_words')
-                .find()
-                .sort({ source: 1, lastSeen: -1 }) // 'chat' < 'curriculum' alphabetically
-                .limit(200)
-                .toArray()
-                .then((rows) =>
-                  rows.map((r) => ({ word: r.word, note: r.why || r.note || '', count: r.count || 1, source: r.source || 'chat' }))
-                )
-            : await gatherDashboard();
+        let data;
+        if (path === '/api/words') {
+          data = await col('english_words')
+            .find()
+            .sort({ source: 1, lastSeen: -1 }) // 'chat' < 'curriculum' alphabetically
+            .limit(200)
+            .toArray()
+            .then((rows) =>
+              rows.map((r) => ({ word: r.word, note: r.why || r.note || '', count: r.count || 1, source: r.source || 'chat' }))
+            );
+        } else if (path === '/api/bookrecs') {
+          data = await gatherBookRecs(/[?&]refresh=1/.test(req.url || ''));
+        } else {
+          data = await gatherDashboard();
+        }
         res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
         res.end(JSON.stringify(data));
       } catch (err) {

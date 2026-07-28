@@ -46,6 +46,17 @@
     border:1px solid var(--line);border-radius:12px;padding:13px 15px}
   .note b{color:var(--ink)}
   footer{text-align:center;color:var(--faint);font-size:.78rem;margin-top:22px}
+  /* live pulse */
+  .pulse{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:14px 16px;margin-top:16px}
+  .pulse-top{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+  .pulse-top .lvl{font-family:var(--serif);font-weight:600;font-size:1.12rem}
+  .pulse-top .streak{color:var(--muted);font-size:.9rem;white-space:nowrap}
+  .ebar{height:7px;border-radius:5px;background:var(--line);margin:10px 0 4px;overflow:hidden}
+  .ebar i{display:block;height:100%;border-radius:5px;background:var(--teal);width:0;transition:width .5s ease}
+  .elab{display:flex;justify-content:space-between;color:var(--faint);font-size:.76rem}
+  .chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:11px}
+  .qchip{font-size:.8rem;font-weight:600;border-radius:20px;padding:4px 11px;border:1px solid var(--line);color:var(--muted)}
+  .qchip.met{background:var(--green-tint);border-color:transparent;color:var(--ink)}
 </style>
 </head>
 <body>
@@ -55,6 +66,14 @@
     <h1 id="hi">Your OS</h1>
     <p class="sub">Everything in one place. Tap what you need.</p>
   </header>
+
+  <!-- Live pulse: his real state, at a glance, before any tap -->
+  <a class="pulse" id="pulse" href="/dashboard" style="display:none;text-decoration:none;color:inherit">
+    <div class="pulse-top"><span class="lvl" id="p-lvl"></span><span class="streak" id="p-streak"></span></div>
+    <div class="ebar"><i id="p-ebar"></i></div>
+    <div class="elab"><span>Energy</span><span id="p-en"></span></div>
+    <div class="chips" id="p-quests"></div>
+  </a>
 
   <nav class="tiles">
     <a class="tile" href="/deck">
@@ -108,6 +127,26 @@
       var name = tg.initDataUnsafe && tg.initDataUnsafe.user && tg.initDataUnsafe.user.first_name;
       if(name){ document.getElementById('hi').textContent = 'Hi, ' + name; }
     }catch(e){ /* never break the page on SDK quirks */ }
+  })();
+
+  // Live pulse — level, streak, energy, today's quests. Fails silently outside Telegram.
+  (async function(){
+    try{
+      var tg = window.Telegram && window.Telegram.WebApp;
+      var initData = tg && tg.initData;
+      if(!initData) return;
+      var r = await fetch('/api/dashboard', { headers: { 'x-telegram-init-data': initData } });
+      if(!r.ok) return;
+      var d = await r.json();
+      document.getElementById('p-lvl').textContent = 'Level ' + d.level + ' · ' + d.rank;
+      document.getElementById('p-streak').textContent = '🔥 ' + d.streak + (d.streak === 1 ? ' day' : ' days');
+      document.getElementById('p-ebar').style.width = Math.max(3, d.energy || 0) + '%';
+      document.getElementById('p-en').textContent = (d.energy != null ? d.energy : '—') + '/100';
+      document.getElementById('p-quests').innerHTML = (d.quests || []).map(function(q){
+        return '<span class="qchip' + (q.met ? ' met' : '') + '">' + (q.met ? '✓ ' : '') + q.label + (q.text ? ' · ' + q.text : '') + '</span>';
+      }).join('');
+      document.getElementById('pulse').style.display = 'block';
+    }catch(e){ /* pulse is a bonus, never a blocker */ }
   })();
 </script>
 </body>

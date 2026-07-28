@@ -72,6 +72,37 @@ export async function sendButtons(text, buttons, chatId = config.telegramChatId)
   return res.json();
 }
 
+// A persistent reply keyboard: labeled buttons under the input box that send their text
+// when tapped — so he taps instead of typing commands. Installed once (survives restarts).
+export async function sendKeyboard(text, rows, chatId = config.telegramChatId) {
+  if (!chatId) return;
+  const res = await fetch(`${API}/sendMessage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chat_id: chatId,
+      text,
+      parse_mode: 'Markdown',
+      reply_markup: { keyboard: rows.map((r) => r.map((label) => ({ text: label }))), resize_keyboard: true, is_persistent: true },
+    }),
+  });
+  if (!res.ok) console.error('[telegram] sendKeyboard failed:', await res.text());
+}
+
+// Register the tappable "/" command menu (idempotent — safe to call on every boot).
+export async function setCommands(commands) {
+  try {
+    const res = await fetch(`${API}/setMyCommands`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ commands }),
+    });
+    if (!res.ok) console.error('[telegram] setMyCommands failed:', await res.text());
+  } catch (e) {
+    console.error('[telegram] setMyCommands error:', e.message);
+  }
+}
+
 /**
  * Long-poll for incoming messages. Calls onMessage({ chatId, text }) per message.
  * Runs forever.

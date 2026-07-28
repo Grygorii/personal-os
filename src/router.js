@@ -6,11 +6,26 @@ import * as reading from './agents/reading.js';
 import * as routine from './agents/routine.js';
 import * as coach from './coach.js';
 import * as system from './system.js';
-import { send } from './telegram.js';
+import { send, sendKeyboard } from './telegram.js';
 import { config } from './config.js';
 
 // Slash-commands are quick shortcuts. Everything else goes to the coach.
 const shortcuts = [water, bookCoach, body, reading, routine];
+
+// The tap keyboard: labeled buttons → commands, so he never types a command again.
+// Translated BEFORE English mode so the buttons keep working mid-conversation.
+export const KEYBOARD = [
+  ['📊 Status', '📖 Review', '🪞 Portrait'],
+  ['🎧 English', '🏁 Done', '❓ Help'],
+];
+const LABELS = {
+  '📊 Status': '/status',
+  '📖 Review': '/review',
+  '🪞 Portrait': '/portrait',
+  '🎧 English': '/english',
+  '🏁 Done': '/done',
+  '❓ Help': '/help',
+};
 
 export async function route({ chatId, text, image }) {
   // Single-tenant guard (and the seed of the future multi-tenant allowlist): only his own
@@ -20,6 +35,9 @@ export async function route({ chatId, text, image }) {
     console.warn('[router] ignoring message from unknown chat:', chatId);
     return;
   }
+
+  // Tapped keyboard buttons arrive as their label text — translate to the command.
+  if (LABELS[text]) text = LABELS[text];
 
   if (image) {
     await coach.handle(text || '', image); // a photo — let the coach see and respond
@@ -37,10 +55,13 @@ export async function route({ chatId, text, image }) {
   }
 
   if (/^\/(start|help)\b/i.test(text)) {
-    await send(
+    await sendKeyboard(
       '*Personal OS* 🧠\n\n' +
         'Just *talk* to me — sleep, water, food, training, reading, work, mood, even a photo — ' +
-        "and I'll log it and coach you. These commands are quick shortcuts:\n\n" +
+        "and I'll log it and coach you.\n\n" +
+        '👇 *Your buttons are below the keyboard* — tap, don\'t type. ' +
+        'The 📎 *Menu* button opens your app (deck, journal, body, routine, dashboard).\n\n' +
+        'Everything, for reference:\n\n' +
         '📊 *View*\n' +
         "`/status` — level, energy, stats, ranks, today's quests\n" +
         '`/ranks` — the rank ladder (Novice → Sage)\n' +
@@ -66,6 +87,7 @@ export async function route({ chatId, text, image }) {
         '✅ *Routine*\n' +
         '`/routine` — today\'s 3, your daily rhythm, defaults\n\n' +
         '`/help` — show this list',
+      KEYBOARD,
       chatId
     );
     return;
