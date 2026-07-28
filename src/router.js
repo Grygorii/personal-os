@@ -7,11 +7,20 @@ import * as routine from './agents/routine.js';
 import * as coach from './coach.js';
 import * as system from './system.js';
 import { send } from './telegram.js';
+import { config } from './config.js';
 
 // Slash-commands are quick shortcuts. Everything else goes to the coach.
 const shortcuts = [water, bookCoach, body, reading, routine];
 
 export async function route({ chatId, text, image }) {
+  // Single-tenant guard (and the seed of the future multi-tenant allowlist): only his own
+  // chat may talk to the bot. Before this, a stranger's message would be processed into HIS
+  // data and the reply sent to HIS chat. Strangers are ignored, not answered.
+  if (config.telegramChatId && String(chatId) !== String(config.telegramChatId)) {
+    console.warn('[router] ignoring message from unknown chat:', chatId);
+    return;
+  }
+
   if (image) {
     await coach.handle(text || '', image); // a photo — let the coach see and respond
     return;

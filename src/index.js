@@ -5,7 +5,7 @@ import { route } from './router.js';
 import { startServer } from './webserver.js';
 
 // Bump on each deploy so we can confirm which build is actually live (read meta.boot).
-const VERSION = 'miniapp-A';
+const VERSION = 'guard-1';
 
 async function main() {
   await connect();

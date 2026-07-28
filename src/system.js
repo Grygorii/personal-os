@@ -404,6 +404,10 @@ async function todaysLogs() {
 function rollDay(s) {
   const today = new Date().toISOString().slice(0, 10);
   if (s.questDate !== today) {
+    // A missed day breaks the streak: if the last counted day isn't yesterday (or today),
+    // the wheel stopped turning — the mirror must say so. (Was a bug: streak never reset.)
+    const yesterday = new Date(Date.now() - DAY).toISOString().slice(0, 10);
+    if (s.streakDate && s.streakDate !== yesterday && s.streakDate !== today) s.streak = 0;
     s.questDate = today;
     s.quests = {};
     s.breadthAwarded = 0;
