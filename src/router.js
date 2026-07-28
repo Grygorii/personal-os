@@ -302,25 +302,75 @@ async function handle({ chatId, text, image, user, messageId, callbackId }) {
     return;
   }
   if (user.role === 'owner' && /^\/users\b/i.test(text)) {
-    const rows = await users.listUsers();
-    const out = rows.map((u) => {
-      const who = u.name || u.username || u._id;
-      return `${u.status === 'active' ? '✅' : u.status === 'blocked' ? '⛔' : '⏳'} ${who} · ${u.tier} · id ${u._id}`;
+    const arg = text.replace(/^\/users\s*/i, '').trim();
+    const [status, pageStr] = arg.split(/\s+/);
+    // The overview: how many are waiting, in, or out — each a button into that queue.
+    if (!status) {
+      const n = await users.countByStatus();
+      await sendInline(
+        `👥 *Users*\n\n⏳ ${n.pending} waiting · ✅ ${n.active} active · ⛔ ${n.blocked} blocked`,
+        [
+          [{ text: `⏳ Review waiting (${n.pending})`, data: '/users pending' }],
+          [{ text: `✅ Active (${n.active})`, data: '/users active' }, { text: `⛔ Blocked (${n.blocked})`, data: '/users blocked' }],
+          [{ text: '‹ Settings', data: '/settings' }],
+        ],
+        chatId
+      );
+      return;
+    }
+    // One page of a queue, each person with their own action buttons — so approving is a
+    // tap, and the list stays readable at any scale.
+    const PER = 5;
+    const page = Math.max(0, parseInt(pageStr, 10) || 0);
+    const { rows, total } = await users.listByStatus(status, { skip: page * PER, limit: PER });
+    const icon = status === 'active' ? '✅' : status === 'blocked' ? '⛔' : '⏳';
+    if (!rows.length) {
+      await sendInline(`${icon} Nobody ${status}.`, [[{ text: '‹ Users', data: '/users' }]], chatId);
+      return;
+    }
+    const buttons = rows.map((u) => {
+      const who = (u.name || u.username || u._id).slice(0, 18);
+      return status === 'active'
+        ? [{ text: `⛔ Block ${who}`, data: `/block ${u._id}` }]
+        : [{ text: `✅ Approve ${who}`, data: `/approve ${u._id}` }, { text: '⛔', data: `/block ${u._id}` }];
     });
-    await send('```\n⟦  U S E R S  ⟧\n' + (out.join('\n') || 'nobody yet') + '\n\n/approve <id> · /block <id>\n```');
+    const nav = [];
+    if (page > 0) nav.push({ text: '‹ Prev', data: `/users ${status} ${page - 1}` });
+    if ((page + 1) * PER < total) nav.push({ text: 'Next ›', data: `/users ${status} ${page + 1}` });
+    if (nav.length) buttons.push(nav);
+    buttons.push([{ text: '‹ Users', data: '/users' }]);
+    const lines = rows.map((u) => `${icon} ${u.name || u.username || u._id}${u.username ? ` (@${u.username})` : ''} · ${u.tier}`);
+    const from = page * PER + 1;
+    await sendInline(
+      `*${status}* — showing ${from}–${from + rows.length - 1} of ${total}\n\n${lines.join('\n')}`,
+      buttons,
+      chatId
+    );
     return;
   }
   if (user.role === 'owner') {
     let m = text.match(/^\/approve\s+(\d+)(?:\s+(\w+))?/i);
     if (m) {
-      await users.approve(m[1], m[2] || 'trial');
-      await send(`✅ Approved \`${m[1]}\` on the *${m[2] || 'trial'}* tier.`);
+      const [, id, tier = 'trial'] = m;
+      await users.approve(id, tier);
+      // Tell them they're in — otherwise they'd never know until they happened to write again.
+      await send(
+        "🎉 You're in.\n\nSay hello whenever you're ready — I'll take it from there.",
+        id
+      );
+      await sendInline(`✅ Approved *${id}* on the *${tier}* tier — they've been told.`, [
+        [{ text: '⏳ Next waiting', data: '/users pending' }],
+        [{ text: '‹ Users', data: '/users' }],
+      ], chatId);
       return;
     }
     m = text.match(/^\/block\s+(\d+)/i);
     if (m) {
       await users.block(m[1]);
-      await send(`⛔ Blocked \`${m[1]}\`.`);
+      await sendInline(`⛔ Blocked *${m[1]}*.`, [
+        [{ text: '⏳ Waiting list', data: '/users pending' }],
+        [{ text: '‹ Users', data: '/users' }],
+      ], chatId);
       return;
     }
   }

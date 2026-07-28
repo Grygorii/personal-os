@@ -30,6 +30,21 @@ export const USER_COLLECTIONS = [
   'english_books', 'english_convo', 'english_breakdowns',
 ];
 
+// Indexes that matter once there's more than one person: every user query filters on
+// userId, and the admin queue filters on status. Without these, both do collection scans
+// that get slower with every tenant. Safe and idempotent — Mongo skips existing indexes.
+export async function ensureIndexes() {
+  try {
+    await rawCol('users').createIndex({ status: 1, createdAt: 1 });
+    for (const name of USER_COLLECTIONS) await rawCol(name).createIndex({ userId: 1 });
+    await rawCol('logs').createIndex({ userId: 1, ts: -1 });
+    await rawCol('conversation').createIndex({ userId: 1, ts: -1 });
+    console.log('[db] indexes ensured');
+  } catch (err) {
+    console.error('[db] index creation failed (continuing):', err.message);
+  }
+}
+
 // Raw, unscoped access. Only for migrations and global collections — never for user data.
 export function rawCol(name) {
   if (!db) throw new Error('DB not connected. Call connect() first.');

@@ -76,6 +76,26 @@ export async function listUsers() {
   return col('users').find().sort({ createdAt: 1 }).toArray();
 }
 
+// Paginated queries — the admin surface has to stay usable whether there are 3 people
+// waiting or 3,000, so we never load the whole table to show one screen.
+export async function countByStatus() {
+  // Counted in the database, not by loading every user into memory.
+  const [active, pending, blocked] = await Promise.all([
+    col('users').countDocuments({ status: 'active' }),
+    col('users').countDocuments({ status: 'pending' }),
+    col('users').countDocuments({ status: 'blocked' }),
+  ]);
+  return { active, pending, blocked };
+}
+
+export async function listByStatus(status, { skip = 0, limit = 5 } = {}) {
+  const [rows, total] = await Promise.all([
+    col('users').find({ status }).sort({ createdAt: 1 }).skip(skip).limit(limit).toArray(),
+    col('users').countDocuments({ status }),
+  ]);
+  return { rows, total };
+}
+
 // ---------- their own AI key (BYOK) ----------
 
 // Stored encrypted; the plaintext exists only in memory for the duration of a call.
