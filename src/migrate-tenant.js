@@ -1,4 +1,4 @@
-import { connect, rawCol } from './db.js';
+import { connect, rawCol, USER_COLLECTIONS } from './db.js';
 import { config } from './config.js';
 
 // One-time (idempotent) migration to the multi-tenant data layer: stamp every existing
@@ -7,11 +7,7 @@ import { config } from './config.js';
 //
 //   npm run migrate
 
-const SCOPED = [
-  'logs', 'conversation', 'pursuits', 'snapshots', 'portraits', 'book_exams',
-  'reading', 'system', 'profile', 'english', 'english_scores', 'english_words',
-  'english_books', 'english_convo', 'english_breakdowns',
-];
+const SCOPED = USER_COLLECTIONS;
 
 // Collections whose single document used a fixed string _id.
 const SINGLETONS = { profile: 'me', system: 'state', reading: 'current', english: 'state' };

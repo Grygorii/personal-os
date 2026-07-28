@@ -1,6 +1,5 @@
 import cron from 'node-cron';
 import { col } from './db.js';
-import { config } from './config.js';
 import * as coach from './coach.js';
 import * as users from './users.js';
 import { runAs } from './ctx.js';
@@ -27,41 +26,58 @@ async function ensureAgents() {
   }
 }
 
+// Does a "minute hour * * dow" schedule match this local moment? Supports the forms the
+// app uses: a number, a comma list, or '*'. Anything else is rejected loudly.
+export function scheduleMatches(schedule, { hour, minute, dow }) {
+  const parts = String(schedule || '').trim().split(/\s+/);
+  if (parts.length !== 5) return false;
+  const field = (spec, value) =>
+    spec === '*' || spec.split(',').some((s) => /^\d+$/.test(s) && Number(s) === value);
+  const [min, hr, , , wd] = parts;
+  return field(min, minute) && field(hr, hour) && (wd === '*' || field(wd, dow % 7));
+}
+
+// One tick a minute drives everyone. Each active user is evaluated against each agent in
+// THEIR timezone, so a tenant in Lisbon gets their morning check-in at their 8am — not the
+// owner's. A per-user, per-day marker makes a run happen exactly once.
 export async function scheduleAgents() {
   await ensureAgents();
-  const agents = await col('agents').find({ enabled: true }).toArray();
-
-  for (const agent of agents) {
-    const runner = runners[agent.id];
-    if (!runner) {
-      console.warn(`[runtime] no runner registered for agent "${agent.id}"`);
-      continue;
+  const agents = (await col('agents').find({ enabled: true }).toArray()).filter((a) => {
+    if (!runners[a.id]) {
+      console.warn(`[runtime] no runner registered for agent "${a.id}"`);
+      return false;
     }
-    if (!cron.validate(agent.schedule)) {
-      console.warn(`[runtime] invalid cron for "${agent.id}": ${agent.schedule}`);
-      continue;
+    if (!cron.validate(a.schedule)) {
+      console.warn(`[runtime] invalid cron for "${a.id}": ${a.schedule}`);
+      return false;
     }
+    return true;
+  });
 
-    cron.schedule(
-      agent.schedule,
-      async () => {
-        console.log(`[runtime] running "${agent.id}"`);
-        // Fan out: every active user gets their own check-in, in their own context, so the
-        // message is built from THEIR data and delivered to THEIR chat. One person's
-        // failure doesn't stop the rest.
-        const active = (await users.listUsers()).filter((u) => users.isAllowed(u));
-        for (const u of active) {
-          try {
-            await runAs(u, () => runner());
-          } catch (err) {
-            console.error(`[runtime] "${agent.id}" failed for ${u._id}:`, err.message);
-          }
+  for (const a of agents) console.log(`[runtime] agent "${a.id}" @ "${a.schedule}" (per-user local time)`);
+
+  cron.schedule('* * * * *', async () => {
+    let active;
+    try {
+      active = (await users.listUsers()).filter((u) => users.isAllowed(u));
+    } catch (err) {
+      console.error('[runtime] tick could not load users:', err.message);
+      return;
+    }
+    for (const u of active) {
+      const now = users.localNow(u.tz);
+      for (const agent of agents) {
+        if (!scheduleMatches(agent.schedule, now)) continue;
+        if (users.alreadyRan(u, agent.id, now.date)) continue;
+        try {
+          // Mark first: a crash mid-run must not cause a retry loop every minute.
+          await users.recordRun(u._id, agent.id, now.date);
+          console.log(`[runtime] "${agent.id}" for ${u._id} (${u.tz})`);
+          await runAs(u, () => runners[agent.id]());
+        } catch (err) {
+          console.error(`[runtime] "${agent.id}" failed for ${u._id}:`, err.message);
         }
-        await col('agents').updateOne({ id: agent.id }, { $set: { lastRun: new Date() } });
-      },
-      { timezone: config.timezone }
-    );
-
-    console.log(`[runtime] scheduled "${agent.id}" @ "${agent.schedule}"`);
-  }
+      }
+    }
+  });
 }

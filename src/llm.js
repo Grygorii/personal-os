@@ -1,5 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { config } from './config.js';
+import { currentUser } from './ctx.js';
+import { llmFor } from './users.js';
 
 // Provider-agnostic LLM layer. Everyday coaching can run on a cheap model (Gemini Flash,
 // which has a permanent free tier) while DEEP work — portraits, exam writing and grading —
@@ -7,7 +9,14 @@ import { config } from './config.js';
 // providers is a config change, and a future tenant can bring whichever provider they
 // already have. Gemini goes over REST so we add no new dependency.
 
-const anthropic = config.anthropicKey ? new Anthropic({ apiKey: config.anthropicKey }) : null;
+// One client per key (the server's, plus any tenant who brought their own).
+const anthropicClients = new Map();
+function anthropicFor(apiKey) {
+  if (!apiKey) return null;
+  if (!anthropicClients.has(apiKey)) anthropicClients.set(apiKey, new Anthropic({ apiKey }));
+  return anthropicClients.get(apiKey);
+}
+const anthropic = anthropicFor(config.anthropicKey);
 
 // ---------- Gemini ----------
 
@@ -22,8 +31,8 @@ function toGeminiParts(content) {
   );
 }
 
-async function geminiChat({ system, messages, maxTokens, model }) {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(config.geminiKey)}`;
+async function geminiChat({ system, messages, maxTokens, model, apiKey }) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey || config.geminiKey)}`;
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -46,8 +55,10 @@ async function geminiChat({ system, messages, maxTokens, model }) {
 
 // ---------- Anthropic ----------
 
-async function anthropicChat({ system, messages, maxTokens, model }) {
-  const res = await anthropic.messages.create({ model, max_tokens: maxTokens, system, messages });
+async function anthropicChat({ system, messages, maxTokens, model, apiKey }) {
+  const client = apiKey ? anthropicFor(apiKey) : anthropic;
+  if (!client) throw new Error('no anthropic key available');
+  const res = await client.messages.create({ model, max_tokens: maxTokens, system, messages });
   return res.content
     .filter((b) => b.type === 'text')
     .map((b) => b.text)
@@ -60,6 +71,17 @@ async function anthropicChat({ system, messages, maxTokens, model }) {
 // Which provider handles this call. `tier: 'deep'` prefers the strongest model we have
 // (portraits, exams); everything else follows LLM_PROVIDER, defaulting to what's configured.
 function route(tier) {
+  // A tenant who brought their own key always uses it — their calls, their bill, and we
+  // never silently spend the server's credit on their behalf.
+  const own = llmFor(currentUser());
+  if (own) {
+    return {
+      provider: own.provider,
+      model: own.provider === 'gemini' ? config.geminiModel : config.model,
+      apiKey: own.apiKey,
+      byok: true,
+    };
+  }
   const hasGemini = !!config.geminiKey;
   if (tier === 'deep' && anthropic) return { provider: 'anthropic', model: config.deepModel || config.model };
   if (config.provider === 'gemini' && hasGemini) return { provider: 'gemini', model: config.geminiModel };
@@ -69,21 +91,24 @@ function route(tier) {
 }
 
 async function run({ system, messages, maxTokens, tier }) {
-  const { provider, model } = route(tier);
-  const call = (p, m) =>
+  const { provider, model, apiKey, byok } = route(tier);
+  const call = (p, m, k) =>
     p === 'gemini'
-      ? geminiChat({ system, messages, maxTokens, model: m })
-      : anthropicChat({ system, messages, maxTokens, model: m });
+      ? geminiChat({ system, messages, maxTokens, model: m, apiKey: k })
+      : anthropicChat({ system, messages, maxTokens, model: m, apiKey: k });
   try {
-    return await call(provider, model);
+    return await call(provider, model, apiKey);
   } catch (err) {
-    // Free tiers hand out 429s. Rather than fail the user's message, fall back to the
-    // other configured provider once — loudly, so the logs show it happened.
-    const alt = provider === 'gemini' && anthropic
-      ? { provider: 'anthropic', model: config.model }
-      : provider === 'anthropic' && config.geminiKey
-        ? { provider: 'gemini', model: config.geminiModel }
-        : null;
+    // Free tiers hand out 429s, so fall back between the SERVER's providers. A tenant's own
+    // key never falls back to ours — that would spend money they didn't authorise and hide
+    // a broken key from them.
+    const alt = byok
+      ? null
+      : provider === 'gemini' && anthropic
+        ? { provider: 'anthropic', model: config.model }
+        : provider === 'anthropic' && config.geminiKey
+          ? { provider: 'gemini', model: config.geminiModel }
+          : null;
     if (!alt) throw err;
     console.warn(`[llm] ${provider} failed (${err.message}) — falling back to ${alt.provider}`);
     return call(alt.provider, alt.model);

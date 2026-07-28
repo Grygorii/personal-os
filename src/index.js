@@ -9,7 +9,7 @@ import { runAs } from './ctx.js';
 import { config } from './config.js';
 
 // Bump on each deploy so we can confirm which build is actually live (read meta.boot).
-const VERSION = 'tenant-1b';
+const VERSION = 'tenant-1c';
 
 async function main() {
   await connect();
@@ -30,6 +30,9 @@ async function main() {
     { command: 'done', description: '🏁 Leave English mode' },
     { command: 'pursuits', description: '🎯 Your mastery paths' },
     { command: 'ranks', description: '🏅 The rank ladder' },
+    { command: 'mykey', description: '🔑 Use your own AI key' },
+    { command: 'timezone', description: '🕒 When your check-ins arrive' },
+    { command: 'export', description: '📦 Download all your data' },
     { command: 'help', description: '❓ Buttons & everything else' },
   ]);
   // The Mini App web face — non-fatal: a server hiccup must never take the bot down.

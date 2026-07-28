@@ -1,4 +1,4 @@
-import { col } from './db.js';
+import { col, rawCol, USER_COLLECTIONS } from './db.js';
 import { config } from './config.js';
 import { encrypt, decrypt, isEncryptionReady, maskKey } from './crypto.js';
 
@@ -106,6 +106,83 @@ export function llmFor(user) {
 
 export function trialExpired(user) {
   return !!(user?.tier === 'trial' && user.trialEndsAt && Date.now() > new Date(user.trialEndsAt).getTime());
+}
+
+// ---------- timezone & scheduling ----------
+
+export function validTimezone(tz) {
+  try {
+    new Intl.DateTimeFormat('en', { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function setTimezone(chatId, tz) {
+  if (!validTimezone(tz)) throw new Error('unknown timezone');
+  await col('users').updateOne({ _id: String(chatId) }, { $set: { tz } });
+}
+
+// Their local calendar date and time — the basis for firing check-ins in their own morning.
+export function localNow(tz) {
+  const now = new Date();
+  const zone = validTimezone(tz) ? tz : config.timezone;
+  const date = now.toLocaleDateString('en-CA', { timeZone: zone }); // YYYY-MM-DD
+  const [hour, minute] = now
+    .toLocaleTimeString('en-GB', { timeZone: zone, hour12: false, hour: '2-digit', minute: '2-digit' })
+    .split(':')
+    .map(Number);
+  const dow = new Date(now.toLocaleString('en-US', { timeZone: zone })).getDay(); // 0=Sun
+  return { date, hour, minute, dow };
+}
+
+// Has this agent already run for this user on their local day? (Prevents the minute-tick
+// scheduler from firing the same check-in repeatedly.)
+export function alreadyRan(user, agentId, localDate) {
+  return user?.lastRuns?.[agentId] === localDate;
+}
+
+export async function recordRun(chatId, agentId, localDate) {
+  await col('users').updateOne({ _id: String(chatId) }, { $set: { [`lastRuns.${agentId}`]: localDate } });
+}
+
+// ---------- onboarding ----------
+
+export async function markOnboarded(chatId) {
+  await col('users').updateOne({ _id: String(chatId) }, { $set: { onboardedAt: new Date() } });
+}
+
+// Tell a pending person once that they're on the list — then stay quiet (no spam surface).
+export async function markNotified(chatId) {
+  await col('users').updateOne({ _id: String(chatId) }, { $set: { notifiedPending: true } });
+}
+
+// ---------- their data: take it or delete it ----------
+
+export async function exportUserData(userId) {
+  const out = { exportedAt: new Date().toISOString(), userId, collections: {} };
+  const account = await rawCol('users').findOne({ _id: String(userId) });
+  if (account) {
+    const { llm, ...safe } = account; // never export the stored key, even encrypted
+    out.account = { ...safe, llmConfigured: !!llm };
+  }
+  for (const name of USER_COLLECTIONS) {
+    const rows = await rawCol(name).find({ userId: String(userId) }).toArray();
+    if (rows.length) out.collections[name] = rows;
+  }
+  return out;
+}
+
+export async function deleteUserData(userId, { keepAccount = false } = {}) {
+  const removed = {};
+  for (const name of USER_COLLECTIONS) {
+    const r = await rawCol(name).deleteMany({ userId: String(userId) });
+    if (r.deletedCount) removed[name] = r.deletedCount;
+  }
+  await rawCol('meta').deleteOne({ _id: `book_recs:${userId}` });
+  if (!keepAccount) await rawCol('users').deleteOne({ _id: String(userId) });
+  return removed;
 }
 
 // ---------- rate limiting ----------

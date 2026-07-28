@@ -97,6 +97,67 @@ export async function sendKeyboard(text, rows, chatId = defaultChat()) {
   if (!res.ok) console.error('[telegram] sendKeyboard failed:', await res.text());
 }
 
+// Buttons that DO things. rows: [[{ text, data } | { text, url }]] — `data` is simply the
+// command the button stands for, so a tap and a typed command take the same path.
+export async function sendInline(text, rows, chatId = defaultChat()) {
+  if (!chatId) return;
+  const inline_keyboard = rows.map((r) =>
+    r.map((b) => (b.url ? { text: b.text, url: b.url } : { text: b.text, callback_data: b.data }))
+  );
+  const post = (body) =>
+    fetch(`${API}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, reply_markup: { inline_keyboard }, ...body }),
+    });
+  let res = await post({ text, parse_mode: 'Markdown' });
+  if (!res.ok) res = await post({ text });
+  if (!res.ok) console.error('[telegram] sendInline failed:', await res.text());
+}
+
+// Stop the button's spinner. Telegram requires this for every callback.
+export async function answerCallback(id, text = '') {
+  if (!id) return;
+  try {
+    await fetch(`${API}/answerCallbackQuery`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ callback_query_id: id, ...(text ? { text } : {}) }),
+    });
+  } catch (e) {
+    console.error('[telegram] answerCallback failed:', e.message);
+  }
+}
+
+// Remove a message we've already handled — used the instant someone pastes an API key,
+// so the secret doesn't sit in their chat history.
+export async function deleteMessage(messageId, chatId = defaultChat()) {
+  if (!chatId || !messageId) return false;
+  try {
+    const res = await fetch(`${API}/deleteMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, message_id: messageId }),
+    });
+    return res.ok;
+  } catch (e) {
+    console.error('[telegram] deleteMessage failed:', e.message);
+    return false;
+  }
+}
+
+// Send a file (their data export).
+export async function sendDocument(filename, content, caption = '', chatId = defaultChat()) {
+  if (!chatId) return;
+  const form = new FormData();
+  form.append('chat_id', String(chatId));
+  if (caption) form.append('caption', caption);
+  form.append('document', new Blob([content], { type: 'application/json' }), filename);
+  const res = await fetch(`${API}/sendDocument`, { method: 'POST', body: form });
+  if (!res.ok) console.error('[telegram] sendDocument failed:', await res.text());
+  return res.ok;
+}
+
 // Register the tappable "/" command menu (idempotent — safe to call on every boot).
 export async function setCommands(commands) {
   try {
@@ -135,6 +196,24 @@ export async function poll(onMessage) {
       const { result = [] } = await res.json();
       for (const update of result) {
         offset = update.update_id + 1;
+        // A tapped inline button: its callback_data IS the command, so it flows through
+        // exactly the same router path as typing would.
+        const cb = update.callback_query;
+        if (cb) {
+          try {
+            await onMessage({
+              chatId: cb.message?.chat?.id,
+              from: cb.from,
+              text: String(cb.data || '').trim(),
+              messageId: cb.message?.message_id,
+              callbackId: cb.id,
+            });
+          } catch (e) {
+            console.error(`[telegram] callback ${cb.id} failed:`, e.message);
+            await answerCallback(cb.id);
+          }
+          continue;
+        }
         const msg = update.message;
         // Each update is isolated: one user's failure must never skip the next person's
         // message or stall the whole bot. Errors are logged and the loop carries on.
@@ -146,9 +225,9 @@ export async function poll(onMessage) {
             } catch (e) {
               console.error('[telegram] photo download failed:', e.message);
             }
-            await onMessage({ chatId: msg.chat.id, from: msg.from, text: (msg.caption || '').trim(), image });
+            await onMessage({ chatId: msg.chat.id, from: msg.from, messageId: msg.message_id, text: (msg.caption || '').trim(), image });
           } else if (msg?.text) {
-            await onMessage({ chatId: msg.chat.id, from: msg.from, text: msg.text.trim() });
+            await onMessage({ chatId: msg.chat.id, from: msg.from, messageId: msg.message_id, text: msg.text.trim() });
           }
         } catch (e) {
           console.error(`[telegram] handling update ${update.update_id} failed:`, e.message);

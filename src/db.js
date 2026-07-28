@@ -22,6 +22,14 @@ const GLOBAL_COLLECTIONS = new Set([
   'agents', // the schedule definitions; the runtime fans them out per user
 ]);
 
+// Every collection that holds personal data. The single source of truth for migration,
+// export and deletion — if a new user collection is added, add it here too.
+export const USER_COLLECTIONS = [
+  'logs', 'conversation', 'pursuits', 'snapshots', 'portraits', 'book_exams',
+  'reading', 'system', 'profile', 'english', 'english_scores', 'english_words',
+  'english_books', 'english_convo', 'english_breakdowns',
+];
+
 // Raw, unscoped access. Only for migrations and global collections — never for user data.
 export function rawCol(name) {
   if (!db) throw new Error('DB not connected. Call connect() first.');

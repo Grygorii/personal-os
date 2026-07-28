@@ -29,6 +29,8 @@ export const config = {
   encryptionKey: oneLine(process.env.ENCRYPTION_KEY),
   // Multi-tenant switch. Off = only the owner may use the bot (current behaviour).
   multiTenant: oneLine(process.env.MULTI_TENANT) === 'true',
+  // Public URL of the Mini App (used for the tappable buttons in chat).
+  appUrl: (oneLine(process.env.APP_URL) || 'https://personal-os-production-052d.up.railway.app').replace(/\/+$/, ''),
 };
 
 // Warn (don't crash) on missing essentials so `npm run seed` etc. still load.
