@@ -345,22 +345,34 @@ async function startExam(id){
   }catch(e){btn.disabled=false;btn.textContent="🎓 Test my knowledge";toast("Couldn't create the exam — try again");}
 }
 
-/* ---- Share your take with a friend ---- */
-function shareBook(id){
+/* ---- Share your take — as a link that works on every platform ---- */
+async function shareBook(id){
   const b=state.books.find(x=>x.id===id); if(!b)return;
-  const top=(b.notes||[]).slice(-3).map(n=>`• ${n.page?`p.${n.page} — `:""}${n.text}`).join("\n");
-  const txt=`📚 ${b.title}${b.author?` — ${b.author}`:""}\n`+
-    `${b.rating?"★".repeat(b.rating)+"☆".repeat(5-b.rating):""}${b.status==="finished"?"  (finished)":""}\n`+
-    (b.exam?`🎓 Knowledge exam: ${b.exam.score}% (honestly graded)\n`:"")+
-    (top?`\nMy thoughts:\n${top}\n`:"")+
-    `\nHave you read it? Let's compare — I had to *prove* I understood it 😄`;
-  const done=()=>toast("Your take is ready to send");
-  if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(txt).then(done,()=>{});}
+  const idc=initData();
+  const lastThought=(b.notes||[]).slice(-1)[0];
+  let url=null;
+  if(idc){
+    try{
+      const r=await fetch("/api/share",{method:"POST",headers:{"x-telegram-init-data":idc,"Content-Type":"application/json"},
+        body:JSON.stringify({title:b.title,author:b.author||"",score:b.exam?b.exam.score:null,
+          verdict:b.exam?b.exam.verdict:"",thought:lastThought?lastThought.text:""})});
+      if(r.ok){ const d=await r.json(); url=d.url; }
+    }catch(e){}
+  }
+  const line=`📕 ${b.title}${b.author?` — ${b.author}`:""}`+
+    (b.exam?`\n🎓 I scored ${b.exam.score}% on an honest comprehension test.`:"")+
+    `\nMost people forget what they read. Find out if you did:`;
+  const txt=url?`${line}\n${url}`:`${line}\n(open in Telegram to get your link)`;
+  if(navigator.clipboard&&navigator.clipboard.writeText){ try{ await navigator.clipboard.writeText(txt); }catch(e){} }
   try{
     const tg=window.Telegram&&Telegram.WebApp;
-    if(tg&&tg.openTelegramLink){tg.openTelegramLink("https://t.me/share/url?url=&text="+encodeURIComponent(txt));return;}
+    if(tg&&tg.openTelegramLink&&url){
+      tg.openTelegramLink("https://t.me/share/url?url="+encodeURIComponent(url)+"&text="+encodeURIComponent(line));
+      return;
+    }
   }catch(e){}
-  toast("Copied — paste it to your friend");
+  if(navigator.share&&url){ try{ await navigator.share({title:b.title,text:line,url}); return; }catch(e){} }
+  toast(url?"Link copied — paste it anywhere":"Copied");
 }
 
 function patch(id,p){const b=state.books.find(x=>x.id===id);if(!b)return;Object.assign(b,p,{updated:Date.now()});save();}

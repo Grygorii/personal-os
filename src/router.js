@@ -12,6 +12,18 @@ import { maskKey } from './crypto.js';
 import { runAs } from './ctx.js';
 import { config } from './config.js';
 import { runBackup } from './runtime.js';
+import * as moderation from './moderation.js';
+import { rawCol } from './db.js';
+
+// The last few things they said — used to spot someone hammering the same message.
+async function recentUserTexts(userId) {
+  const rows = await rawCol('conversation')
+    .find({ userId, role: 'user' }, { projection: { text: 1 } })
+    .sort({ ts: -1 })
+    .limit(5)
+    .toArray();
+  return rows.map((r) => r.text);
+}
 
 // Slash-commands are quick shortcuts. Everything else goes to the coach.
 const shortcuts = [water, bookCoach, body, reading, routine];
@@ -97,6 +109,29 @@ export async function route({ chatId, from, text, image, messageId, callbackId }
     console.warn(`[router] rate limited ${user._id}`);
     return;
   }
+
+  // Button taps and admin actions are free; only real conversation costs money and is
+  // worth screening.
+  const isFreeAction = !!callbackId || /^\/(start|menu|help|settings|users|approve|block|preview|backup|export)\b/i.test(text || '');
+  if (!isFreeAction) {
+    const finding = moderation.screen(text, await recentUserTexts(user._id));
+    if (finding && (await moderation.flagAndAct(user, finding))) return;
+
+    const quota = await users.consumeQuota(user);
+    if (!quota.ok) {
+      await sendInline(
+        `You've used today's ${quota.cap} messages.\n\n` +
+          (quota.level === 0
+            ? 'New accounts start small — come back tomorrow and your allowance grows automatically. ' +
+              'Or bring your own free AI key and it lifts right away.'
+            : 'It resets tomorrow. Bringing your own free AI key removes the limit.'),
+        [[{ text: '🔑 Use my own key (free)', data: '/mykey' }]],
+        chatId
+      );
+      return;
+    }
+  }
+
   return runAs(user, () => handle({ chatId, text, image, user, messageId, callbackId }));
 }
 
@@ -159,6 +194,29 @@ async function handle({ chatId, text, image, user, messageId, callbackId }) {
   // still fall through to the normal handlers below (so /status etc. keep working).
   if (!text.startsWith('/') && (await english.isActive())) {
     await english.handle(text);
+    return;
+  }
+
+  // Arriving from someone's shared result — greet them with the thing that brought them.
+  const ref = text.match(/^\/start\s+r_([a-z0-9]+)/i);
+  if (ref) {
+    const src = await rawCol('shares').findOne({ _id: ref[1] });
+    if (src) {
+      await rawCol('shares').updateOne({ _id: src._id }, { $inc: { joins: 1 } });
+      await users.setReferrer(chatId, src._id, src.userId);
+    }
+    await sendKeyboard(
+      src
+        ? `📕 You came from ${src.name || 'a reader'}'s result on *${src.title}*` +
+            `${src.score != null ? ` (${src.score}%)` : ''}.\n\nWant to find out what you kept from your last book?`
+        : "📕 You forget most of what you read.\n\nI fix that — tell me what you're reading.",
+      BOOKS_KEYBOARD,
+      chatId
+    );
+    await sendInline('Start here:', [
+      [{ text: '📚 Open my library', url: `${config.appUrl}/reading` }],
+      [{ text: '💡 Suggest me a book', data: '/suggest' }],
+    ], chatId);
     return;
   }
 

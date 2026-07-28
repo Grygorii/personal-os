@@ -29,8 +29,13 @@ export const config = {
   encryptionKey: oneLine(process.env.ENCRYPTION_KEY),
   // Multi-tenant switch. Off = only the owner may use the bot (current behaviour).
   multiTenant: oneLine(process.env.MULTI_TENANT) === 'true',
+  // With the doors open, let people straight in (they land on trust level 0 with a small
+  // daily allowance). Set to 'false' to go back to approve-first.
+  autoAccept: oneLine(process.env.AUTO_ACCEPT) !== 'false',
   // Public URL of the Mini App (used for the tappable buttons in chat).
   appUrl: (oneLine(process.env.APP_URL) || 'https://personal-os-production-052d.up.railway.app').replace(/\/+$/, ''),
+  // Discovered from Telegram at boot (see index.js) — used to build share deep links.
+  botUsername: oneLine(process.env.BOT_USERNAME),
 };
 
 // Warn (don't crash) on missing essentials so `npm run seed` etc. still load.

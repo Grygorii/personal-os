@@ -158,6 +158,18 @@ export async function sendDocument(filename, content, caption = '', chatId = def
   return res.ok;
 }
 
+// The bot's own @username — needed to build the deep links that shared pages point back to.
+export async function getMe() {
+  try {
+    const res = await fetch(`${API}/getMe`);
+    const data = await res.json();
+    return data?.result || null;
+  } catch (e) {
+    console.error('[telegram] getMe failed:', e.message);
+    return null;
+  }
+}
+
 // Register the tappable "/" command menu (idempotent — safe to call on every boot).
 export async function setCommands(commands) {
   try {

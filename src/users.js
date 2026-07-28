@@ -41,7 +41,9 @@ export async function ensureUser({ chatId, name = '', username = '' }) {
     // What this person's bot IS. New people get the focused book product; the full life OS
     // stays in the code, just hidden. The owner keeps everything.
     product: owner ? 'full' : 'books',
-    status: owner ? 'active' : 'pending',
+    // Auto-accept when the doors are open: nobody waits, but a newcomer starts at trust
+    // level 0 with a small daily allowance (see the trust ladder below).
+    status: owner || (config.multiTenant && config.autoAccept) ? 'active' : 'pending',
     tier: owner ? 'owner' : 'trial',
     trialEndsAt: owner ? null : new Date(Date.now() + TRIAL_DAYS * DAY),
     tz: config.timezone,
@@ -211,6 +213,60 @@ export async function deleteUserData(userId, { keepAccount = false } = {}) {
   await rawCol('meta').deleteOne({ _id: `book_recs:${userId}` });
   if (!keepAccount) await rawCol('users').deleteOne({ _id: String(userId) });
   return removed;
+}
+
+// ---------- the trust ladder ----------
+// A door you either pass or don't is the wrong shape: it makes everyone wait, and still
+// hands a stranger full power the moment they're let in. A ladder lets everyone in
+// instantly on a small allowance, and lifts it as they prove they're a real reader.
+//
+//   0  brand new        — works immediately, small daily allowance, no photos
+//   1  came back / did an exam — normal allowance, photos on
+//   2  paying or brought their own key — generous (their key = their cost)
+const DAILY_CAP = { 0: 20, 1: 60, 2: 400 };
+
+export function trustLevel(user) {
+  if (!user) return 0;
+  if (user.role === 'owner') return 2;
+  if (user.llm?.keyEnc) return 2; // their own key — abuse costs them, not us
+  if (['supporter', 'standard', 'deep'].includes(user.tier)) return 2;
+  if (user.examsTaken > 0 || (user.activeDays || 0) >= 2) return 1;
+  return 0;
+}
+
+export function dailyCap(user) {
+  return DAILY_CAP[trustLevel(user)] ?? DAILY_CAP[0];
+}
+
+// Count a message against today's allowance. Also tracks distinct active days, which is
+// what promotes someone from "stranger" to "real reader".
+export async function consumeQuota(user) {
+  const today = localNow(user.tz).date;
+  const used = user.usage?.date === today ? user.usage.count || 0 : 0;
+  const cap = dailyCap(user);
+  if (used >= cap) return { ok: false, used, cap, level: trustLevel(user) };
+
+  const patch = { 'usage.date': today, 'usage.count': used + 1 };
+  if (user.lastActiveDate !== today) {
+    patch.lastActiveDate = today;
+    patch.activeDays = (user.activeDays || 0) + 1;
+  }
+  await col('users').updateOne({ _id: user._id }, { $set: patch });
+  return { ok: true, used: used + 1, cap, level: trustLevel(user) };
+}
+
+// Who brought them in — so we can see which shared results actually convert.
+export async function setReferrer(chatId, shareCode, referrerId) {
+  // Only the FIRST link that brought them counts — the filter, not $setOnInsert, is what
+  // makes this stick, because the account already exists by the time /start is handled.
+  await col('users').updateOne(
+    { _id: String(chatId), referredBy: { $exists: false } },
+    { $set: { referredBy: { shareCode, referrerId, at: new Date() } } }
+  );
+}
+
+export async function recordExam(chatId) {
+  await col('users').updateOne({ _id: String(chatId) }, { $inc: { examsTaken: 1 } });
 }
 
 // ---------- rate limiting ----------

@@ -2,7 +2,7 @@ import http from 'http';
 import crypto from 'crypto';
 import { readFile } from 'fs/promises';
 import { fileURLToPath } from 'url';
-import { col, getProfile, logEvent } from './db.js';
+import { col, rawCol, getProfile, logEvent } from './db.js';
 import { config } from './config.js';
 import { chat } from './llm.js';
 import { sendPings } from './telegram.js';
@@ -190,6 +190,94 @@ async function saveBooks(books) {
   return { ok: true, count: clean.length };
 }
 
+// ---- Sharing: a result that travels beyond Telegram ----
+// A public page per shared result, so it opens on WhatsApp, X, LinkedIn, Reddit — anywhere
+// a link goes — carrying a deep link back into the bot. Only what they chose to share is
+// published: the book, the score, and optionally one thought. Never their library.
+const shareCode = () => Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-3);
+
+async function createShare({ title, author, score, verdict, thought, name }) {
+  const code = shareCode();
+  await rawCol('shares').insertOne({
+    _id: code,
+    userId: uid(),
+    title: String(title || '').slice(0, 300),
+    author: String(author || '').slice(0, 200),
+    score: score == null ? null : Math.max(0, Math.min(100, Number(score) || 0)),
+    verdict: String(verdict || '').slice(0, 400),
+    thought: String(thought || '').slice(0, 500),
+    name: String(name || '').slice(0, 60),
+    createdAt: new Date(),
+    views: 0,
+  });
+  const url = `${config.appUrl}/r/${code}`;
+  return { code, url, deepLink: `https://t.me/${config.botUsername || 'bot'}?start=r_${code}` };
+}
+
+const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+// The card, drawn as SVG — downloadable for Instagram/X where a link alone won't travel.
+function shareCard(s) {
+  const score = s.score == null ? '—' : `${s.score}%`;
+  const title = s.title.length > 34 ? s.title.slice(0, 33) + '…' : s.title;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <rect width="1200" height="630" fill="#14130F"/>
+  <rect x="0" y="0" width="1200" height="8" fill="#D9AE4A"/>
+  <text x="80" y="130" fill="#9C9686" font-family="Georgia,serif" font-size="30">${esc(s.name || 'A reader')} was tested on</text>
+  <text x="80" y="230" fill="#ECE8DF" font-family="Georgia,serif" font-size="68" font-weight="bold">${esc(title)}</text>
+  ${s.author ? `<text x="80" y="285" fill="#9C9686" font-family="Georgia,serif" font-size="32">${esc(s.author)}</text>` : ''}
+  <text x="80" y="440" fill="#D9AE4A" font-family="Georgia,serif" font-size="150" font-weight="bold">${score}</text>
+  <text x="80" y="495" fill="#9C9686" font-family="Georgia,serif" font-size="28">honest comprehension score</text>
+  <text x="80" y="575" fill="#ECE8DF" font-family="Georgia,serif" font-size="30">Most people forget what they read. Find out if you did.</text>
+</svg>`;
+}
+
+function sharePage(s) {
+  const score = s.score == null ? '' : `${s.score}%`;
+  const desc = `${s.score != null ? `Scored ${s.score}% ` : ''}on an honest comprehension test of "${s.title}". Most people forget what they read — find out if you did.`;
+  const deep = `https://t.me/${config.botUsername || 'bot'}?start=r_${s._id}`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${esc(s.name || 'A reader')} — ${esc(s.title)}${score ? ` · ${score}` : ''}</title>
+<meta property="og:title" content="${esc(s.name || 'A reader')} scored ${score} on &quot;${esc(s.title)}&quot;">
+<meta property="og:description" content="${esc(desc)}">
+<meta property="og:image" content="${config.appUrl}/r/${s._id}/card.svg">
+<meta property="og:url" content="${config.appUrl}/r/${s._id}"><meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="${esc(s.name || 'A reader')} scored ${score} on &quot;${esc(s.title)}&quot;">
+<meta name="twitter:description" content="${esc(desc)}">
+<meta name="twitter:image" content="${config.appUrl}/r/${s._id}/card.svg">
+<style>
+ :root{color-scheme:dark}
+ *{box-sizing:border-box} body{margin:0;background:#14130F;color:#ECE8DF;
+   font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;line-height:1.6;
+   display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px}
+ .card{max-width:520px;width:100%;background:#1D1B16;border:1px solid #2C2A22;border-radius:20px;padding:34px 30px;text-align:center}
+ .kicker{color:#D9AE4A;font-size:.78rem;letter-spacing:.16em;text-transform:uppercase;font-weight:600}
+ h1{font-family:Georgia,serif;font-size:1.9rem;margin:.5rem 0 .2rem;line-height:1.2}
+ .author{color:#9C9686;margin:0 0 20px}
+ .score{font-family:Georgia,serif;font-size:5rem;font-weight:700;color:#D9AE4A;line-height:1;margin:14px 0 2px}
+ .slabel{color:#9C9686;font-size:.85rem;text-transform:uppercase;letter-spacing:.08em}
+ .verdict{background:#26241D;border-radius:12px;padding:14px 16px;margin:22px 0;font-size:.95rem;text-align:left}
+ .thought{border-left:3px solid #D9AE4A;padding-left:14px;margin:18px 0;text-align:left;font-style:italic;color:#C9C3B6}
+ .pitch{margin:26px 0 18px;font-size:1.02rem}
+ a.cta{display:block;background:#D9AE4A;color:#14130F;text-decoration:none;font-weight:700;
+   padding:15px;border-radius:12px;font-size:1.05rem}
+ .foot{color:#6E695C;font-size:.78rem;margin-top:16px}
+</style></head><body>
+<div class="card">
+  <div class="kicker">Honest comprehension test</div>
+  <h1>${esc(s.title)}</h1>
+  ${s.author ? `<p class="author">${esc(s.author)}</p>` : ''}
+  ${s.score != null ? `<div class="score">${s.score}%</div><div class="slabel">${esc(s.name || 'A reader')}'s score</div>` : ''}
+  ${s.verdict ? `<div class="verdict">${esc(s.verdict)}</div>` : ''}
+  ${s.thought ? `<div class="thought">"${esc(s.thought)}"</div>` : ''}
+  <p class="pitch">You forget most of what you read.<br><b>Find out if you did.</b></p>
+  <a class="cta" href="${deep}">📕 Test me on a book →</a>
+  <div class="foot">Read it. Prove you kept it.</div>
+</div></body></html>`;
+}
+
 // ---- Book knowledge exam: honest questions, honest grading ----
 // Generate: 5 questions that test real understanding of THIS book — comprehension,
 // application to HIS life/mission, and one pushback. Grade: radical honesty (his standing
@@ -263,9 +351,31 @@ export function startServer(port = process.env.PORT || 8080) {
       res.end('ok');
       return;
     }
+    // Public share pages — deliberately unauthenticated: that's the whole point. They
+    // expose only what the reader chose to publish.
+    const share = path.match(/^\/r\/([a-z0-9]{6,20})(\/card\.svg)?$/i);
+    if (share) {
+      const doc = await rawCol('shares').findOne({ _id: share[1] });
+      if (!doc) {
+        res.writeHead(404, { 'Content-Type': 'text/plain' });
+        res.end('This result has expired or was removed.');
+        return;
+      }
+      if (share[2]) {
+        res.writeHead(200, { 'Content-Type': 'image/svg+xml', 'Cache-Control': 'public, max-age=3600' });
+        res.end(shareCard(doc));
+        return;
+      }
+      rawCol('shares').updateOne({ _id: doc._id }, { $inc: { views: 1 } }).catch(() => {});
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(sharePage(doc));
+      return;
+    }
+
     if (
       path === '/api/dashboard' || path === '/api/words' || path === '/api/bookrecs' ||
-      path === '/api/bookexam' || path === '/api/bookexam/grade' || path === '/api/books'
+      path === '/api/bookexam' || path === '/api/bookexam/grade' || path === '/api/books' ||
+      path === '/api/share'
     ) {
       const tgUser = verifyInitData(req.headers['x-telegram-init-data'] || '', config.telegramToken);
       // A valid Telegram signature proves WHO they are; the allowlist decides whether
@@ -281,10 +391,12 @@ export function startServer(port = process.env.PORT || 8080) {
         // /api/words: the LIVE word bank — words the tutor caught them missing in chat
         // plus the curriculum words synced from english/words.md. Chat-caught first.
         const needsBody =
-          path === '/api/bookexam' || path === '/api/bookexam/grade' || (path === '/api/books' && req.method === 'PUT');
+          path === '/api/bookexam' || path === '/api/bookexam/grade' || path === '/api/share' ||
+          (path === '/api/books' && req.method === 'PUT');
         const body = needsBody ? await readJson(req) : null;
         const data = await runAs(acct, async () => {
           if (path === '/api/books') return req.method === 'PUT' ? saveBooks(body?.books) : getBooks();
+          if (path === '/api/share') return createShare({ ...body, name: body?.name || acct.name });
           if (path === '/api/words') {
             const rows = await col('english_words')
               .find()

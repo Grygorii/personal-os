@@ -1,6 +1,6 @@
 import { connect, col, ensureIndexes } from './db.js';
 import { scheduleAgents } from './runtime.js';
-import { poll, setCommands } from './telegram.js';
+import { poll, setCommands, getMe } from './telegram.js';
 import { route } from './router.js';
 import { startServer } from './webserver.js';
 import { syncWordBank } from './agents/english.js';
@@ -9,13 +9,19 @@ import { runAs } from './ctx.js';
 import { config } from './config.js';
 
 // Bump on each deploy so we can confirm which build is actually live (read meta.boot).
-const VERSION = 'books-1';
+const VERSION = 'growth-1';
 
 async function main() {
   await connect();
   await col('meta').updateOne({ _id: 'boot' }, { $set: { version: VERSION, at: new Date() } }, { upsert: true });
   console.log(`[boot] ${VERSION}`);
   await ensureIndexes();
+  // Learn our own @username so shared result pages can link back into the bot.
+  const me = await getMe();
+  if (me?.username) {
+    config.botUsername = me.username;
+    console.log(`[boot] bot is @${me.username}`);
+  }
   // The curriculum in english/*.md is the OWNER's study material, so it syncs into his
   // word bank specifically — a tenant's deck starts from their own conversations.
   if (config.telegramChatId) {
