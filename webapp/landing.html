@@ -54,6 +54,53 @@
     animation:blink 1.4s infinite both}
   .typing span:nth-child(2){animation-delay:.2s} .typing span:nth-child(3){animation-delay:.4s}
   @keyframes blink{0%,80%,100%{opacity:.25}40%{opacity:1}}
+  /* animated demo */
+  .demo-wrap{margin-top:24px}
+  .demo-phone{position:relative;overflow:hidden}
+  .screen-stack{position:relative;min-height:330px}
+  .screen{position:absolute;inset:0;opacity:0;transform:translateY(10px);pointer-events:none;
+    transition:opacity .45s ease,transform .45s ease}
+  .screen.on{opacity:1;transform:none;pointer-events:auto}
+  .app-bar{font-weight:600;font-size:.92rem;color:var(--muted);border-bottom:1px solid var(--line);
+    padding-bottom:10px;margin-bottom:14px}
+  .empty-shelf{text-align:center;color:var(--faint);padding:38px 10px;font-size:.95rem}
+  .empty-shelf span{color:var(--muted)}
+  .app-btn{width:100%;background:var(--accent);color:var(--accent-ink);border:0;border-radius:12px;
+    padding:13px;font-weight:700;font-size:.98rem;font-family:var(--sans);cursor:default}
+  .app-btn.ghost-btn{background:transparent;color:var(--accent);border:1px solid var(--line);font-weight:600}
+  .pulse{animation:tap 2s ease-in-out infinite}
+  @keyframes tap{0%,100%{transform:scale(1);box-shadow:0 0 0 0 rgba(217,174,74,.45)}
+    50%{transform:scale(1.02);box-shadow:0 0 0 12px rgba(217,174,74,0)}}
+  .fld{display:block;font-size:.7rem;text-transform:uppercase;letter-spacing:.06em;color:var(--faint);
+    font-weight:700;margin:12px 0 5px}
+  .input{background:var(--raise);border:1px solid var(--line);border-radius:10px;padding:11px 13px;
+    font-size:.95rem;min-height:42px}
+  .input.dim{color:var(--muted)}
+  .caret{display:inline-block;width:2px;height:1.05em;background:var(--accent);vertical-align:-2px;
+    animation:blink2 1s steps(1) infinite}
+  @keyframes blink2{0%,50%{opacity:1}51%,100%{opacity:0}}
+  .q{background:var(--raise);border-radius:12px;padding:13px 15px;font-size:.93rem;margin-bottom:12px}
+  .q b{color:var(--accent)}
+  .answer{border-left:3px solid var(--line);padding:4px 0 4px 12px;color:var(--muted);font-size:.92rem;
+    margin-bottom:14px;font-style:italic}
+  .big-score{font-family:var(--serif);font-size:4.4rem;font-weight:700;color:var(--good);text-align:center;
+    line-height:1;margin:6px 0 4px}
+  .big-score small{font-size:1.6rem}
+  .verdict{text-align:center;color:var(--muted);font-size:.92rem;margin-bottom:14px}
+  .chips{display:flex;gap:7px;justify-content:center;flex-wrap:wrap;margin-bottom:16px}
+  .chips span{font-size:.76rem;background:var(--raise);border-radius:20px;padding:4px 10px;color:var(--muted)}
+  .chips .low{color:#E1685C}
+  .dots{display:flex;gap:8px;justify-content:center;margin-top:18px}
+  .dot{width:8px;height:8px;border-radius:50%;border:0;background:var(--line);padding:0;cursor:pointer;
+    transition:background .3s,width .3s}
+  .dot.on{background:var(--accent);width:22px;border-radius:5px}
+  /* install */
+  .install-row{margin-top:14px}
+  #install-btn{display:none}
+  .ios-help{display:none;background:var(--surface);border:1px solid var(--line);border-radius:14px;
+    padding:16px 18px;margin-top:16px;text-align:left;font-size:.93rem;color:var(--muted)}
+  .ios-help b{color:var(--ink)}
+  .ios-help ol{margin:10px 0 0;padding-left:20px} .ios-help li{margin:5px 0}
   /* steps */
   .steps{display:grid;gap:16px;margin-top:26px}
   .step{display:flex;gap:16px;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:18px}
@@ -89,7 +136,16 @@
     <h1>You forget most of<br>what you read.</h1>
     <p class="sub">Kept reads along with you — then examines you on the book when you finish. Honestly. You find out what you actually kept.</p>
     <a class="cta" href="BOT_LINK">Start with your current book →</a>
-    <p class="note">Free to start · works inside Telegram · nothing to install</p>
+    <div class="install-row"><button class="cta ghost" id="install-btn">📲 Install as app</button></div>
+    <div class="ios-help" id="ios-help">
+      <b>Add Kept to your home screen</b>
+      <ol>
+        <li>Tap the <b>Share</b> button below (□↑)</li>
+        <li>Scroll and choose <b>Add to Home Screen</b></li>
+        <li>Tap <b>Add</b> — it opens like a real app</li>
+      </ol>
+    </div>
+    <p class="note">Free to start · nothing to install · <a href="#demo" style="color:var(--muted)">see how it works ↓</a></p>
   </header>
 
   <section>
@@ -99,18 +155,68 @@
     <p class="lede">Highlighting doesn't fix it. Note-taking apps don't fix it. Being <em>asked</em> does — that's what makes a memory stick.</p>
   </section>
 
-  <section>
-    <div class="kicker">How it feels</div>
-    <h2>Like a friend who read it too.</h2>
-    <div class="phone" style="margin-top:22px">
-      <div class="bubble me">Finished Atomic Habits last night</div>
-      <div class="bubble them">Nice. Before it fades — what's the one idea you'd actually change something over?</div>
-      <div class="bubble me">That you should focus on systems, not goals</div>
-      <div class="bubble them">Good — but that's the summary everyone repeats. What's a goal <em>you</em> hold that's secretly a system problem?</div>
-      <div class="bubble me">…okay, that stung. My reading goal.</div>
-      <div class="bubble them">Right. Want the exam? Five questions, graded honestly.</div>
-      <div class="score-line"><b>72%</b><span style="color:var(--muted)">Solid grasp of habit stacking. Vague on the 2-minute rule — worth a re-read of ch. 13.</span></div>
-      <div class="bubble them typing"><span></span><span></span><span></span></div>
+  <section id="demo">
+    <div class="kicker">See it work</div>
+    <h2>From "I'm reading this" to a real score.</h2>
+    <p class="lede" id="demo-caption">Adding your first book takes one tap.</p>
+
+    <div class="demo-wrap">
+      <div class="phone demo-phone">
+        <div class="screen-stack">
+
+          <!-- 1. the empty library -->
+          <div class="screen on" data-step="0">
+            <div class="app-bar">📚 My library</div>
+            <div class="empty-shelf">No books yet.<br><span>Add the one in your hands.</span></div>
+            <button class="app-btn pulse">＋ Add a book</button>
+          </div>
+
+          <!-- 2. typing the title -->
+          <div class="screen" data-step="1">
+            <div class="app-bar">＋ Add a book</div>
+            <label class="fld">Title</label>
+            <div class="input"><span class="typed" data-text="Atomic Habits"></span><i class="caret"></i></div>
+            <label class="fld">Author</label>
+            <div class="input dim">James Clear</div>
+            <button class="app-btn">Add book</button>
+          </div>
+
+          <!-- 3. thoughts while reading -->
+          <div class="screen" data-step="2">
+            <div class="app-bar">💬 While you read</div>
+            <div class="bubble me">p.94 — habit stacking is just a trigger I already have</div>
+            <div class="bubble them">Good catch. Which existing habit would you attach the new one to?</div>
+            <div class="bubble me">Coffee. Read 10 pages while it brews.</div>
+            <div class="bubble them typing"><span></span><span></span><span></span></div>
+          </div>
+
+          <!-- 4. the exam -->
+          <div class="screen" data-step="3">
+            <div class="app-bar">🎓 Exam · Atomic Habits</div>
+            <div class="q"><b>Q2.</b> You said you'd read while coffee brews. What breaks that system first, and what would you change?</div>
+            <div class="answer">Probably travel days — no kitchen, no trigger…</div>
+            <button class="app-btn">Submit for honest grading</button>
+          </div>
+
+          <!-- 5. the score -->
+          <div class="screen" data-step="4">
+            <div class="app-bar">Result</div>
+            <div class="big-score">72<small>%</small></div>
+            <div class="verdict">Solid on habit stacking. Vague on the 2-minute rule — worth re-reading ch. 13.</div>
+            <div class="chips"><span>✓ Q1 88%</span><span>✓ Q2 74%</span><span class="low">Q4 41%</span></div>
+            <button class="app-btn ghost-btn">📤 Share my result</button>
+          </div>
+
+        </div>
+      </div>
+
+      <div class="dots" role="tablist" aria-label="Demo steps">
+        <button class="dot on" data-go="0" aria-label="Add a book"></button>
+        <button class="dot" data-go="1" aria-label="Enter the title"></button>
+        <button class="dot" data-go="2" aria-label="Send thoughts"></button>
+        <button class="dot" data-go="3" aria-label="Take the exam"></button>
+        <button class="dot" data-go="4" aria-label="Get your score"></button>
+      </div>
     </div>
   </section>
 
@@ -165,6 +271,98 @@
       navigator.serviceWorker.register('/sw.js').catch(function () {});
     });
   }
+
+  /* ---- Install button ----
+     Android/Chrome hands us a real install prompt; iOS Safari has no such API, so there we
+     show the exact taps instead. Already installed → the button disappears. */
+  (function () {
+    var btn = document.getElementById('install-btn');
+    var help = document.getElementById('ios-help');
+    var deferred = null;
+    var standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+    var isIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
+    if (standalone) return;                       // they already have it
+
+    window.addEventListener('beforeinstallprompt', function (e) {
+      e.preventDefault();
+      deferred = e;
+      btn.style.display = 'inline-block';
+    });
+    if (isIos) btn.style.display = 'inline-block'; // no API on iOS — offer the instructions
+
+    btn.addEventListener('click', async function () {
+      if (deferred) {
+        deferred.prompt();
+        await deferred.userChoice;
+        deferred = null;
+        btn.style.display = 'none';
+        return;
+      }
+      help.style.display = help.style.display === 'block' ? 'none' : 'block';
+      help.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
+    window.addEventListener('appinstalled', function () { btn.style.display = 'none'; });
+  })();
+
+  /* ---- The demo plays itself ----
+     Five screens on a timer with captions, so "how do I add a book?" is answered by
+     watching rather than reading. Tapping a dot takes over; it stops auto-advancing
+     once someone steers it themselves. */
+  (function () {
+    var screens = [].slice.call(document.querySelectorAll('.screen'));
+    var dots = [].slice.call(document.querySelectorAll('.dot'));
+    var caption = document.getElementById('demo-caption');
+    var texts = [
+      'Open your library and tap “Add a book”.',
+      'Type the title — that’s the whole setup.',
+      'As you read, message any thought. It thinks back.',
+      'Finished? Five questions about your book.',
+      'An honest score, and exactly where you’re thin.',
+    ];
+    var i = 0, timer = null, manual = false;
+
+    function show(n) {
+      i = (n + screens.length) % screens.length;
+      screens.forEach(function (s, k) { s.classList.toggle('on', k === i); });
+      dots.forEach(function (d, k) { d.classList.toggle('on', k === i); });
+      caption.textContent = texts[i];
+      if (i === 1) typeTitle();
+    }
+    function typeTitle() {
+      var el = document.querySelector('.typed');
+      if (!el) return;
+      var full = el.dataset.text, n = 0;
+      el.textContent = '';
+      clearInterval(el._t);
+      el._t = setInterval(function () {
+        el.textContent = full.slice(0, ++n);
+        if (n >= full.length) clearInterval(el._t);
+      }, 85);
+    }
+    function play() {
+      if (timer) return; // never stack two timers — that would double the speed
+      timer = setInterval(function () { show(i + 1); }, 3200);
+    }
+
+    dots.forEach(function (d) {
+      d.addEventListener('click', function () {
+        manual = true; clearInterval(timer); show(+d.dataset.go);
+      });
+    });
+    // Start immediately. Visibility is only an optimisation — if IntersectionObserver
+    // never reports (some embedded webviews don't), the demo must still play rather than
+    // sit frozen on the first frame.
+    show(0);
+    play();
+    if ('IntersectionObserver' in window) {
+      new IntersectionObserver(function (entries) {
+        entries.forEach(function (e) {
+          if (!e.isIntersecting && timer) { clearInterval(timer); timer = null; }
+          else if (e.isIntersecting && !timer && !manual) play();
+        });
+      }, { threshold: 0.2 }).observe(document.getElementById('demo'));
+    }
+  })();
 </script>
 </body>
 </html>
