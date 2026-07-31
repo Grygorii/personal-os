@@ -4,6 +4,7 @@ import { chat } from '../llm.js';
 import { col, logEvent } from '../db.js';
 import { send, sendPings, sendButtons } from '../telegram.js';
 import * as system from '../system.js';
+import { config } from '../config.js';
 
 // The English → C2 tutor. A dedicated conversation mode: Гриша talks (business,
 // psychology, life) and every message is scored honestly, mined for gaps, and logged.
@@ -12,7 +13,7 @@ import * as system from '../system.js';
 
 // The self-hosted deck (was a stale claude.ai Artifact link — now the live Mini App page,
 // which also pulls the growing word bank from /api/words).
-const DECK_URL = 'https://personal-os-production-052d.up.railway.app/deck';
+const DECK_URL = `${config.appUrl}/deck`;
 const DIMS = ['clarity', 'grammar', 'vocab', 'concise', 'register'];
 
 // ---------- state ----------

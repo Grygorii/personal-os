@@ -468,7 +468,11 @@ export function startServer(port = process.env.PORT || 8080) {
       let fragment = await readFile(abs, 'utf8');
       // The landing page is served to strangers, so its call-to-action must point at the
       // real bot — resolved at request time from the username discovered at boot.
-      if (route.public) fragment = fragment.replaceAll('BOT_LINK', `https://t.me/${config.botUsername || 'grisha_steward_bot'}`);
+      if (route.public) {
+        fragment = fragment
+          .replaceAll('BOT_LINK', `https://t.me/${config.botUsername || 'grisha_steward_bot'}`)
+          .replaceAll('APP_URL', config.appUrl);
+      }
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
       res.end(wrap(fragment, route.homeBar));
     } catch (err) {
