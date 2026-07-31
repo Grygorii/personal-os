@@ -9,6 +9,7 @@ import { sendPings } from './telegram.js';
 import * as system from './system.js';
 import * as users from './users.js';
 import { runAs, uid, personName, languageRule } from './ctx.js';
+import { verifyTelegramLogin, createSession, readSession, parseCookies, sessionCookie, clearedCookie } from './auth.js';
 
 // Read a small JSON request body (exam answers etc.). Hard 200KB cap.
 function readJson(req) {
@@ -41,9 +42,10 @@ function parseModelJson(raw) {
 
 const ROUTES = {
   // '/' is the public front door — what a stranger from a shared link or a search sees.
-  // The Mini App hub moved to /app (the BotFather menu button should point there).
+  // '/app' is the product itself and is handled separately (it needs a session gate), so
+  // an installed app never opens onto marketing.
   '/': { file: '../webapp/landing.html', public: true },
-  '/app': { file: '../webapp/home.html' },
+  '/hub': { file: '../webapp/home.html' },
   '/home': { file: '../webapp/home.html' },
   '/deck': { file: '../english/study.html', homeBar: true },
   '/body': { file: '../body/map.html', homeBar: true },
@@ -356,6 +358,55 @@ export function startServer(port = process.env.PORT || 8080) {
       res.end('ok');
       return;
     }
+    // ---- signing in on the website ----
+    // Telegram redirects here after the Login Widget. Verify, create the account if it's
+    // their first time, set a session cookie, and drop them into the app.
+    if (path === '/auth/telegram') {
+      const q = Object.fromEntries(new URL(req.url, `https://${req.headers.host}`).searchParams);
+      const tgUser = verifyTelegramLogin(q);
+      if (!tgUser) {
+        res.writeHead(302, { Location: '/app?error=login' });
+        res.end();
+        return;
+      }
+      const acct = await users.ensureUser({ chatId: tgUser.id, name: tgUser.first_name, username: tgUser.username });
+      if (!users.isAllowed(acct)) {
+        res.writeHead(302, { Location: '/app?error=waiting' });
+        res.end();
+        return;
+      }
+      res.writeHead(302, { Location: '/app', 'Set-Cookie': sessionCookie(createSession(acct._id)) });
+      res.end();
+      return;
+    }
+    if (path === '/auth/logout') {
+      res.writeHead(302, { Location: '/', 'Set-Cookie': clearedCookie });
+      res.end();
+      return;
+    }
+
+    // ---- the app itself ----
+    // Signed in → the library. Not signed in → a sign-in screen. Deciding on the server
+    // means the installed app never flashes marketing or a wrong screen first.
+    if (path === '/app') {
+      const sid = readSession(parseCookies(req.headers.cookie).kept_session);
+      const file = sid ? '../reading/journal.html' : '../webapp/signin.html';
+      try {
+        let html = await readFile(fileURLToPath(new URL(file, import.meta.url)), 'utf8');
+        html = html
+          .replaceAll('BOT_USERNAME', config.botUsername || 'grisha_steward_bot')
+          .replaceAll('BOT_LINK', `https://t.me/${config.botUsername || 'grisha_steward_bot'}`)
+          .replaceAll('APP_URL', config.appUrl);
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+        res.end(wrap(html, false));
+      } catch (err) {
+        console.error('[web] /app failed:', err.message);
+        res.writeHead(500, { 'Content-Type': 'text/plain' });
+        res.end('Server error');
+      }
+      return;
+    }
+
     // Public share pages — deliberately unauthenticated: that's the whole point. They
     // expose only what the reader chose to publish.
     const share = path.match(/^\/r\/([a-z0-9]{6,20})(\/card\.svg)?$/i);
@@ -382,10 +433,15 @@ export function startServer(port = process.env.PORT || 8080) {
       path === '/api/bookexam' || path === '/api/bookexam/grade' || path === '/api/books' ||
       path === '/api/share'
     ) {
+      // Two ways to prove who you are: Telegram's Mini App signature, or a session cookie
+      // from signing in on the website. The allowlist then decides if you're allowed in.
       const tgUser = verifyInitData(req.headers['x-telegram-init-data'] || '', config.telegramToken);
-      // A valid Telegram signature proves WHO they are; the allowlist decides whether
-      // they're allowed in. Everything below then runs as that user.
-      const acct = tgUser ? await users.ensureUser({ chatId: tgUser.id, name: tgUser.first_name || '' }) : null;
+      const sid = tgUser ? null : readSession(parseCookies(req.headers.cookie).kept_session);
+      const acct = tgUser
+        ? await users.ensureUser({ chatId: tgUser.id, name: tgUser.first_name || '' })
+        : sid
+          ? await rawCol('users').findOne({ _id: sid })
+          : null;
       if (!acct || !users.isAllowed(acct)) {
         res.writeHead(401, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'unauthorized' }));
@@ -431,12 +487,14 @@ export function startServer(port = process.env.PORT || 8080) {
       res.end(JSON.stringify({
         name: 'Kept — read it, prove you kept it',
         short_name: 'Kept',
-        start_url: '/',
+        start_url: '/app',
         display: 'standalone',
         background_color: '#14130F',
         theme_color: '#14130F',
         description: 'Get examined on the books you finish. Honestly.',
         icons: [{ src: '/icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any maskable' }],
+        // The installed app opens the LIBRARY, never the sales page.
+        scope: '/',
       }));
       return;
     }

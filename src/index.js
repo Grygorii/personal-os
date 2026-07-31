@@ -9,7 +9,7 @@ import { runAs } from './ctx.js';
 import { config } from './config.js';
 
 // Bump on each deploy so we can confirm which build is actually live (read meta.boot).
-const VERSION = 'readkept-1';
+const VERSION = 'webapp-1';
 
 async function main() {
   await connect();

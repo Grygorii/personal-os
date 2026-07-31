@@ -158,12 +158,20 @@ let state=JSON.parse(localStorage.getItem(KEY)||"{}"); state.books=state.books||
    the mentor can see it. localStorage stays as an offline cache and a first-run migration
    source. Saves are debounced — typing a thought shouldn't fire a request per keystroke. */
 const initData=()=>(window.Telegram&&Telegram.WebApp&&Telegram.WebApp.initData)||"";
+/* One call for both worlds: inside Telegram we send its signature; installed on a phone
+   or opened in a browser we rely on the session cookie. The server accepts either, so the
+   app works the same in both places. */
+function api(path,opts){
+  const o=Object.assign({credentials:"same-origin"},opts||{});
+  o.headers=Object.assign({},o.headers||{});
+  const id=initData(); if(id) o.headers["x-telegram-init-data"]=id;
+  return fetch(path,o);
+}
 let syncTimer=null,syncing=false;
 async function pushBooks(){
-  const id=initData(); if(!id) return;
   syncing=true;
   try{
-    await fetch("/api/books",{method:"PUT",headers:{"x-telegram-init-data":id,"Content-Type":"application/json"},
+    await api("/api/books",{method:"PUT",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({books:state.books})});
   }catch(e){ /* offline: localStorage still holds it, next save retries */ }
   syncing=false;
@@ -173,10 +181,9 @@ const save=()=>{
   clearTimeout(syncTimer); syncTimer=setTimeout(pushBooks,600);
 };
 async function loadBooks(){
-  const id=initData(); if(!id) return;             // outside Telegram: local-only, unchanged
   try{
-    const r=await fetch("/api/books",{headers:{"x-telegram-init-data":id}});
-    if(!r.ok) return;
+    const r=await api("/api/books");
+    if(!r.ok) return;                              // not signed in → local-only, unchanged
     const {books}=await r.json();
     if(Array.isArray(books)&&books.length){ state.books=books; localStorage.setItem(KEY,JSON.stringify(state)); }
     else if(state.books.length){ await pushBooks(); }   // first run: lift the local shelf up
@@ -302,15 +309,13 @@ function openBook(id){
 }
 
 /* ---- Knowledge exam: honest questions, honestly graded ---- */
-function tgInit(){return (window.Telegram&&Telegram.WebApp&&Telegram.WebApp.initData)||"";}
 async function startExam(id){
   const b=state.books.find(x=>x.id===id); if(!b)return;
-  const initData=tgInit();
-  if(!initData){toast("Open this inside Telegram to take the exam");return;}
   const btn=$("b-exam"),area=$("exam-area");
   btn.disabled=true;btn.textContent="✍️ Writing your exam…";
   try{
-    const r=await fetch("/api/bookexam",{method:"POST",headers:{"x-telegram-init-data":initData,"Content-Type":"application/json"},body:JSON.stringify({title:b.title,author:b.author||""})});
+    const r=await api("/api/bookexam",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({title:b.title,author:b.author||""})});
+    if(r.status===401){btn.disabled=false;btn.textContent="🎓 Test my knowledge";toast("Sign in to take the exam");location.href="/app";return;}
     if(!r.ok)throw 0;
     const ex=await r.json();
     btn.hidden=true;
@@ -325,7 +330,7 @@ async function startExam(id){
       if(answers.every(a=>!a)){toast("Answer at least one question");return;}
       const sb=$("exam-submit");sb.disabled=true;sb.textContent="⚖️ Grading honestly…";
       try{
-        const g=await fetch("/api/bookexam/grade",{method:"POST",headers:{"x-telegram-init-data":initData,"Content-Type":"application/json"},body:JSON.stringify({eid:ex.eid,answers})});
+        const g=await api("/api/bookexam/grade",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({eid:ex.eid,answers})});
         if(!g.ok)throw 0;
         const res=await g.json();
         patch(id,{exam:{score:res.overall,ts:Date.now(),verdict:res.verdict||""}});
@@ -348,17 +353,14 @@ async function startExam(id){
 /* ---- Share your take — as a link that works on every platform ---- */
 async function shareBook(id){
   const b=state.books.find(x=>x.id===id); if(!b)return;
-  const idc=initData();
   const lastThought=(b.notes||[]).slice(-1)[0];
   let url=null;
-  if(idc){
-    try{
-      const r=await fetch("/api/share",{method:"POST",headers:{"x-telegram-init-data":idc,"Content-Type":"application/json"},
-        body:JSON.stringify({title:b.title,author:b.author||"",score:b.exam?b.exam.score:null,
-          verdict:b.exam?b.exam.verdict:"",thought:lastThought?lastThought.text:""})});
-      if(r.ok){ const d=await r.json(); url=d.url; }
-    }catch(e){}
-  }
+  try{
+    const r=await api("/api/share",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({title:b.title,author:b.author||"",score:b.exam?b.exam.score:null,
+        verdict:b.exam?b.exam.verdict:"",thought:lastThought?lastThought.text:""})});
+    if(r.ok){ const d=await r.json(); url=d.url; }
+  }catch(e){}
   const line=`📕 ${b.title}${b.author?` — ${b.author}`:""}`+
     (b.exam?`\n🎓 I scored ${b.exam.score}% on an honest comprehension test.`:"")+
     `\nMost people forget what they read. Find out if you did:`;
@@ -417,11 +419,9 @@ loadBooks();
 let recData=[];
 async function loadRecs(refresh){
   try{
-    const initData=(window.Telegram&&Telegram.WebApp&&Telegram.WebApp.initData)||"";
-    if(!initData) return; // outside Telegram: journal works, recs simply hidden
     const el=$("recs"),list=$("recs-list");
     if(refresh){el.hidden=false;list.innerHTML='<div class="recs-loading">Choosing new picks…</div>';}
-    const r=await fetch("/api/bookrecs"+(refresh?"?refresh=1":""),{headers:{"x-telegram-init-data":initData}});
+    const r=await api("/api/bookrecs"+(refresh?"?refresh=1":""));
     if(!r.ok) return;
     const data=await r.json();
     if(!Array.isArray(data.recs)||!data.recs.length) return;
