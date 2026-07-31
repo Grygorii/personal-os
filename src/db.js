@@ -20,6 +20,7 @@ const GLOBAL_COLLECTIONS = new Set([
   'users', // the tenant registry itself
   'meta', // boot marker and other server-wide state
   'agents', // the schedule definitions; the runtime fans them out per user
+  'invites', // the email allowlist the owner manages from /admin
 ]);
 
 // Every collection that holds personal data. The single source of truth for migration,

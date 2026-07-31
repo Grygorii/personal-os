@@ -22,6 +22,60 @@ function isOwner(chatId) {
   return !!config.telegramChatId && String(chatId) === String(config.telegramChatId);
 }
 
+// ---------- who may sign in (the email allowlist) ----------
+// Two sources so the owner is never locked out and never has to redeploy: addresses baked
+// into the environment, plus ones added from /admin at runtime.
+// Invite-only, and deliberately FAIL-CLOSED: an address is refused unless it is explicitly
+// the owner's, in the environment list, or invited from /admin. (An earlier version opened
+// the doors to everyone whenever the list happened to be empty — so revoking the last
+// invite silently unlocked the app. Access should never widen as a side effect.)
+export async function isEmailAllowed(email) {
+  const e = String(email || '').toLowerCase().trim();
+  if (!e) return false;
+  if (e === config.ownerEmail) return true;
+  if (config.allowedEmails.includes(e)) return true;
+  return !!(await col('invites').findOne({ _id: e }));
+}
+
+export async function inviteEmail(email, by = 'owner') {
+  const e = String(email || '').toLowerCase().trim();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) throw new Error('not an email address');
+  await col('invites').updateOne({ _id: e }, { $setOnInsert: { _id: e, addedAt: new Date(), addedBy: by } }, { upsert: true });
+  return e;
+}
+
+export async function revokeEmail(email) {
+  const e = String(email || '').toLowerCase().trim();
+  await col('invites').deleteOne({ _id: e });
+  // Also lock out any account already created with that address.
+  await col('users').updateMany({ 'google.email': e, role: { $ne: 'owner' } }, { $set: { status: 'blocked' } });
+}
+
+export async function listInvites() {
+  return col('invites').find().sort({ addedAt: -1 }).toArray();
+}
+
+// Find the account for a Google identity: an existing link, then the owner (by their
+// address), then a fresh reader.
+export async function resolveGoogleUser({ sub, name, email }) {
+  const e = String(email || '').toLowerCase();
+  const linked = await col('users').findOne({ 'google.sub': String(sub) });
+  if (linked) return linked;
+
+  if (e && e === config.ownerEmail) {
+    // The owner signing in with Google — attach the identity to their real account so all
+    // their history stays in one place instead of starting a second, empty one.
+    const owner =
+      (await col('users').findOne({ role: 'owner' })) ||
+      (config.telegramChatId ? await col('users').findOne({ _id: String(config.telegramChatId) }) : null);
+    if (owner) {
+      await col('users').updateOne({ _id: owner._id }, { $set: { google: { sub: String(sub), email: e }, googleLinkedAt: new Date() } });
+      return { ...owner, google: { sub: String(sub), email: e } };
+    }
+  }
+  return ensureGoogleUser({ sub, name, email: e });
+}
+
 // A reader who signed in with Google. They have no Telegram chat, so the bot cannot
 // message them — the library, exams and sharing all work, but the mentor conversation and
 // reminders need Telegram linked later. The id is namespaced so it can never collide with

@@ -76,7 +76,11 @@
             if (r.ok) { location.replace('/app'); return; }
             return r.json().then(function (d) {
               document.getElementById('err').textContent =
-                d.error === 'waiting' ? "You're on the waiting list — we'll open up soon." : "That sign-in didn't work. Try again.";
+                d.error === 'not_invited'
+                  ? "That address isn't on the list yet. Kept is in a small private beta — ask for an invite."
+                  : d.error === 'waiting'
+                    ? "You're on the waiting list — we'll open up soon."
+                    : "That sign-in didn't work. Try again.";
             });
           })
           .catch(function () { document.getElementById('err').textContent = 'Network problem — try again.'; });

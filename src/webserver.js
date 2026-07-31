@@ -201,10 +201,11 @@ async function saveBooks(books) {
 // Deliberately one page of facts, not a dashboard: who joined, how they arrived, and the
 // only number that matters — did they add a book.
 async function adminPage() {
-  const [people, shares, stats] = await Promise.all([
+  const [people, shares, stats, invites] = await Promise.all([
     rawCol('users').find().sort({ createdAt: -1 }).limit(200).toArray(),
     rawCol('shares').find().sort({ createdAt: -1 }).limit(20).toArray(),
     dbStats().catch(() => null),
+    users.listInvites(),
   ]);
   const rows = await Promise.all(
     people.map(async (u) => {
@@ -265,6 +266,13 @@ async function adminPage() {
  .scroll{overflow-x:auto}
  .note{color:#6E695C;font-size:.82rem;margin-top:18px}
  a{color:#D9AE4A}
+ .invite{display:flex;gap:8px;margin-bottom:4px}
+ .invite input{flex:1;background:#26241D;border:1px solid #2C2A22;color:#ECE8DF;border-radius:10px;
+  padding:10px 12px;font-size:.92rem;font-family:inherit}
+ .invite button{background:#D9AE4A;color:#14130F;border:0;border-radius:10px;padding:10px 18px;
+  font-weight:700;cursor:pointer;font-family:inherit}
+ button.danger{background:transparent;border:1px solid #2C2A22;color:#E1685C;border-radius:8px;
+  padding:5px 11px;font-size:.78rem;cursor:pointer;font-family:inherit}
 </style></head><body><div class="wrap">
 <h1>📕 Kept · admin</h1>
 <p class="sub">Live from the database. <a href="/app">← back to the app</a></p>
@@ -279,6 +287,29 @@ async function adminPage() {
 <div class="scroll"><table>
 <tr><th>Name</th><th>Via</th><th>Lang</th><th>Books</th><th>Msgs</th><th>Exams</th><th>Joined</th><th></th></tr>
 ${body}
+</table></div>
+<h2>Who can sign in</h2>
+<form method="POST" action="/admin/invite" class="invite">
+  <input name="email" type="email" placeholder="name@example.com" required>
+  <button type="submit">Invite</button>
+</form>
+<p class="dim" style="font-size:.84rem;margin:8px 0 12px">
+  Invite-only: <b>only</b> the addresses below (plus yours) can sign in with Google. Everyone else is refused.
+  Owner: <b>${esc(config.ownerEmail)}</b>${config.allowedEmails.length ? ` · from env: ${config.allowedEmails.map(esc).join(', ')}` : ''}
+  ${config.multiTenant && config.autoAccept ? '<br>⚠️ Telegram is a separate door and still auto-accepts anyone. Set <code>AUTO_ACCEPT=false</code> in Railway to make Telegram invite-only too.' : ''}
+</p>
+<div class="scroll"><table>
+<tr><th>Invited address</th><th>Added</th><th>Status</th><th></th></tr>
+${invites.length
+  ? invites.map((i) => {
+      const acct = people.find((u) => u.google?.email === i._id);
+      return `<tr><td>${esc(i._id)}</td><td class="dim">${joined(i.addedAt)}</td>
+        <td class="${acct ? 'good' : 'dim'}">${acct ? 'signed in' : 'not yet'}</td>
+        <td><form method="POST" action="/admin/revoke" style="margin:0">
+          <input type="hidden" name="email" value="${esc(i._id)}">
+          <button class="danger" type="submit">Revoke</button></form></td></tr>`;
+    }).join('')
+  : '<tr><td colspan="4" class="dim">Nobody invited yet.</td></tr>'}
 </table></div>
 ${shares.length ? `<h2>Shared results</h2><div class="scroll"><table>
 <tr><th>Book</th><th>Score</th><th>Views</th><th>Joins</th></tr>${shareRows}</table></div>` : ''}
@@ -492,7 +523,14 @@ export function startServer(port = process.env.PORT || 8080) {
         res.end(JSON.stringify({ error: 'invalid_token' }));
         return;
       }
-      const acct = await users.ensureGoogleUser(g);
+      // The allowlist decides before any account is created, so a stranger's sign-in
+      // leaves no trace.
+      if (!(await users.isEmailAllowed(g.email))) {
+        res.writeHead(403, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'not_invited' }));
+        return;
+      }
+      const acct = await users.resolveGoogleUser(g);
       if (!users.isAllowed(acct)) {
         res.writeHead(403, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'waiting' }));
@@ -536,12 +574,37 @@ export function startServer(port = process.env.PORT || 8080) {
     // ---- owner's admin ----
     // Who joined, where they came from, and whether they actually did anything. Rendered
     // on the server so there's no API to secure separately; the session must be the owner.
-    if (path === '/admin') {
+    if (path === '/admin' || path === '/admin/invite' || path === '/admin/revoke') {
       const sid = readSession(parseCookies(req.headers.cookie).kept_session);
       const me = sid ? await rawCol('users').findOne({ _id: sid }) : null;
       if (!me || me.role !== 'owner') {
         res.writeHead(sid ? 403 : 302, sid ? { 'Content-Type': 'text/plain' } : { Location: '/app' });
-        res.end(sid ? 'Not yours.' : '');
+        res.end(
+          sid
+            ? `Not yours.\n\nYou're signed in as ${me?.google?.email || me?.name || sid}, which isn't the owner account.\nSign out at /auth/logout and sign in with the owner's Google address.`
+            : ''
+        );
+        return;
+      }
+      // Adding and removing invited addresses — plain form posts, so the page needs no JS.
+      if (path === '/admin/invite' || path === '/admin/revoke') {
+        const raw = await new Promise((resolve) => {
+          let d = '';
+          req.on('data', (c) => { d += c; if (d.length > 4000) req.destroy(); });
+          req.on('end', () => resolve(d));
+          req.on('error', () => resolve(''));
+        });
+        const email = new URLSearchParams(raw).get('email') || '';
+        try {
+          if (path === '/admin/invite') await users.inviteEmail(email, me._id);
+          else await users.revokeEmail(email);
+        } catch (e) {
+          res.writeHead(302, { Location: '/admin?err=' + encodeURIComponent(e.message) });
+          res.end();
+          return;
+        }
+        res.writeHead(302, { Location: '/admin' });
+        res.end();
         return;
       }
       try {

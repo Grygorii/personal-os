@@ -39,6 +39,15 @@ export const config = {
   // Google Sign-In (console.cloud.google.com → Credentials → OAuth client, Web). Optional:
   // without it the Google button simply isn't offered.
   googleClientId: oneLine(process.env.GOOGLE_CLIENT_ID),
+  // The owner's Google address — signing in with it lands in the OWNER account rather than
+  // creating a second one. Overridable so a self-hoster can make it theirs.
+  ownerEmail: (oneLine(process.env.OWNER_EMAIL) || 'grisha.kinzerskyi@gmail.com').toLowerCase(),
+  // Optional launch gate: when set, ONLY these addresses may sign in with Google. More can
+  // be added from /admin without a redeploy. Empty = open to anyone.
+  allowedEmails: oneLine(process.env.ALLOWED_EMAILS)
+    .split(',')
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean),
 };
 
 // Warn (don't crash) on missing essentials so `npm run seed` etc. still load.
