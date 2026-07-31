@@ -3,11 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Kept — you forget most of what you read. Find out if you did.</title>
-<meta name="description" content="A reading companion that examines you on the books you finish. Honest scores, no flattery. Add a book, capture your thoughts, then prove you kept it.">
+<title>Kept — find out what you actually remember from the books you read</title>
+<meta name="description" content="Kept reads along with you, then tests you when you finish a book. Five questions, marked honestly, so you know what really stayed.">
 <link rel="canonical" href="APP_URL/">
-<meta property="og:title" content="You forget most of what you read.">
-<meta property="og:description" content="Kept examines you on the books you finish — honestly. Find out what you actually kept.">
+<meta property="og:title" content="You finished the book. How much is left?">
+<meta property="og:description" content="Kept tests you on the books you finish — five questions, marked honestly. Find out what actually stayed.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="APP_URL/">
 <meta property="og:site_name" content="Kept">
@@ -152,26 +152,40 @@
 <div class="wrap">
   <header>
     <div class="brand">📕 Kept</div>
-    <h1>You forget most of<br>what you read.</h1>
-    <p class="sub">Kept reads along with you — then examines you on the book when you finish. Honestly. You find out what you actually kept.</p>
+    <h1>You finished the book.<br>How much is <em>left</em>?</h1>
+    <p class="sub">Kept reads along with you, then tests you when you turn the last page. Five questions, marked honestly — so you finally know what stayed.</p>
     <a class="cta" href="BOT_LINK">Start with your current book →</a>
     <div class="install-row"><button class="cta ghost" id="install-btn">📲 Install as app</button></div>
     <div class="ios-help" id="ios-help">
-      <b>Add Kept to your home screen</b>
-      <ol>
-        <li>Tap the <b>Share</b> button below (□↑)</li>
-        <li>Scroll and choose <b>Add to Home Screen</b></li>
-        <li>Tap <b>Add</b> — it opens like a real app</li>
-      </ol>
+      <div id="ios-safari">
+        <b>Add Kept to your iPhone</b>
+        <ol>
+          <li>Tap <b class="ic">&#xFE0E;⬆️</b> <b>Share</b> at the bottom of Safari</li>
+          <li>Scroll down and tap <b>Add to Home Screen</b></li>
+          <li>Tap <b>Add</b> — Kept opens like any other app</li>
+        </ol>
+      </div>
+      <div id="ios-other" hidden>
+        <b>Almost — one step first</b>
+        <p style="margin:8px 0 0">iPhone only allows this from <b>Safari</b>. Copy the link below,
+        open it in Safari, then tap <b>Install as app</b> again.</p>
+        <button class="cta ghost" id="copy-link" style="margin-top:12px;width:100%">Copy readkept.com</button>
+      </div>
     </div>
     <p class="note">Free to start · nothing to install · <a href="#demo" style="color:var(--muted)">see how it works ↓</a></p>
   </header>
 
   <section>
     <div class="kicker">The problem</div>
-    <div class="stat">~90%</div>
-    <p class="stat-label">of a book is gone within weeks of finishing it. You keep the feeling of having read it — the ideas quietly leave.</p>
-    <p class="lede">Highlighting doesn't fix it. Note-taking apps don't fix it. Being <em>asked</em> does — that's what makes a memory stick.</p>
+    <h2>Two weeks later, it's gone.</h2>
+    <p class="lede">You keep the cover, the mood, maybe one good line. The ideas quietly leave — and you never notice,
+      because feeling like you've read a book is indistinguishable from having kept it.</p>
+    <p class="lede">Highlighting doesn't stop it. Nor do note-taking apps. They record the book; they don't put it in you.</p>
+    <blockquote style="margin-top:22px">
+      Being <em>asked</em> is what makes it stick. Psychologists call it the testing effect: retrieving an idea
+      fixes it in memory far more firmly than reading it again ever will.
+      <footer>Kept is that test — for the books you actually read.</footer>
+    </blockquote>
   </section>
 
   <section id="demo">
@@ -253,17 +267,19 @@
     <div class="kicker">The rule</div>
     <h2>It will not flatter you.</h2>
     <blockquote>
-      An assistant that tells you what you want to hear is worse than no assistant. Kept grades a bluff under 40 and says why.
-      <footer>The first score is usually humbling. That's the point.</footer>
+      An assistant that tells you what you want to hear is worse than none at all. Bluff an answer and Kept scores it
+      under 40 — then tells you exactly which chapter to go back to.
+      <footer>The first score is usually humbling. That is rather the point.</footer>
     </blockquote>
   </section>
 
   <section>
     <div class="kicker">Questions</div>
-    <details><summary>Is it free?</summary><p>Yes to start. You get a daily allowance that grows as you use it. Later you can support it for €3–9 a month, or connect your own free AI key and keep it free forever.</p></details>
-    <details><summary>Do I need to install anything?</summary><p>No. It lives in Telegram, which you probably already have. You can also add this page to your home screen and it opens like an app.</p></details>
-    <details><summary>Who can see my books and notes?</summary><p>Only you. Nothing is shared unless you tap share on a result — and then only the book, the score and any thought you choose. Export or delete everything at any time.</p></details>
-    <details><summary>Does it work with any book?</summary><p>Any book, any language. It writes the exam for the specific book you read.</p></details>
+    <details><summary>Is it free?</summary><p>Free to start, with a daily allowance that grows as you use it. Later you can support it from €3 a month — or connect your own free AI key and keep it free for good.</p></details>
+    <details><summary>Do I need to install anything?</summary><p>No. Sign in with Google and it runs in your browser. If you'd rather have an icon, add it to your home screen and it opens like any other app.</p></details>
+    <details><summary>What does it actually ask me?</summary><p>Five questions written for the book you just read — two on its core ideas, two on applying them to your own life, and one where you argue with the author. Nothing you could answer from the blurb.</p></details>
+    <details><summary>Who can see my books and notes?</summary><p>Only you. Nothing leaves your library unless you share a result, and even then only the book, the score and a thought you pick. You can export or delete everything at any time.</p></details>
+    <details><summary>Does it work with any book?</summary><p>Any book, in any language. The exam is written for the specific book you read — fiction, history, business, anything.</p></details>
   </section>
 
   <section>
@@ -302,7 +318,23 @@
       deferred = e;
       btn.style.display = 'inline-block';
     });
-    if (isIos) btn.style.display = 'inline-block'; // no API on iOS — offer the instructions
+    if (isIos) {
+      btn.style.display = 'inline-block'; // no install API on iOS — offer the steps instead
+      // Add to Home Screen exists ONLY in Safari on iOS. In Chrome/Firefox/Edge the option
+      // simply isn't there, so send them to Safari rather than let them hunt for it.
+      var ua = navigator.userAgent;
+      var isSafari = /Safari/.test(ua) && !/CriOS|FxiOS|EdgiOS|OPiOS|Instagram|FBAN|FBAV|Line/.test(ua);
+      if (!isSafari) {
+        document.getElementById('ios-safari').hidden = true;
+        document.getElementById('ios-other').hidden = false;
+        btn.textContent = '📲 How to install on iPhone';
+      }
+      var copy = document.getElementById('copy-link');
+      if (copy) copy.addEventListener('click', function () {
+        navigator.clipboard && navigator.clipboard.writeText('https://readkept.com');
+        copy.textContent = 'Copied — now open Safari';
+      });
+    }
 
     btn.addEventListener('click', async function () {
       if (deferred) {
