@@ -453,7 +453,10 @@ async function applyAction(a) {
   return [];
 }
 
-async function deliver({ reply, actions }) {
+// `silent` returns the reply instead of pushing it to Telegram — that's how the web app
+// holds the same conversation, with the same memory and the same logging, for readers who
+// never open Telegram at all.
+async function deliver({ reply, actions }, { silent = false } = {}) {
   const pings = [];
   for (const a of actions) {
     try {
@@ -465,16 +468,25 @@ async function deliver({ reply, actions }) {
     }
   }
   await remember('coach', reply);
-  await send(reply);
-  await sendPings(pings);
+  if (!silent) {
+    await send(reply);
+    await sendPings(pings);
+  }
+  return { reply, pings };
 }
 
 // ---------- entry points ----------
 
 // Any free-text message from him.
-export async function handle(userText, image = null) {
+export async function handle(userText, image = null, opts = {}) {
   await remember('user', image ? `[photo]${userText ? ' ' + userText : ''}` : userText);
-  await deliver(await think(userText, image));
+  return deliver(await think(userText, image), opts);
+}
+
+// The last stretch of conversation, for the web chat to render on load.
+export async function history(limit = 30) {
+  const rows = await col('conversation').find().sort({ ts: -1 }).limit(limit).toArray();
+  return rows.reverse().map((m) => ({ role: m.role, text: m.text, ts: m.ts }));
 }
 
 // Proactive check-in fired by the scheduler.

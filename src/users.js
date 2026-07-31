@@ -22,6 +22,46 @@ function isOwner(chatId) {
   return !!config.telegramChatId && String(chatId) === String(config.telegramChatId);
 }
 
+// A reader who signed in with Google. They have no Telegram chat, so the bot cannot
+// message them — the library, exams and sharing all work, but the mentor conversation and
+// reminders need Telegram linked later. The id is namespaced so it can never collide with
+// a Telegram chat id.
+export async function ensureGoogleUser({ sub, name = '', email = '' }) {
+  const id = `g:${sub}`;
+  const existing = await col('users').findOne({ _id: id });
+  if (existing) {
+    await col('users').updateOne({ _id: id }, { $set: { lastSeen: new Date() } });
+    return existing;
+  }
+  const doc = {
+    _id: id,
+    chatId: null, // no Telegram yet — nothing may try to message them
+    google: { sub: String(sub), email },
+    name,
+    displayName: name,
+    role: 'member',
+    product: 'books',
+    status: config.multiTenant && config.autoAccept ? 'active' : 'pending',
+    tier: 'trial',
+    trialEndsAt: new Date(Date.now() + TRIAL_DAYS * DAY),
+    tz: config.timezone,
+    llm: null,
+    onboardingStep: 'done', // the web app teaches itself; no chat interview to run
+    onboardedAt: new Date(),
+    createdAt: new Date(),
+    lastSeen: new Date(),
+  };
+  await col('users').insertOne(doc);
+  console.log(`[users] new Google user ${id} (${name || email || 'unknown'})`);
+  return doc;
+}
+
+// Connect a Telegram chat to an existing account (or the reverse), so a Google reader can
+// unlock the mentor without losing their library.
+export async function linkTelegram(userId, chatId, name = '') {
+  await col('users').updateOne({ _id: String(userId) }, { $set: { chatId: String(chatId), telegramLinkedAt: new Date(), ...(name ? { name } : {}) } });
+}
+
 // Get the user, creating the record on first contact. The owner is always active; anyone
 // else starts 'pending' and must be approved (allowlist), so the door is shut by default.
 export async function ensureUser({ chatId, name = '', username = '' }) {

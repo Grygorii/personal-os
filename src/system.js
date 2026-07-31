@@ -385,8 +385,15 @@ function freshState() {
 async function getState() {
   let s = await col('system').findOne({ _id: 'state' });
   if (!s) {
-    s = freshState();
-    await col('system').insertOne(s);
+    // A brand-new user's first message reads state from several places at once (energy,
+    // current state, recording the action), so two of them can race to create it. Losing
+    // that race is fine — just re-read what the winner inserted.
+    try {
+      await col('system').insertOne(freshState());
+    } catch (e) {
+      if (e?.code !== 11000) throw e;
+    }
+    s = (await col('system').findOne({ _id: 'state' })) || freshState();
   }
   // Ensure every stat exists, even on states seeded before a stat was added.
   s.stats = { vitality: 0, mind: 0, forge: 0, discipline: 0, spirit: 0, ...s.stats };

@@ -38,6 +38,28 @@ export function verifyTelegramLogin(query, botToken = config.telegramToken) {
   return { id: String(data.id), first_name: data.first_name || '', username: data.username || '' };
 }
 
+// ---------- Google ----------
+// Verified against Google's own tokeninfo endpoint rather than by hand: no dependency, no
+// JWKS caching to get wrong, and Google checks the signature and expiry for us. We still
+// check `aud` ourselves — without that, a token minted for ANY other Google app would be
+// accepted here, which is the classic mistake.
+export async function verifyGoogleToken(idToken) {
+  if (!idToken || !config.googleClientId) return null;
+  try {
+    const res = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`);
+    if (!res.ok) return null;
+    const t = await res.json();
+    if (t.aud !== config.googleClientId) return null; // token was for a different app
+    if (!t.sub) return null;
+    if (Number(t.exp) * 1000 < Date.now()) return null;
+    if (t.email && t.email_verified === 'false') return null;
+    return { sub: String(t.sub), name: t.given_name || t.name || '', email: t.email || '' };
+  } catch (e) {
+    console.error('[auth] google verify failed:', e.message);
+    return null;
+  }
+}
+
 // ---------- sessions ----------
 // A cookie the server signs and can verify without any storage lookup.
 

@@ -2,14 +2,16 @@ import http from 'http';
 import crypto from 'crypto';
 import { readFile } from 'fs/promises';
 import { fileURLToPath } from 'url';
-import { col, rawCol, getProfile, logEvent } from './db.js';
+import { col, rawCol, getProfile, logEvent, dbStats } from './db.js';
 import { config } from './config.js';
 import { chat } from './llm.js';
 import { sendPings } from './telegram.js';
 import * as system from './system.js';
 import * as users from './users.js';
+import * as coach from './coach.js';
+import * as moderation from './moderation.js';
 import { runAs, uid, personName, languageRule } from './ctx.js';
-import { verifyTelegramLogin, createSession, readSession, parseCookies, sessionCookie, clearedCookie } from './auth.js';
+import { verifyTelegramLogin, verifyGoogleToken, createSession, readSession, parseCookies, sessionCookie, clearedCookie } from './auth.js';
 
 // Read a small JSON request body (exam answers etc.). Hard 200KB cap.
 function readJson(req) {
@@ -195,6 +197,95 @@ async function saveBooks(books) {
   return { ok: true, count: clean.length };
 }
 
+// ---- the owner's admin view ----
+// Deliberately one page of facts, not a dashboard: who joined, how they arrived, and the
+// only number that matters — did they add a book.
+async function adminPage() {
+  const [people, shares, stats] = await Promise.all([
+    rawCol('users').find().sort({ createdAt: -1 }).limit(200).toArray(),
+    rawCol('shares').find().sort({ createdAt: -1 }).limit(20).toArray(),
+    dbStats().catch(() => null),
+  ]);
+  const rows = await Promise.all(
+    people.map(async (u) => {
+      const [books, msgs, exams] = await Promise.all([
+        rawCol('books').findOne({ userId: u._id }).then((d) => d?.books?.length || 0),
+        rawCol('conversation').countDocuments({ userId: u._id, role: 'user' }),
+        rawCol('book_exams').countDocuments({ userId: u._id, status: 'graded' }),
+      ]);
+      return { u, books, msgs, exams };
+    })
+  );
+  const withBooks = rows.filter((r) => r.books > 0).length;
+  const joined = (d) => (d ? new Date(d).toISOString().slice(0, 10) : '—');
+  const via = (u) => (u.referredBy ? 'share' : String(u._id).startsWith('g:') ? 'google' : 'telegram');
+
+  const body = rows
+    .map(({ u, books, msgs, exams }) => {
+      const dot = u.status === 'active' ? '#43B571' : u.status === 'blocked' ? '#E1685C' : '#D9AE4A';
+      return `<tr>
+      <td><span class="dot" style="background:${dot}"></span>${esc(u.displayName || u.name || u._id)}
+        ${u.username ? `<span class="dim">@${esc(u.username)}</span>` : ''}
+        ${u.role === 'owner' ? '<span class="tag">owner</span>' : ''}</td>
+      <td class="dim">${via(u)}</td>
+      <td class="dim">${esc(u.language || '—')}</td>
+      <td class="${books ? 'good' : 'dim'}">${books}</td>
+      <td class="dim">${msgs}</td>
+      <td class="${exams ? 'good' : 'dim'}">${exams}</td>
+      <td class="dim">${joined(u.createdAt)}</td>
+      <td class="dim">${u.strikes ? '⚠️ ' + u.strikes : ''}</td>
+    </tr>`;
+    })
+    .join('');
+
+  const shareRows = shares
+    .map((s) => `<tr><td>${esc(s.title)}</td><td class="dim">${s.score ?? '—'}%</td><td class="dim">${s.views || 0}</td><td class="${s.joins ? 'good' : 'dim'}">${s.joins || 0}</td></tr>`)
+    .join('');
+
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Kept · admin</title>
+<meta name="color-scheme" content="dark"><style>
+ *{box-sizing:border-box}body{margin:0;background:#14130F;color:#ECE8DF;padding:22px 16px 60px;
+  font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;line-height:1.5}
+ .wrap{max-width:900px;margin:0 auto}
+ h1{font-family:Georgia,serif;font-size:1.5rem;margin:0 0 4px}
+ .sub{color:#9C9686;font-size:.9rem;margin:0 0 20px}
+ .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:24px}
+ .card{background:#1D1B16;border:1px solid #2C2A22;border-radius:14px;padding:14px}
+ .card .n{font-family:Georgia,serif;font-size:1.9rem;font-weight:700;line-height:1}
+ .card .l{color:#9C9686;font-size:.72rem;text-transform:uppercase;letter-spacing:.06em;margin-top:4px}
+ h2{font-size:.78rem;text-transform:uppercase;letter-spacing:.1em;color:#D9AE4A;margin:26px 0 10px}
+ table{width:100%;border-collapse:collapse;font-size:.88rem}
+ th{text-align:left;font-size:.68rem;text-transform:uppercase;letter-spacing:.06em;color:#6E695C;
+  font-weight:600;padding:6px 8px;border-bottom:1px solid #2C2A22}
+ td{padding:9px 8px;border-bottom:1px solid #22201A;vertical-align:top}
+ .dim{color:#9C9686}.good{color:#43B571;font-weight:600}
+ .dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:7px;vertical-align:middle}
+ .tag{background:#2C2510;color:#D9AE4A;font-size:.64rem;padding:2px 6px;border-radius:20px;margin-left:6px}
+ .scroll{overflow-x:auto}
+ .note{color:#6E695C;font-size:.82rem;margin-top:18px}
+ a{color:#D9AE4A}
+</style></head><body><div class="wrap">
+<h1>📕 Kept · admin</h1>
+<p class="sub">Live from the database. <a href="/app">← back to the app</a></p>
+<div class="cards">
+  <div class="card"><div class="n">${people.length}</div><div class="l">People</div></div>
+  <div class="card"><div class="n">${people.filter((u) => u.status === 'active').length}</div><div class="l">Active</div></div>
+  <div class="card"><div class="n" style="color:${withBooks ? '#43B571' : '#E1685C'}">${withBooks}</div><div class="l">Added a book</div></div>
+  <div class="card"><div class="n">${rows.reduce((n, r) => n + r.exams, 0)}</div><div class="l">Exams taken</div></div>
+  <div class="card"><div class="n">${stats ? stats.totalMB.toFixed(0) : '?'}<span style="font-size:.9rem">/512MB</span></div><div class="l">Storage</div></div>
+</div>
+<h2>Everyone</h2>
+<div class="scroll"><table>
+<tr><th>Name</th><th>Via</th><th>Lang</th><th>Books</th><th>Msgs</th><th>Exams</th><th>Joined</th><th></th></tr>
+${body}
+</table></div>
+${shares.length ? `<h2>Shared results</h2><div class="scroll"><table>
+<tr><th>Book</th><th>Score</th><th>Views</th><th>Joins</th></tr>${shareRows}</table></div>` : ''}
+<p class="note">“Added a book” is the number that matters — everything before it is just a visitor.</p>
+</div></body></html>`;
+}
+
 // ---- Sharing: a result that travels beyond Telegram ----
 // A public page per shared result, so it opens on WhatsApp, X, LinkedIn, Reddit — anywhere
 // a link goes — carrying a deep link back into the bot. Only what they chose to share is
@@ -369,6 +460,19 @@ export function startServer(port = process.env.PORT || 8080) {
         res.end();
         return;
       }
+      // Already signed in (with Google) and now connecting Telegram? Attach the chat to
+      // that same account — otherwise they'd end up with two libraries.
+      const existingId = readSession(parseCookies(req.headers.cookie).kept_session);
+      const existing = existingId ? await rawCol('users').findOne({ _id: existingId }) : null;
+      if (existing && !existing.chatId && String(existing._id).startsWith('g:')) {
+        const taken = await rawCol('users').findOne({ _id: String(tgUser.id) });
+        if (!taken) {
+          await users.linkTelegram(existing._id, tgUser.id, tgUser.first_name);
+          res.writeHead(302, { Location: '/app?linked=1' });
+          res.end();
+          return;
+        }
+      }
       const acct = await users.ensureUser({ chatId: tgUser.id, name: tgUser.first_name, username: tgUser.username });
       if (!users.isAllowed(acct)) {
         res.writeHead(302, { Location: '/app?error=waiting' });
@@ -377,6 +481,25 @@ export function startServer(port = process.env.PORT || 8080) {
       }
       res.writeHead(302, { Location: '/app', 'Set-Cookie': sessionCookie(createSession(acct._id)) });
       res.end();
+      return;
+    }
+    // Google sign-in: the browser posts the ID token it got from Google.
+    if (path === '/auth/google' && req.method === 'POST') {
+      const body = await readJson(req);
+      const g = await verifyGoogleToken(body?.credential);
+      if (!g) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'invalid_token' }));
+        return;
+      }
+      const acct = await users.ensureGoogleUser(g);
+      if (!users.isAllowed(acct)) {
+        res.writeHead(403, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'waiting' }));
+        return;
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Set-Cookie': sessionCookie(createSession(acct._id)) });
+      res.end(JSON.stringify({ ok: true }));
       return;
     }
     if (path === '/auth/logout') {
@@ -396,11 +519,39 @@ export function startServer(port = process.env.PORT || 8080) {
         html = html
           .replaceAll('BOT_USERNAME', config.botUsername || 'grisha_steward_bot')
           .replaceAll('BOT_LINK', `https://t.me/${config.botUsername || 'grisha_steward_bot'}`)
+          .replaceAll('GOOGLE_CLIENT_ID', config.googleClientId || '')
           .replaceAll('APP_URL', config.appUrl);
+        // No Google client id configured → don't show a button that can't work.
+        if (!config.googleClientId) html = html.replace(/<!--GOOGLE-->[\s\S]*?<!--\/GOOGLE-->/g, '');
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
         res.end(wrap(html, false));
       } catch (err) {
         console.error('[web] /app failed:', err.message);
+        res.writeHead(500, { 'Content-Type': 'text/plain' });
+        res.end('Server error');
+      }
+      return;
+    }
+
+    // ---- owner's admin ----
+    // Who joined, where they came from, and whether they actually did anything. Rendered
+    // on the server so there's no API to secure separately; the session must be the owner.
+    if (path === '/admin') {
+      const sid = readSession(parseCookies(req.headers.cookie).kept_session);
+      const me = sid ? await rawCol('users').findOne({ _id: sid }) : null;
+      if (!me || me.role !== 'owner') {
+        res.writeHead(sid ? 403 : 302, sid ? { 'Content-Type': 'text/plain' } : { Location: '/app' });
+        res.end(sid ? 'Not yours.' : '');
+        return;
+      }
+      try {
+        // Build the page BEFORE writing headers — otherwise a failure mid-render leaves us
+        // unable to send a 500 (headers already sent).
+        const html = await adminPage();
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+        res.end(html);
+      } catch (err) {
+        console.error('[web] /admin failed:', err.message);
         res.writeHead(500, { 'Content-Type': 'text/plain' });
         res.end('Server error');
       }
@@ -431,7 +582,7 @@ export function startServer(port = process.env.PORT || 8080) {
     if (
       path === '/api/dashboard' || path === '/api/words' || path === '/api/bookrecs' ||
       path === '/api/bookexam' || path === '/api/bookexam/grade' || path === '/api/books' ||
-      path === '/api/share'
+      path === '/api/share' || path === '/api/chat'
     ) {
       // Two ways to prove who you are: Telegram's Mini App signature, or a session cookie
       // from signing in on the website. The allowlist then decides if you're allowed in.
@@ -453,11 +604,24 @@ export function startServer(port = process.env.PORT || 8080) {
         // plus the curriculum words synced from english/words.md. Chat-caught first.
         const needsBody =
           path === '/api/bookexam' || path === '/api/bookexam/grade' || path === '/api/share' ||
-          (path === '/api/books' && req.method === 'PUT');
+          path === '/api/chat' || (path === '/api/books' && req.method === 'PUT');
         const body = needsBody ? await readJson(req) : null;
         const data = await runAs(acct, async () => {
           if (path === '/api/books') return req.method === 'PUT' ? saveBooks(body?.books) : getBooks();
           if (path === '/api/share') return createShare({ ...body, name: body?.name || acct.name });
+          // The mentor, in the browser. Same brain, same memory, same logging as Telegram —
+          // and the same guardrails, since a web message costs exactly as much as a chat one.
+          if (path === '/api/chat') {
+            if (req.method !== 'POST') return { messages: await coach.history() };
+            const text = String(body?.text || '').trim();
+            if (!text) return { error: 'empty' };
+            const finding = moderation.screen(text, []);
+            if (finding) return { reply: "That's outside what I do — I'm here for your books.", blocked: true };
+            const quota = await users.consumeQuota(acct);
+            if (!quota.ok) return { reply: `You've used today's ${quota.cap} messages. It resets tomorrow.`, blocked: true };
+            const { reply, pings } = await coach.handle(text, null, { silent: true });
+            return { reply, pings };
+          }
           if (path === '/api/words') {
             const rows = await col('english_words')
               .find()

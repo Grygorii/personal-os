@@ -7,7 +7,11 @@ const API = `https://api.telegram.org/bot${config.telegramToken}`;
 // tenant's check-in reaches THEM, never the owner. Falls back to the owner outside a
 // context (boot-time notices).
 function defaultChat() {
-  return currentUser()?.chatId || config.telegramChatId;
+  const u = currentUser();
+  // A Google-only reader has no Telegram chat. Falling back to the owner here would send
+  // THEIR private coaching to HIM — so an account without a chat simply gets nothing.
+  if (u) return u.chatId || null;
+  return config.telegramChatId; // outside any user context: boot notices, backups
 }
 
 export async function send(text, chatId = defaultChat()) {

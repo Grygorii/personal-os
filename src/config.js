@@ -36,6 +36,9 @@ export const config = {
   appUrl: (oneLine(process.env.APP_URL) || 'https://readkept.com').replace(/\/+$/, ''),
   // Discovered from Telegram at boot (see index.js) — used to build share deep links.
   botUsername: oneLine(process.env.BOT_USERNAME),
+  // Google Sign-In (console.cloud.google.com → Credentials → OAuth client, Web). Optional:
+  // without it the Google button simply isn't offered.
+  googleClientId: oneLine(process.env.GOOGLE_CLIENT_ID),
 };
 
 // Warn (don't crash) on missing essentials so `npm run seed` etc. still load.
