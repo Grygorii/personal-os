@@ -551,7 +551,12 @@ export function startServer(port = process.env.PORT || 8080) {
     // means the installed app never flashes marketing or a wrong screen first.
     if (path === '/app') {
       const sid = readSession(parseCookies(req.headers.cookie).kept_session);
-      const file = sid ? '../reading/journal.html' : '../webapp/signin.html';
+      // A signature alone isn't enough — the account must still exist and be allowed.
+      // Otherwise a stale cookie loads the app shell and then every API call 401s, which
+      // looks like the product is broken rather than "please sign in again".
+      const acct = sid ? await rawCol('users').findOne({ _id: sid }) : null;
+      const signedIn = !!acct && users.isAllowed(acct);
+      const file = signedIn ? '../reading/journal.html' : '../webapp/signin.html';
       try {
         let html = await readFile(fileURLToPath(new URL(file, import.meta.url)), 'utf8');
         html = html
