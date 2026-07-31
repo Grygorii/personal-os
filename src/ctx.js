@@ -28,3 +28,19 @@ export function uid() {
 export function hasUser() {
   return !!als.getStore()?.user;
 }
+
+// What to call the person we're serving. Every prompt must use this — hardcoding a name
+// meant a stranger's bot addressed them as someone else entirely.
+export function personName() {
+  const u = currentUser();
+  return u?.displayName || u?.name || 'them';
+}
+
+// The language rule handed to every prompt. Without it the model drifts between languages
+// mid-conversation, which is disorienting.
+export function languageRule() {
+  const lang = currentUser()?.language;
+  return lang && lang !== 'auto'
+    ? `LANGUAGE: Always write in ${lang}. Never switch, even if a quoted title or their message is in another language — unless they explicitly ask you to change.`
+    : 'LANGUAGE: Reply in the same language they wrote to you in, and stay consistent within the conversation.';
+}

@@ -2,6 +2,7 @@ import { ask } from '../llm.js';
 import { getProfile, logEvent, col } from '../db.js';
 import { send, sendPings } from '../telegram.js';
 import * as system from '../system.js';
+import { personName, languageRule } from '../ctx.js';
 
 // --- current-book state (one document) ---
 async function getReading() {
@@ -28,7 +29,7 @@ async function suggestBook() {
   const history = await recentTitles();
   const text = await ask({
     system:
-      "You are Гриша's reading coach and you know him well. Recommend ONE next " +
+      `${languageRule()}\nYou are ${personName()}'s reading coach and you know them well. Recommend ONE next ` +
       'book with a short, specific reason tied to his interests and goals. ' +
       'End by telling him he can reply "/read <title>" to start it — or pick his own.',
     user:
@@ -53,7 +54,7 @@ export async function run() {
   const profile = await getProfile();
   const question = await ask({
     system:
-      "You are Гриша's reading coach. He is currently reading a book. Ask ONE " +
+      `${languageRule()}\nYou are ${personName()}'s reading coach. They are currently reading a book. Ask ONE ` +
       'thoughtful essay question (he should answer in ~200 words) about a theme ' +
       'or idea in it, calibrated to where he is. Reply with just the question.',
     user:
@@ -120,7 +121,7 @@ export async function command(text) {
   if (reading?.status === 'awaiting_essay' && !text.startsWith('/')) {
     const feedback = await ask({
       system:
-        "You are Гриша's reading coach. He wrote an essay answering your question. " +
+        `${languageRule()}\nYou are ${personName()}'s reading coach. They wrote an essay answering your question. ` +
         'Give warm, specific, honest feedback: one thing that landed, one thing to ' +
         'push further, and one follow-up thought. Be concise and direct.',
       user: `Question: ${reading.lastQuestion}\n\nHis essay:\n${text}`,

@@ -8,7 +8,7 @@ import { chat } from './llm.js';
 import { sendPings } from './telegram.js';
 import * as system from './system.js';
 import * as users from './users.js';
-import { runAs, uid } from './ctx.js';
+import { runAs, uid, personName, languageRule } from './ctx.js';
 
 // Read a small JSON request body (exam answers etc.). Hard 200KB cap.
 function readJson(req) {
@@ -40,7 +40,9 @@ function parseModelJson(raw) {
 // never leaves the server, and only his own Telegram id is served his own data.
 
 const ROUTES = {
-  '/': { file: '../webapp/home.html' },
+  // '/' is the public front door — what a stranger from a shared link or a search sees.
+  // The Mini App hub moved to /app (the BotFather menu button should point there).
+  '/': { file: '../webapp/landing.html', public: true },
   '/app': { file: '../webapp/home.html' },
   '/home': { file: '../webapp/home.html' },
   '/deck': { file: '../english/study.html', homeBar: true },
@@ -128,7 +130,8 @@ async function gatherBookRecs(refresh) {
     [...new Set([...bookLogs.map((b) => b.title), ...engBooks.map((b) => b.title), current?.title].filter(Boolean))].join('; ') ||
     'nothing logged yet';
 
-  const sys = `You are Гриша's reading advisor and you know him well. Recommend exactly 4 books he has NOT read, each chosen FOR HIM:
+  const sys = `${languageRule()}
+You are ${personName()}'s reading advisor and you know them well. Recommend exactly 4 books they have NOT read, each chosen FOR THEM:
 - one that advances his mission (Collections × AI — becoming the professional companies hunt),
 - one on finance/risk/decision-making matching his taste (Taleb, Marks, Housel — substantive, multi-perspective),
 - one for the builder/founder in him (SILKILINEN),
@@ -285,7 +288,8 @@ function sharePage(s) {
 async function generateExam({ title, author }) {
   if (!title) throw new Error('no title');
   const profile = await getProfile();
-  const sys = `You are Гриша's reading examiner. Write an exam for the book "${title}"${author ? ` by ${author}` : ''} that tests whether he ACTUALLY understood and can USE it — not trivia.
+  const sys = `${languageRule()}
+You are ${personName()}'s reading examiner. Write an exam for the book "${title}"${author ? ` by ${author}` : ''} that tests whether they ACTUALLY understood and can USE it — not trivia.
 Exactly 5 questions, each answerable in 2-4 sentences:
 - Q1-Q2: the book's core ideas (comprehension — could he explain them to a colleague?)
 - Q3-Q4: application to HIS real life and mission (${profile.mission || 'his growth'}) — make him use the idea, not recite it
@@ -304,7 +308,8 @@ async function gradeExam({ eid, answers }) {
   const exam = await col('book_exams').findOne({ eid });
   if (!exam) throw new Error('unknown exam');
   const list = exam.questions.map((q, i) => `Q${i + 1}: ${q}\nHIS ANSWER: ${String((answers || [])[i] || '(no answer)')}`).join('\n\n');
-  const sys = `You are grading Гриша's exam on "${exam.title}". His STANDING ORDER is radical honesty: real scores, never inflated, never cruel — precise. A vague, generic, or bluffed answer scores under 40. A solid answer with the book's actual idea scores 60-80. Genuine insight applied to his own life scores higher. For each answer: a 0-100 score and ONE sharp sentence of feedback (name the weak spot or what landed). Then an overall 0-100 (weighted judgment, not just the average) and a one-sentence verdict he'd thank you for.
+  const sys = `${languageRule()}
+You are grading ${personName()}'s exam on "${exam.title}". The standing order is radical honesty: real scores, never inflated, never cruel — precise. A vague, generic, or bluffed answer scores under 40. A solid answer with the book's actual idea scores 60-80. Genuine insight applied to their own life scores higher. For each answer: a 0-100 score and ONE sharp sentence of feedback (name the weak spot or what landed). Then an overall 0-100 (weighted judgment, not just the average) and a one-sentence verdict they'd thank you for.
 Reply ONLY JSON, no fences: {"grades":[{"score":70,"feedback":"..."}],"overall":72,"verdict":"..."}`;
   const raw = await chat({ system: sys, messages: [{ role: 'user', content: list }], maxTokens: 900, tier: 'deep' });
   const parsed = parseModelJson(raw);
@@ -419,6 +424,39 @@ export function startServer(port = process.env.PORT || 8080) {
       }
       return;
     }
+    // Installable-app plumbing, so the site can be added to a home screen and opened
+    // like a native app rather than a browser tab.
+    if (path === '/manifest.webmanifest') {
+      res.writeHead(200, { 'Content-Type': 'application/manifest+json', 'Cache-Control': 'public, max-age=3600' });
+      res.end(JSON.stringify({
+        name: 'Kept — read it, prove you kept it',
+        short_name: 'Kept',
+        start_url: '/',
+        display: 'standalone',
+        background_color: '#14130F',
+        theme_color: '#14130F',
+        description: 'Get examined on the books you finish. Honestly.',
+        icons: [{ src: '/icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any maskable' }],
+      }));
+      return;
+    }
+    if (path === '/icon.svg') {
+      res.writeHead(200, { 'Content-Type': 'image/svg+xml', 'Cache-Control': 'public, max-age=86400' });
+      res.end(
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="112" fill="#14130F"/>' +
+          '<rect x="150" y="120" width="212" height="272" rx="18" fill="#D9AE4A"/><rect x="150" y="120" width="46" height="272" rx="18" fill="#B8912F"/>' +
+          '<path d="M232 268l30 30 62-72" stroke="#14130F" stroke-width="26" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+      );
+      return;
+    }
+    if (path === '/sw.js') {
+      // Deliberately minimal: claim control, serve the network. Caching pages that show
+      // live personal data would be worse than useless.
+      res.writeHead(200, { 'Content-Type': 'application/javascript', 'Cache-Control': 'no-cache' });
+      res.end("self.addEventListener('install',e=>self.skipWaiting());self.addEventListener('activate',e=>e.waitUntil(self.clients.claim()));self.addEventListener('fetch',()=>{});");
+      return;
+    }
+
     const route = ROUTES[path];
     if (!route) {
       res.writeHead(404, { 'Content-Type': 'text/plain' });
@@ -427,7 +465,10 @@ export function startServer(port = process.env.PORT || 8080) {
     }
     try {
       const abs = fileURLToPath(new URL(route.file, import.meta.url));
-      const fragment = await readFile(abs, 'utf8');
+      let fragment = await readFile(abs, 'utf8');
+      // The landing page is served to strangers, so its call-to-action must point at the
+      // real bot — resolved at request time from the username discovered at boot.
+      if (route.public) fragment = fragment.replaceAll('BOT_LINK', `https://t.me/${config.botUsername || 'grisha_steward_bot'}`);
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
       res.end(wrap(fragment, route.homeBar));
     } catch (err) {

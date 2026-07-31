@@ -179,6 +179,20 @@ export async function setProduct(chatId, product) {
   await col('users').updateOne({ _id: String(chatId) }, { $set: { product } });
 }
 
+// Onboarding walks a tiny state machine — ask their name, ask their language, then show
+// them exactly what to do. A stranger should never be left wondering.
+export async function setOnboardingStep(chatId, step) {
+  await col('users').updateOne({ _id: String(chatId) }, { $set: { onboardingStep: step } });
+}
+
+export async function setDisplayName(chatId, displayName) {
+  await col('users').updateOne({ _id: String(chatId) }, { $set: { displayName: String(displayName).slice(0, 40) } });
+}
+
+export async function setLanguage(chatId, language) {
+  await col('users').updateOne({ _id: String(chatId) }, { $set: { language } });
+}
+
 export async function markOnboarded(chatId) {
   await col('users').updateOne({ _id: String(chatId) }, { $set: { onboardedAt: new Date() } });
 }

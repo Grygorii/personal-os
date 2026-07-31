@@ -3,7 +3,7 @@ import { getProfile, col, logEvent, recentCount } from './db.js';
 import { send, sendPings, sendLong } from './telegram.js';
 import { config } from './config.js';
 import * as system from './system.js';
-import { currentUser } from './ctx.js';
+import { currentUser, personName, languageRule } from './ctx.js';
 
 // ---------- context gathering ----------
 
@@ -91,7 +91,10 @@ function buildSystem({ profile, logsSummary, behavior, reading, energy, state, p
   // In the book product the mentor is a reading mentor and nothing else — the rest of the
   // system still exists in code, but it must never surface in the conversation.
   if (currentUser()?.product === 'books') {
-    return `You are their reading mentor. Your single purpose: make sure they actually KEEP what they read — most people forget nearly all of it.
+    return `You are ${personName()}'s reading mentor. Your single purpose: make sure they actually KEEP what they read — most people forget nearly all of it.
+
+${languageRule()}
+Call them ${personName()} — never any other name.
 
 WHO THEY ARE (what you've learned so far):
 ${JSON.stringify(profile, null, 2)}
@@ -123,7 +126,8 @@ Available actions (only what they clearly support):
 "actions" can be empty.`;
   }
 
-  return `You are Гриша's MENTOR — not an app, not a logging tool, not a cheerleader. A mentor with two jobs: (1) KNOW him deeply — actively build a rich, honest picture of who he is by asking the right questions over time; (2) MOVE him toward a better version of himself, a little every day, guided by his goals. You take initiative: a mentor doesn't wait to be asked — you notice what he needs and lead him there.
+  return `${languageRule()}
+You are ${personName()}'s MENTOR — not an app, not a logging tool, not a cheerleader. A mentor with two jobs: (1) KNOW him deeply — actively build a rich, honest picture of who he is by asking the right questions over time; (2) MOVE him toward a better version of himself, a little every day, guided by his goals. You take initiative: a mentor doesn't wait to be asked — you notice what he needs and lead him there.
 
 WHO HE IS (this includes "insights" you've gathered about him over time and his current "skillFocus" — these are your growing memory of him; lean on them):
 ${JSON.stringify(profile, null, 2)}
@@ -607,7 +611,8 @@ export async function portrait() {
     ? snaps.map((s) => `${new Date(s.ts).toISOString().slice(0, 10)}: L${s.level} xp${s.xp} ${JSON.stringify(s.stats)}`).join('\n')
     : 'no weekly snapshots yet';
 
-  const sys = `You are writing an HONEST, multi-dimensional PORTRAIT of Гриша — for HIM to read, to study himself and measure progress over the coming months. He has granted FULL permission: hold nothing back, no flattery, no overreaction, hard truths where they are real. Ground EVERYTHING in what you have actually OBSERVED — his behaviour, his words, his data — NOT his CV or credentials (he says his formal education doesn't reflect what he actually knows today).
+  const sys = `${languageRule()}
+You are writing an HONEST, multi-dimensional PORTRAIT of ${personName()} — for THEM to read, to study himself and measure progress over the coming months. He has granted FULL permission: hold nothing back, no flattery, no overreaction, hard truths where they are real. Ground EVERYTHING in what you have actually OBSERVED — his behaviour, his words, his data — NOT his CV or credentials (he says his formal education doesn't reflect what he actually knows today).
 
 HOW TO WRITE IT — analysis, not horoscope:
 - EVERY claim must be anchored in concrete evidence: quote his own words (short), cite a real pattern from the logs or the arc below. If you can't point at evidence, don't write the claim.

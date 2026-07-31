@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Kept — you forget most of what you read. Find out if you did.</title>
+<meta name="description" content="A reading companion that examines you on the books you finish. Honest scores, no flattery. Add a book, capture your thoughts, then prove you kept it.">
+<meta property="og:title" content="You forget most of what you read.">
+<meta property="og:description" content="Kept examines you on the books you finish — honestly. Find out what you actually kept.">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#14130F">
+<meta name="color-scheme" content="dark">
+<style>
+  :root{
+    --paper:#14130F; --surface:#1D1B16; --raise:#26241D; --ink:#ECE8DF; --muted:#9C9686;
+    --faint:#6E695C; --line:#2C2A22; --accent:#D9AE4A; --accent-ink:#14130F; --good:#43B571;
+    --serif:"Iowan Old Style",Georgia,"Palatino Linotype",Palatino,serif;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);line-height:1.65;
+    -webkit-text-size-adjust:100%;overflow-x:hidden}
+  .wrap{max-width:680px;margin:0 auto;padding:0 20px}
+  section{padding:56px 0}
+  h1,h2,h3{font-family:var(--serif);font-weight:600;line-height:1.15;margin:0}
+  /* hero */
+  header{padding:64px 0 20px;text-align:center}
+  .brand{display:inline-flex;align-items:center;gap:9px;font-family:var(--serif);font-size:1.05rem;
+    letter-spacing:.02em;color:var(--accent);margin-bottom:34px}
+  h1{font-size:clamp(2.1rem,7.5vw,3.3rem);letter-spacing:-.01em}
+  h1 em{font-style:normal;color:var(--accent)}
+  .sub{color:var(--muted);font-size:1.12rem;margin:20px auto 0;max-width:30rem}
+  .cta{display:inline-block;background:var(--accent);color:var(--accent-ink);text-decoration:none;
+    font-weight:700;font-size:1.06rem;padding:16px 30px;border-radius:13px;margin-top:30px;
+    transition:transform .08s ease}
+  .cta:active{transform:scale(.98)}
+  .cta.ghost{background:transparent;color:var(--ink);border:1px solid var(--line);font-weight:600;margin-left:8px}
+  .note{color:var(--faint);font-size:.86rem;margin-top:14px}
+  /* the problem */
+  .stat{font-family:var(--serif);font-size:clamp(3rem,13vw,5rem);color:var(--accent);line-height:1;font-weight:700}
+  .stat-label{color:var(--muted);margin-top:6px}
+  /* demo */
+  .phone{background:var(--surface);border:1px solid var(--line);border-radius:22px;padding:18px;
+    box-shadow:0 24px 60px rgba(0,0,0,.45)}
+  .bubble{border-radius:15px;padding:12px 15px;margin:9px 0;font-size:.95rem;max-width:88%}
+  .them{background:var(--raise);border-bottom-left-radius:5px}
+  .me{background:var(--accent);color:var(--accent-ink);margin-left:auto;border-bottom-right-radius:5px;font-weight:500}
+  .score-line{display:flex;align-items:baseline;gap:12px;margin:14px 2px 4px}
+  .score-line b{font-family:var(--serif);font-size:2.6rem;color:var(--good)}
+  .typing span{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--faint);margin-right:3px;
+    animation:blink 1.4s infinite both}
+  .typing span:nth-child(2){animation-delay:.2s} .typing span:nth-child(3){animation-delay:.4s}
+  @keyframes blink{0%,80%,100%{opacity:.25}40%{opacity:1}}
+  /* steps */
+  .steps{display:grid;gap:16px;margin-top:26px}
+  .step{display:flex;gap:16px;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:18px}
+  .num{width:34px;height:34px;flex:none;border-radius:10px;background:var(--accent);color:var(--accent-ink);
+    display:flex;align-items:center;justify-content:center;font-weight:700;font-family:var(--serif)}
+  .step h3{font-size:1.08rem;margin-bottom:2px}
+  .step p{margin:0;color:var(--muted);font-size:.94rem}
+  /* honesty */
+  blockquote{margin:0;padding:22px 24px;background:var(--surface);border-left:3px solid var(--accent);
+    border-radius:0 14px 14px 0;font-size:1.05rem}
+  blockquote footer{color:var(--faint);font-size:.86rem;margin-top:10px;font-style:normal}
+  .lede{font-size:1.1rem;color:var(--muted);margin-top:14px}
+  h2{font-size:clamp(1.6rem,5vw,2.1rem)}
+  .kicker{color:var(--accent);font-size:.75rem;letter-spacing:.16em;text-transform:uppercase;font-weight:700;
+    margin-bottom:10px}
+  /* faq */
+  details{border-bottom:1px solid var(--line);padding:15px 2px}
+  summary{cursor:pointer;font-weight:600;list-style:none}
+  summary::-webkit-details-marker{display:none}
+  summary::after{content:"+";float:right;color:var(--accent);font-size:1.3rem;line-height:1}
+  details[open] summary::after{content:"–"}
+  details p{color:var(--muted);margin:10px 0 2px;font-size:.95rem}
+  footer.site{text-align:center;color:var(--faint);font-size:.82rem;padding:40px 0 60px;border-top:1px solid var(--line)}
+  .final{text-align:center;background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:40px 24px}
+  @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <div class="brand">📕 Kept</div>
+    <h1>You forget most of<br>what you read.</h1>
+    <p class="sub">Kept reads along with you — then examines you on the book when you finish. Honestly. You find out what you actually kept.</p>
+    <a class="cta" href="BOT_LINK">Start with your current book →</a>
+    <p class="note">Free to start · works inside Telegram · nothing to install</p>
+  </header>
+
+  <section>
+    <div class="kicker">The problem</div>
+    <div class="stat">~90%</div>
+    <p class="stat-label">of a book is gone within weeks of finishing it. You keep the feeling of having read it — the ideas quietly leave.</p>
+    <p class="lede">Highlighting doesn't fix it. Note-taking apps don't fix it. Being <em>asked</em> does — that's what makes a memory stick.</p>
+  </section>
+
+  <section>
+    <div class="kicker">How it feels</div>
+    <h2>Like a friend who read it too.</h2>
+    <div class="phone" style="margin-top:22px">
+      <div class="bubble me">Finished Atomic Habits last night</div>
+      <div class="bubble them">Nice. Before it fades — what's the one idea you'd actually change something over?</div>
+      <div class="bubble me">That you should focus on systems, not goals</div>
+      <div class="bubble them">Good — but that's the summary everyone repeats. What's a goal <em>you</em> hold that's secretly a system problem?</div>
+      <div class="bubble me">…okay, that stung. My reading goal.</div>
+      <div class="bubble them">Right. Want the exam? Five questions, graded honestly.</div>
+      <div class="score-line"><b>72%</b><span style="color:var(--muted)">Solid grasp of habit stacking. Vague on the 2-minute rule — worth a re-read of ch. 13.</span></div>
+      <div class="bubble them typing"><span></span><span></span><span></span></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="kicker">Three steps</div>
+    <h2>No commands. No setup.</h2>
+    <div class="steps">
+      <div class="step"><div class="num">1</div><div><h3>Add the book you're reading</h3><p>One tap. Your library lives with you across every device.</p></div></div>
+      <div class="step"><div class="num">2</div><div><h3>Send thoughts as they come</h3><p>A line, a page number, a half-formed idea. Kept remembers them and thinks with you.</p></div></div>
+      <div class="step"><div class="num">3</div><div><h3>Take the exam</h3><p>Five questions when you finish. A real score, and exactly where you're thin.</p></div></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="kicker">The rule</div>
+    <h2>It will not flatter you.</h2>
+    <blockquote>
+      An assistant that tells you what you want to hear is worse than no assistant. Kept grades a bluff under 40 and says why.
+      <footer>The first score is usually humbling. That's the point.</footer>
+    </blockquote>
+  </section>
+
+  <section>
+    <div class="kicker">Questions</div>
+    <details><summary>Is it free?</summary><p>Yes to start. You get a daily allowance that grows as you use it. Later you can support it for €3–9 a month, or connect your own free AI key and keep it free forever.</p></details>
+    <details><summary>Do I need to install anything?</summary><p>No. It lives in Telegram, which you probably already have. You can also add this page to your home screen and it opens like an app.</p></details>
+    <details><summary>Who can see my books and notes?</summary><p>Only you. Nothing is shared unless you tap share on a result — and then only the book, the score and any thought you choose. Export or delete everything at any time.</p></details>
+    <details><summary>Does it work with any book?</summary><p>Any book, any language. It writes the exam for the specific book you read.</p></details>
+  </section>
+
+  <section>
+    <div class="final">
+      <h2>What was the last book you finished?</h2>
+      <p class="sub" style="margin-top:12px">Find out how much of it you still have.</p>
+      <a class="cta" href="BOT_LINK">Test me on it →</a>
+    </div>
+  </section>
+
+  <footer class="site">📕 Kept — read it, prove you kept it.</footer>
+</div>
+
+<script>
+  // Opened from inside Telegram (the Mini App menu button)? That person already has the
+  // app — send them to it instead of the sales page. Telegram marks its WebView with a
+  // tgWebApp fragment, so this works without loading the SDK here.
+  if (location.hash.indexOf('tgWebApp') > -1) location.replace('/app' + location.hash);
+
+  // Installable: register the service worker so the page can be added to a home screen
+  // and opened like a native app. Failure here must never break the page.
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function () {
+      navigator.serviceWorker.register('/sw.js').catch(function () {});
+    });
+  }
+</script>
+</body>
+</html>

@@ -147,23 +147,71 @@ async function handle({ chatId, text, image, user, messageId, callbackId }) {
 
   // First real contact for a newly approved person: introduce the mentor and let it start
   // building their profile, rather than dropping them into a command list.
-  if (!user.onboardedAt && user.role !== 'owner') {
-    await users.markOnboarded(chatId);
-    if (booksOnly) {
-      // One promise, said plainly.
-      await sendKeyboard(
-        "📕 *You forget most of what you read.*\n\nI fix that.\n\n" +
-          "Tell me what you're reading. Send me the thoughts it sparks as you go. " +
-          "When you finish, I'll examine you on it — honestly — and you'll know whether you actually kept it.",
-        BOOKS_KEYBOARD,
+  // ---- guided first run: name → language → what to do ----
+  // Real feedback: a new user was called by the wrong name, got answers in a language they
+  // didn't choose, and couldn't tell what they were supposed to do. All three start here.
+  if (booksOnly && user.role !== 'owner' && user.onboardingStep !== 'done') {
+    const step = user.onboardingStep;
+
+    if (!step) {
+      await users.setOnboardingStep(chatId, 'name');
+      await send(
+        "📕 *You forget most of what you read.*\n\nI'm here to fix that — but first, two quick things.\n\n" +
+          '*What should I call you?*',
         chatId
       );
-      await sendInline('Start with the book in your hands:', [
-        [{ text: '📚 Open my library', url: `${config.appUrl}/reading` }],
-        [{ text: '💡 Suggest me something', data: '/suggest' }],
+      return;
+    }
+
+    if (step === 'name') {
+      const given = (text || '').trim().replace(/^\/\S+\s*/, '');
+      if (!given || given.length > 40) {
+        await send('Just your first name is fine — what should I call you?', chatId);
+        return;
+      }
+      await users.setDisplayName(chatId, given);
+      await users.setOnboardingStep(chatId, 'language');
+      await sendInline(`Good to meet you, *${given}*.\n\nWhich language should I use?`, [
+        [{ text: 'English', data: '/lang English' }, { text: 'Русский', data: '/lang Russian' }],
+        [{ text: 'Українська', data: '/lang Ukrainian' }, { text: 'Polski', data: '/lang Polish' }],
+        [{ text: 'Other — I’ll just write to you', data: '/lang auto' }],
       ], chatId);
       return;
     }
+
+    if (step === 'language') {
+      const m = (text || '').match(/^\/lang\s+(\w+)/i);
+      if (!m) {
+        await sendInline('Pick a language and we’ll start:', [
+          [{ text: 'English', data: '/lang English' }, { text: 'Русский', data: '/lang Russian' }],
+          [{ text: 'Українська', data: '/lang Ukrainian' }, { text: 'Polski', data: '/lang Polish' }],
+          [{ text: 'Other — I’ll just write to you', data: '/lang auto' }],
+        ], chatId);
+        return;
+      }
+      await users.setLanguage(chatId, m[1] === 'auto' ? 'auto' : m[1]);
+      await users.setOnboardingStep(chatId, 'done');
+      await users.markOnboarded(chatId);
+      const name = user.displayName || 'there';
+      await sendKeyboard(
+        `Perfect, ${name}. *Here's how this works — three steps:*\n\n` +
+          "*1.* Add the book you're reading now → tap *📚 My books*\n" +
+          "*2.* As you read, just message me the thoughts it sparks. I'll remember them and think with you.\n" +
+          "*3.* When you finish, tap *🎓 Exam* — five questions, graded honestly. You'll find out what you actually kept.\n\n" +
+          "That's it. No commands to learn.",
+        BOOKS_KEYBOARD,
+        chatId
+      );
+      await sendInline('👇 Start here — add the book in your hands:', [
+        [{ text: '📚 Add my book', url: `${config.appUrl}/reading` }],
+        [{ text: "💡 I don't know what to read", data: '/suggest' }],
+      ], chatId);
+      return;
+    }
+  }
+
+  if (!user.onboardedAt && user.role !== 'owner') {
+    await users.markOnboarded(chatId);
     await sendKeyboard(
       "👋 *Welcome.* I'm your mentor — not a tracker or a chatbot.\n\n" +
         "Two things I do: get to know you properly, then help you move — a little better, every day. " +
