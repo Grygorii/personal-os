@@ -107,3 +107,11 @@ export function sessionCookie(token) {
 }
 
 export const clearedCookie = 'kept_session=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0';
+
+// Which shared result brought them here. Set when they land on /app?r=<code>, read once
+// they've signed in, then thrown away — the gap between arriving and having an account is
+// where attribution used to be lost entirely.
+const REF_TTL_S = 60 * 60 * 24 * 7;
+export const refCookie = (code) =>
+  `kept_ref=${encodeURIComponent(code)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${REF_TTL_S}`;
+export const clearedRefCookie = 'kept_ref=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0';

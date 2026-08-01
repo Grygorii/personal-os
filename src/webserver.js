@@ -11,7 +11,8 @@ import * as users from './users.js';
 import * as coach from './coach.js';
 import * as moderation from './moderation.js';
 import { runAs, uid, personName, languageRule } from './ctx.js';
-import { verifyTelegramLogin, verifyGoogleToken, createSession, readSession, parseCookies, sessionCookie, clearedCookie } from './auth.js';
+import { verifyTelegramLogin, verifyGoogleToken, createSession, readSession, parseCookies, sessionCookie, clearedCookie, refCookie, clearedRefCookie } from './auth.js';
+import { addBook } from './library.js';
 
 // Read a small JSON request body (exam answers etc.). Hard 200KB cap.
 function readJson(req) {
@@ -371,8 +372,18 @@ ${shares.length ? `<h2>Shared results</h2><div class="scroll"><table>
 // published: the book, the score, and optionally one thought. Never their library.
 const shareCode = () => Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-3);
 
-async function createShare({ title, author, score, verdict, thought, name }) {
+async function createShare({ title, author, score, verdict, thoughts, thought, name }) {
   const code = shareCode();
+  // ONLY what they ticked in the share sheet. This used to publish whichever note happened
+  // to be last, without asking — which is how a private thought ends up on a public URL.
+  const picked = (Array.isArray(thoughts) ? thoughts : thought ? [{ text: thought }] : [])
+    .slice(0, MAX_SHARED_THOUGHTS)
+    .map((t) => ({
+      text: String(t?.text || '').trim().slice(0, 500),
+      page: t?.page == null ? null : Number(t.page) || null,
+    }))
+    .filter((t) => t.text);
+
   await rawCol('shares').insertOne({
     _id: code,
     userId: uid(),
@@ -380,75 +391,169 @@ async function createShare({ title, author, score, verdict, thought, name }) {
     author: String(author || '').slice(0, 200),
     score: score == null ? null : Math.max(0, Math.min(100, Number(score) || 0)),
     verdict: String(verdict || '').slice(0, 400),
-    thought: String(thought || '').slice(0, 500),
+    thoughts: picked,
     name: String(name || '').slice(0, 60),
     createdAt: new Date(),
     views: 0,
   });
   const url = `${config.appUrl}/r/${code}`;
-  return { code, url, deepLink: `https://t.me/${config.botUsername || 'bot'}?start=r_${code}` };
+  return { code, url };
 }
+
+const MAX_SHARED_THOUGHTS = 6;
+const REF_CODE = /^[a-z0-9]{4,24}$/i;
+
+// Someone arrived from a shared page and has just signed in. Credit the person whose share
+// brought them, and put THAT BOOK on their shelf — they came for a specific book, and an
+// empty library is exactly where new readers stop.
+// Attribution is once and first-link-wins: the conditional update is what makes that true,
+// and only a real change increments the share's join count.
+async function attributeReferral(code, acct) {
+  try {
+    const src = await rawCol('shares').findOne({ _id: code });
+    if (!src || String(src.userId) === String(acct._id)) return; // no crediting yourself
+    const claimed = await rawCol('users').updateOne(
+      { _id: String(acct._id), referredBy: { $exists: false } },
+      { $set: { referredBy: { shareCode: code, referrerId: src.userId, at: new Date() } } }
+    );
+    if (!claimed.modifiedCount) return; // already came from someone else
+    await rawCol('shares').updateOne({ _id: code }, { $inc: { joins: 1 } });
+    if (src.title) await runAs(acct, () => addBook({ title: src.title, author: src.author || '', status: 'want' }));
+    console.log(`[share] ${acct._id} joined from ${code}`);
+  } catch (e) {
+    console.error('[share] attribution failed:', e.message); // never block a sign-in
+  }
+}
+
+// Links already out in the world carry a single `thought`. Read both shapes forever —
+// a shared page that 404s its own content is worse than any redesign is good.
+const sharedThoughts = (s) =>
+  Array.isArray(s.thoughts) && s.thoughts.length
+    ? s.thoughts
+    : s.thought
+      ? [{ text: s.thought, page: null }]
+      : [];
 
 const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
+// SVG has no text wrapping, so the card has to do it by hand.
+function wrapSvgText(text, maxChars, maxLines) {
+  const words = String(text || '').split(/\s+/).filter(Boolean);
+  const lines = [];
+  let line = '';
+  for (const w of words) {
+    if ((line + ' ' + w).trim().length > maxChars) {
+      if (line) lines.push(line);
+      line = w;
+      if (lines.length === maxLines) break;
+    } else line = (line + ' ' + w).trim();
+  }
+  if (line && lines.length < maxLines) lines.push(line);
+  if (lines.length === maxLines && words.join(' ').length > lines.join(' ').length) {
+    lines[maxLines - 1] = lines[maxLines - 1].replace(/[,.;:]?$/, '') + '…';
+  }
+  return lines;
+}
+
 // The card, drawn as SVG — downloadable for Instagram/X where a link alone won't travel.
+// It leads with a THOUGHT, not the number. A percentage is a fact about the sharer and
+// means nothing to someone who hasn't read the book; a real line from their reading is the
+// only thing on here worth stopping a scroll for. The score rides along as a small badge.
 function shareCard(s) {
-  const score = s.score == null ? '—' : `${s.score}%`;
-  const title = s.title.length > 34 ? s.title.slice(0, 33) + '…' : s.title;
+  const title = s.title.length > 40 ? s.title.slice(0, 39) + '…' : s.title;
+  const first = sharedThoughts(s)[0];
+  const quote = first ? wrapSvgText(first.text, 46, 4) : [];
+  const who = `${s.name || 'A reader'}${first?.page ? ` · p.${first.page}` : ''}`;
   return `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
   <rect width="1200" height="630" fill="#14130F"/>
   <rect x="0" y="0" width="1200" height="8" fill="#D9AE4A"/>
-  <text x="80" y="130" fill="#9C9686" font-family="Georgia,serif" font-size="30">${esc(s.name || 'A reader')} was tested on</text>
-  <text x="80" y="230" fill="#ECE8DF" font-family="Georgia,serif" font-size="68" font-weight="bold">${esc(title)}</text>
-  ${s.author ? `<text x="80" y="285" fill="#9C9686" font-family="Georgia,serif" font-size="32">${esc(s.author)}</text>` : ''}
-  <text x="80" y="440" fill="#D9AE4A" font-family="Georgia,serif" font-size="150" font-weight="bold">${score}</text>
-  <text x="80" y="495" fill="#9C9686" font-family="Georgia,serif" font-size="28">honest comprehension score</text>
-  <text x="80" y="575" fill="#ECE8DF" font-family="Georgia,serif" font-size="30">Most people forget what they read. Find out if you did.</text>
+  <text x="80" y="118" fill="#9C9686" font-family="Georgia,serif" font-size="28">What ${esc(who)} kept from</text>
+  <text x="80" y="186" fill="#ECE8DF" font-family="Georgia,serif" font-size="54" font-weight="bold">${esc(title)}</text>
+  ${s.author ? `<text x="80" y="232" fill="#9C9686" font-family="Georgia,serif" font-size="28">${esc(s.author)}</text>` : ''}
+  ${quote.length
+    ? `<rect x="80" y="276" width="6" height="${quote.length * 56 + 8}" fill="#D9AE4A"/>
+  ${quote.map((l, i) => `<text x="112" y="${320 + i * 56}" fill="#ECE8DF" font-family="Georgia,serif" font-size="40" font-style="italic">${esc(l)}</text>`).join('\n  ')}`
+    : `<text x="80" y="330" fill="#D9AE4A" font-family="Georgia,serif" font-size="120" font-weight="bold">${s.score == null ? '—' : `${s.score}%`}</text>`}
+  ${quote.length && s.score != null
+    ? `<text x="80" y="560" fill="#D9AE4A" font-family="Georgia,serif" font-size="34" font-weight="bold">${s.score}% on an honest test of the book</text>`
+    : ''}
+  <text x="80" y="592" fill="#6E695C" font-family="Georgia,serif" font-size="26">readkept.com — read it, prove you kept it</text>
 </svg>`;
 }
 
 function sharePage(s) {
   const score = s.score == null ? '' : `${s.score}%`;
-  const desc = `${s.score != null ? `Scored ${s.score}% ` : ''}on an honest comprehension test of "${s.title}". Most people forget what they read — find out if you did.`;
-  const deep = `https://t.me/${config.botUsername || 'bot'}?start=r_${s._id}`;
+  const thoughts = sharedThoughts(s);
+  const who = s.name || 'A reader';
+  // The preview text is the first thought, because that is the part a stranger might
+  // actually want to read. Falling back to the score only when there's nothing else.
+  const lead = thoughts[0]?.text
+    ? `“${thoughts[0].text.slice(0, 180)}${thoughts[0].text.length > 180 ? '…' : ''}”`
+    : `${s.score != null ? `Scored ${s.score}% on an honest test of the book. ` : ''}Most people forget what they read.`;
+  const headline = thoughts.length
+    ? `What ${who} kept from “${s.title}”`
+    : `${who} scored ${score} on “${s.title}”`;
+  const cta = `${config.appUrl}/app?r=${s._id}`;
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${esc(s.name || 'A reader')} — ${esc(s.title)}${score ? ` · ${score}` : ''}</title>
-<meta property="og:title" content="${esc(s.name || 'A reader')} scored ${score} on &quot;${esc(s.title)}&quot;">
-<meta property="og:description" content="${esc(desc)}">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>${esc(who)} — ${esc(s.title)}${score ? ` · ${score}` : ''}</title>
+<meta name="theme-color" content="#14130F">
+<meta property="og:title" content="${esc(headline)}">
+<meta property="og:description" content="${esc(lead)}">
 <meta property="og:image" content="${config.appUrl}/r/${s._id}/card.svg">
-<meta property="og:url" content="${config.appUrl}/r/${s._id}"><meta property="og:type" content="website">
+<meta property="og:url" content="${config.appUrl}/r/${s._id}"><meta property="og:type" content="article">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="${esc(s.name || 'A reader')} scored ${score} on &quot;${esc(s.title)}&quot;">
-<meta name="twitter:description" content="${esc(desc)}">
+<meta name="twitter:title" content="${esc(headline)}">
+<meta name="twitter:description" content="${esc(lead)}">
 <meta name="twitter:image" content="${config.appUrl}/r/${s._id}/card.svg">
 <style>
  :root{color-scheme:dark}
  *{box-sizing:border-box} body{margin:0;background:#14130F;color:#ECE8DF;
    font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;line-height:1.6;
    display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px}
- .card{max-width:520px;width:100%;background:#1D1B16;border:1px solid #2C2A22;border-radius:20px;padding:34px 30px;text-align:center}
- .kicker{color:#D9AE4A;font-size:.78rem;letter-spacing:.16em;text-transform:uppercase;font-weight:600}
- h1{font-family:Georgia,serif;font-size:1.9rem;margin:.5rem 0 .2rem;line-height:1.2}
- .author{color:#9C9686;margin:0 0 20px}
- .score{font-family:Georgia,serif;font-size:5rem;font-weight:700;color:#D9AE4A;line-height:1;margin:14px 0 2px}
- .slabel{color:#9C9686;font-size:.85rem;text-transform:uppercase;letter-spacing:.08em}
- .verdict{background:#26241D;border-radius:12px;padding:14px 16px;margin:22px 0;font-size:.95rem;text-align:left}
- .thought{border-left:3px solid #D9AE4A;padding-left:14px;margin:18px 0;text-align:left;font-style:italic;color:#C9C3B6}
- .pitch{margin:26px 0 18px;font-size:1.02rem}
+ .card{max-width:560px;width:100%;background:#1D1B16;border:1px solid #2C2A22;border-radius:20px;padding:32px 28px}
+ .kicker{color:#D9AE4A;font-size:.76rem;letter-spacing:.16em;text-transform:uppercase;font-weight:600}
+ h1{font-family:Georgia,serif;font-size:1.75rem;margin:.5rem 0 .2rem;line-height:1.22}
+ .author{color:#9C9686;margin:0 0 4px}
+ .trail{margin:26px 0 8px;display:flex;flex-direction:column;gap:20px}
+ .t{border-left:3px solid #D9AE4A;padding-left:15px}
+ .t .p{display:inline-block;font-size:.7rem;font-weight:700;letter-spacing:.04em;color:#D9AE4A;
+   background:#2C2510;border-radius:20px;padding:3px 9px;margin-bottom:7px}
+ .t .q{font-family:Georgia,serif;font-size:1.08rem;line-height:1.55;color:#ECE8DF;white-space:pre-wrap}
+ .cred{display:flex;align-items:center;gap:12px;background:#26241D;border-radius:13px;
+   padding:13px 16px;margin-top:26px}
+ .cred .n{font-family:Georgia,serif;font-size:1.9rem;font-weight:700;color:#D9AE4A;line-height:1}
+ .cred .l{color:#9C9686;font-size:.86rem;line-height:1.35}
+ .verdict{color:#C9C3B6;font-size:.93rem;margin-top:12px;font-style:italic}
+ .pitch{margin:28px 0 14px;font-size:1.02rem;text-align:center}
  a.cta{display:block;background:#D9AE4A;color:#14130F;text-decoration:none;font-weight:700;
-   padding:15px;border-radius:12px;font-size:1.05rem}
- .foot{color:#6E695C;font-size:.78rem;margin-top:16px}
+   padding:15px;border-radius:12px;font-size:1.05rem;text-align:center}
+ .foot{color:#6E695C;font-size:.78rem;margin-top:16px;text-align:center}
 </style></head><body>
 <div class="card">
-  <div class="kicker">Honest comprehension test</div>
+  <div class="kicker">${thoughts.length ? `What ${esc(who)} kept` : 'Honest comprehension test'}</div>
   <h1>${esc(s.title)}</h1>
   ${s.author ? `<p class="author">${esc(s.author)}</p>` : ''}
-  ${s.score != null ? `<div class="score">${s.score}%</div><div class="slabel">${esc(s.name || 'A reader')}'s score</div>` : ''}
-  ${s.verdict ? `<div class="verdict">${esc(s.verdict)}</div>` : ''}
-  ${s.thought ? `<div class="thought">"${esc(s.thought)}"</div>` : ''}
-  <p class="pitch">You forget most of what you read.<br><b>Find out if you did.</b></p>
-  <a class="cta" href="${deep}">📕 Test me on a book →</a>
+
+  ${thoughts.length
+    ? `<div class="trail">${thoughts
+        .map(
+          (t) => `<div class="t">${t.page ? `<span class="p">PAGE ${esc(String(t.page))}</span>` : ''}
+      <div class="q">${esc(t.text)}</div></div>`
+        )
+        .join('')}</div>`
+    : ''}
+
+  ${s.score != null
+    ? `<div class="cred"><div class="n">${s.score}%</div>
+    <div class="l">${esc(who)} was tested on this book — honest questions, honestly graded.</div></div>
+    ${s.verdict ? `<div class="verdict">${esc(s.verdict)}</div>` : ''}`
+    : ''}
+
+  <p class="pitch">${thoughts.length
+    ? 'Read it too?<br><b>See how much of it you kept.</b>'
+    : 'You forget most of what you read.<br><b>Find out if you did.</b>'}</p>
+  <a class="cta" href="${cta}">📕 ${thoughts.length ? 'Add this book & test me' : 'Test me on a book'} →</a>
   <div class="foot">Read it. Prove you kept it.</div>
 </div></body></html>`;
 }
@@ -589,7 +694,13 @@ export function startServer(port = process.env.PORT || 8080) {
         res.end(JSON.stringify({ error: 'waiting' }));
         return;
       }
-      res.writeHead(200, { 'Content-Type': 'application/json', 'Set-Cookie': sessionCookie(createSession(acct._id)) });
+      // They may have arrived from someone's shared page before they had an account.
+      const ref = parseCookies(req.headers.cookie).kept_ref;
+      if (ref && REF_CODE.test(ref)) await attributeReferral(ref, acct);
+      res.writeHead(200, {
+        'Content-Type': 'application/json',
+        'Set-Cookie': [sessionCookie(createSession(acct._id)), clearedRefCookie],
+      });
       res.end(JSON.stringify({ ok: true }));
       return;
     }
@@ -609,6 +720,13 @@ export function startServer(port = process.env.PORT || 8080) {
       // looks like the product is broken rather than "please sign in again".
       const acct = sid ? await rawCol('users').findOne({ _id: sid }) : null;
       const signedIn = !!acct && users.isAllowed(acct);
+
+      // Arrived from a shared page (/app?r=<code>). If they're already signed in, credit it
+      // now; if not, remember it across the sign-in they're about to do.
+      const code = new URL(req.url, `https://${req.headers.host}`).searchParams.get('r');
+      const validRef = code && REF_CODE.test(code) ? code : null;
+      if (validRef && signedIn) await attributeReferral(validRef, acct);
+
       const file = signedIn ? '../reading/journal.html' : '../webapp/signin.html';
       try {
         let html = await readFile(fileURLToPath(new URL(file, import.meta.url)), 'utf8');
@@ -620,7 +738,9 @@ export function startServer(port = process.env.PORT || 8080) {
         html = config.googleClientId
           ? html.replace(/<!--NOGOOGLE-->[\s\S]*?<!--\/NOGOOGLE-->/g, '')
           : html.replace(/<!--GOOGLE-->[\s\S]*?<!--\/GOOGLE-->/g, '');
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+        const headers = { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' };
+        if (validRef) headers['Set-Cookie'] = signedIn ? clearedRefCookie : refCookie(validRef);
+        res.writeHead(200, headers);
         res.end(wrap(html, false));
       } catch (err) {
         console.error('[web] /app failed:', err.message);

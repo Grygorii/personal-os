@@ -156,6 +156,20 @@
     color:var(--muted);margin-bottom:14px;line-height:1.5;white-space:pre-wrap}
   .sheet-url{color:var(--accent-strong);font-size:.82rem;word-break:break-all}
   .sheet-native{margin-bottom:12px}
+  /* choosing what becomes public */
+  .sheet-note{color:var(--faint);font-size:.82rem;margin:0 0 13px}
+  .sheet-scroll{max-height:42vh;overflow-y:auto;overscroll-behavior:contain;margin-bottom:6px}
+  .pick{display:flex;gap:11px;align-items:flex-start;width:100%;text-align:left;cursor:pointer;
+    background:var(--raise);border:1px solid var(--line);border-radius:12px;padding:12px 13px;
+    margin-bottom:8px;font-family:var(--sans);color:var(--ink)}
+  .pick.on{border-color:var(--accent);background:var(--accent-tint)}
+  .pick .box{flex:none;width:21px;height:21px;border-radius:6px;border:1.5px solid var(--faint);
+    display:flex;align-items:center;justify-content:center;font-size:.72rem;color:transparent;margin-top:1px}
+  .pick.on .box{background:var(--accent);border-color:var(--accent);color:#231a05}
+  .pick .pt{flex:1;min-width:0;font-size:.91rem;line-height:1.45;white-space:pre-wrap;word-wrap:break-word}
+  .pick .pp{display:block;font-size:.67rem;font-weight:700;color:var(--accent-strong);letter-spacing:.05em;margin-bottom:3px}
+  .pick .dim{color:var(--muted);font-size:.83rem}
+  .sheet-empty{color:var(--faint);font-size:.9rem;padding:14px 2px;text-align:center}
   .sheet-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-bottom:14px}
   .sh{display:flex;flex-direction:column;align-items:center;gap:5px;background:var(--raise);
     border:1px solid var(--line);border-radius:13px;padding:12px 4px;font-size:.72rem;
@@ -460,26 +474,91 @@ async function startExam(id){
    Everything stays inside this app: the phone's own share sheet if it has one (that's the
    real "every app you have installed"), otherwise a grid of destinations. Telegram is one
    choice among many, never a redirect we force. */
-async function shareBook(id){
-  const b=state.books.find(x=>x.id===id); if(!b)return;
-  const btn=$("b-share"); if(btn){btn.disabled=true;btn.textContent="Preparing your link…";}
-  const lastThought=(b.notes||[]).slice(-1)[0];
-  let url=null;
-  try{
-    const r=await api("/api/share",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({title:b.title,author:b.author||"",score:b.exam?b.exam.score:null,
-        verdict:b.exam?b.exam.verdict:"",thought:lastThought?lastThought.text:""})});
-    if(r.ok){ const d=await r.json(); url=d.url; }
-  }catch(e){}
-  if(btn){btn.disabled=false;btn.textContent="📤 Share";}
-  if(!url){ toast("Couldn't create the link — try again"); return; }
+/* ---- Sharing, in two steps ----
+   Step 1 is WHAT becomes public. It used to publish whichever thought happened to be last,
+   without asking — a private note on a public URL, chosen by an array index. Now nothing
+   leaves this screen that you haven't ticked, and the thoughts are the point: a percentage
+   is a fact about you, but what you thought at page 42 is the part worth reading.
+   Step 2 is where to send it. */
+const MAX_SHARE=6, PRESELECT=3;
 
-  const title=b.title+(b.author?` — ${b.author}`:"");
-  const text=(b.exam
-      ? `I scored ${b.exam.score}% on an honest test of what I actually remember from "${b.title}".`
-      : `I'm reading "${b.title}".`)
-    +`\n\nMost of what we read quietly disappears. This tells you what stayed.`;
-  openShareSheet({title,text,url});
+function shareBook(id){
+  const b=state.books.find(x=>x.id===id); if(!b)return;
+  const notes=(b.notes||[]).map((n,i)=>({i,text:n.text,page:n.page}))
+    .filter(n=>n.text&&n.text.trim()).reverse();          // newest first
+  if(!notes.length&&!b.exam){ toast("Add a thought or take the exam first"); return; }
+
+  const chosen=new Set(notes.slice(0,PRESELECT).map(n=>n.i));
+  let withScore=!!b.exam;
+
+  const wrap=document.createElement("div");
+  wrap.className="sheet-bg";
+  wrap.innerHTML=`<div class="sheet" role="dialog" aria-label="Choose what to share">
+    <div class="sheet-head">What do you want to share?</div>
+    <p class="sheet-note">Only what you tick here goes on the public page.</p>
+    <div class="sheet-scroll" id="pick-list"></div>
+    <div id="pick-score"></div>
+    <button class="btn" id="mk-link" style="margin-top:6px">Create link →</button>
+    <button class="btn ghost" id="mk-cancel" style="margin-top:8px">Cancel</button>
+  </div>`;
+  document.body.appendChild(wrap);
+  const close=()=>wrap.remove();
+  wrap.onclick=ev=>{ if(ev.target===wrap) close(); };
+  $("mk-cancel").onclick=close;
+
+  function render(){
+    $("pick-list").innerHTML = notes.length
+      ? notes.map(n=>`<button class="pick ${chosen.has(n.i)?"on":""}" data-i="${n.i}" type="button">
+          <span class="box">✓</span>
+          <span class="pt">${n.page?`<span class="pp">PAGE ${esc(String(n.page))}</span>`:""}${esc(n.text)}</span>
+        </button>`).join("")
+      : '<div class="sheet-empty">No thoughts saved for this book yet.</div>';
+    $("pick-score").innerHTML = b.exam
+      ? `<button class="pick ${withScore?"on":""}" id="sc-toggle" type="button">
+          <span class="box">✓</span>
+          <span class="pt">Include my exam score — <b>${b.exam.score}%</b>
+          <span class="dim">shown as a small badge, not the headline</span></span>
+        </button>`
+      : "";
+    $("pick-list").querySelectorAll(".pick").forEach(el=>el.onclick=()=>{
+      const i=+el.dataset.i;
+      if(chosen.has(i)) chosen.delete(i);
+      else if(chosen.size>=MAX_SHARE) return toast(`Up to ${MAX_SHARE} thoughts`);
+      else chosen.add(i);
+      render();
+    });
+    const sc=$("sc-toggle"); if(sc) sc.onclick=()=>{ withScore=!withScore; render(); };
+    const mk=$("mk-link");
+    mk.disabled=!chosen.size&&!withScore;
+    mk.textContent=chosen.size
+      ? `Create link — ${chosen.size} thought${chosen.size>1?"s":""}${withScore?" + score":""} →`
+      : withScore ? "Create link — score only →" : "Pick something to share";
+  }
+  render();
+
+  $("mk-link").onclick=async()=>{
+    const mk=$("mk-link"); mk.disabled=true; mk.textContent="Preparing your link…";
+    // Back into reading order, so the public page reads like a trail through the book.
+    const thoughts=(b.notes||[]).map((n,i)=>({i,text:n.text,page:n.page}))
+      .filter(n=>chosen.has(n.i)).map(({text,page})=>({text,page}));
+    let url=null;
+    try{
+      const r=await api("/api/share",{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({title:b.title,author:b.author||"",thoughts,
+          score:withScore&&b.exam?b.exam.score:null,
+          verdict:withScore&&b.exam?b.exam.verdict:""})});
+      if(r.ok){ const d=await r.json(); url=d.url; }
+    }catch(e){}
+    if(!url){ mk.disabled=false; mk.textContent="Create link →"; toast("Couldn't create the link — try again"); return; }
+    close();
+
+    const title=b.title+(b.author?` — ${b.author}`:"");
+    const first=thoughts[0];
+    const text=(first
+        ? `“${first.text}”${first.page?` — my note from p.${first.page}`:""}\n\nWhat I kept from "${b.title}"${withScore&&b.exam?`. I scored ${b.exam.score}% on an honest test of it.`:"."}`
+        : `I scored ${b.exam.score}% on an honest test of what I actually remember from "${b.title}".`);
+    openShareSheet({title,text,url});
+  };
 }
 
 function openShareSheet({title,text,url}){

@@ -9,7 +9,7 @@ import { runAs } from './ctx.js';
 import { config } from './config.js';
 
 // Bump on each deploy so we can confirm which build is actually live (read meta.boot).
-const VERSION = 'reaches-everyone-1';
+const VERSION = 'share-thoughts-1';
 
 async function main() {
   await connect();
