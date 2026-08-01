@@ -536,7 +536,7 @@ function sharePage(s) {
  .pitch{margin:28px 0 14px;font-size:1.02rem;text-align:center}
  a.cta{display:block;background:#D9AE4A;color:#14130F;text-decoration:none;font-weight:700;
    padding:15px;border-radius:12px;font-size:1.05rem;text-align:center}
- .foot{color:#6E695C;font-size:.78rem;margin-top:16px;text-align:center}
+ .foot{color:#8A8478;font-size:.78rem;margin-top:16px;text-align:center}
 </style></head><body>
 <div class="card">
   <div class="kicker">${thoughts.length ? `What ${esc(who)} kept` : 'Honest comprehension test'}</div>
