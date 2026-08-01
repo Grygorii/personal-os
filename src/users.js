@@ -25,13 +25,13 @@ function isOwner(chatId) {
 // ---------- who may sign in (the email allowlist) ----------
 // Two sources so the owner is never locked out and never has to redeploy: addresses baked
 // into the environment, plus ones added from /admin at runtime.
-// Invite-only, and deliberately FAIL-CLOSED: an address is refused unless it is explicitly
-// the owner's, in the environment list, or invited from /admin. (An earlier version opened
-// the doors to everyone whenever the list happened to be empty — so revoking the last
-// invite silently unlocked the app. Access should never widen as a side effect.)
+// Who may SIGN IN. By default: anyone — the app is public, and being able to use it has
+// nothing to do with being able to administer it (that's `role: owner`, checked separately).
+// INVITE_ONLY=true turns this into a closed beta, and only then does the list apply.
 export async function isEmailAllowed(email) {
   const e = String(email || '').toLowerCase().trim();
   if (!e) return false;
+  if (!config.inviteOnly) return true; // open to everyone
   if (e === config.ownerEmail) return true;
   if (config.allowedEmails.includes(e)) return true;
   return !!(await col('invites').findOne({ _id: e }));

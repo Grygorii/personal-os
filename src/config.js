@@ -42,8 +42,11 @@ export const config = {
   // The owner's Google address — signing in with it lands in the OWNER account rather than
   // creating a second one. Overridable so a self-hoster can make it theirs.
   ownerEmail: (oneLine(process.env.OWNER_EMAIL) || 'grisha.kinzerskyi@gmail.com').toLowerCase(),
-  // Optional launch gate: when set, ONLY these addresses may sign in with Google. More can
-  // be added from /admin without a redeploy. Empty = open to anyone.
+  // The app is OPEN: anyone may sign in with Google. This is only about who can USE it —
+  // administering it is a separate thing entirely, decided by `role: owner`.
+  // Set INVITE_ONLY=true to run a closed beta instead; then only the owner, ALLOWED_EMAILS
+  // and addresses invited from /admin can get in.
+  inviteOnly: oneLine(process.env.INVITE_ONLY) === 'true',
   allowedEmails: oneLine(process.env.ALLOWED_EMAILS)
     .split(',')
     .map((e) => e.trim().toLowerCase())

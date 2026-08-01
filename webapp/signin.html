@@ -14,50 +14,32 @@
   *{box-sizing:border-box}
   body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);font-family:var(--sans);
     display:flex;align-items:center;justify-content:center;padding:24px;line-height:1.6}
-  .card{max-width:400px;width:100%;text-align:center}
+  .card{max-width:380px;width:100%;text-align:center}
   .logo{font-family:var(--serif);color:var(--accent);font-size:1.1rem;margin-bottom:30px}
   h1{font-family:var(--serif);font-size:1.85rem;font-weight:600;margin:0 0 10px;line-height:1.2}
-  p{color:var(--muted);margin:0 0 26px}
-  .widget{display:flex;justify-content:center;min-height:48px;margin-bottom:6px}
-  .or{display:flex;align-items:center;gap:12px;color:var(--faint);font-size:.8rem;margin:14px 0}
-  .or::before,.or::after{content:"";flex:1;height:1px;background:var(--line)}
-  .err{color:#E1685C;font-size:.9rem;min-height:1.2em;margin-top:14px}
-  .why{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:15px 17px;
-    margin-top:26px;text-align:left;font-size:.9rem;color:var(--muted)}
-  .why b{color:var(--ink)}
-  .fallback{margin-top:18px;font-size:.9rem}
-  .fallback a{color:var(--accent)}
-  .foot{color:var(--faint);font-size:.78rem;margin-top:26px}
+  p.sub{color:var(--muted);margin:0 0 30px}
+  .widget{display:flex;justify-content:center;min-height:48px}
+  .err{color:#E1685C;font-size:.9rem;min-height:1.2em;margin-top:16px}
+  .note{color:var(--faint);font-size:.84rem;margin-top:16px}
+  .foot{color:var(--faint);font-size:.78rem;margin-top:34px}
 </style>
 </head>
 <body>
   <div class="card">
     <div class="logo">📕 Kept</div>
     <h1>Sign in to your library</h1>
-    <p>Your books, thoughts and exam results — on any device.</p>
+    <p class="sub">Your books, thoughts and exam results — on any device.</p>
 
     <!--GOOGLE-->
     <div class="widget"><div id="g-btn"></div></div>
-    <div class="or"><span>or</span></div>
+    <div class="err" id="err"></div>
+    <p class="note">One tap. No password to invent, nothing to install.</p>
     <!--/GOOGLE-->
 
-    <div class="widget">
-      <script async src="https://telegram.org/js/telegram-widget.js?22"
-              data-telegram-login="BOT_USERNAME"
-              data-size="large"
-              data-radius="12"
-              data-userpic="false"
-              data-auth-url="APP_URL/auth/telegram"
-              data-request-access="write"></script>
-    </div>
+    <!--NOGOOGLE-->
+    <p class="note">Sign-in isn't configured on this server yet — try again shortly.</p>
+    <!--/NOGOOGLE-->
 
-    <div class="why">
-      <b>Google</b> gets you straight to your library, exams and sharing.<br>
-      <b>Telegram</b> adds the mentor — the reading conversation and the nudge when you
-      finish a book. You can connect it later either way.
-    </div>
-
-    <div class="err" id="err"></div>
     <div class="foot">Read it. Prove you kept it.</div>
 
     <!--GOOGLE-->
@@ -76,11 +58,9 @@
             if (r.ok) { location.replace('/app'); return; }
             return r.json().then(function (d) {
               document.getElementById('err').textContent =
-                d.error === 'not_invited'
-                  ? "That address isn't on the list yet. Kept is in a small private beta — ask for an invite."
-                  : d.error === 'waiting'
-                    ? "You're on the waiting list — we'll open up soon."
-                    : "That sign-in didn't work. Try again.";
+                d.error === 'not_invited' || d.error === 'waiting'
+                  ? 'Kept is in a small closed beta right now — ask Grisha to let you in.'
+                  : "That sign-in didn't work. Try again.";
             });
           })
           .catch(function () { document.getElementById('err').textContent = 'Network problem — try again.'; });

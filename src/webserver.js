@@ -288,29 +288,33 @@ async function adminPage() {
 <tr><th>Name</th><th>Via</th><th>Lang</th><th>Books</th><th>Msgs</th><th>Exams</th><th>Joined</th><th></th></tr>
 ${body}
 </table></div>
-<h2>Who can sign in</h2>
-<form method="POST" action="/admin/invite" class="invite">
-  <input name="email" type="email" placeholder="name@example.com" required>
-  <button type="submit">Invite</button>
-</form>
-<p class="dim" style="font-size:.84rem;margin:8px 0 12px">
-  Invite-only: <b>only</b> the addresses below (plus yours) can sign in with Google. Everyone else is refused.
-  Owner: <b>${esc(config.ownerEmail)}</b>${config.allowedEmails.length ? ` · from env: ${config.allowedEmails.map(esc).join(', ')}` : ''}
-  ${config.multiTenant && config.autoAccept ? '<br>⚠️ Telegram is a separate door and still auto-accepts anyone. Set <code>AUTO_ACCEPT=false</code> in Railway to make Telegram invite-only too.' : ''}
+<h2>Access</h2>
+<p class="dim" style="font-size:.88rem;margin:0 0 14px">
+  ${config.inviteOnly
+    ? '🔒 <b>Closed beta</b> — only the addresses below (plus yours) can sign in. Set <code>INVITE_ONLY=false</code> to open it.'
+    : '🌍 <b>Open</b> — anyone can sign in and use the app. Set <code>INVITE_ONLY=true</code> in Railway to run a closed beta.'}
+  <br>Admin is separate and always owner-only: <b>${esc(config.ownerEmail)}</b>.
+  Nobody else can open this page, however they signed in.
 </p>
-<div class="scroll"><table>
-<tr><th>Invited address</th><th>Added</th><th>Status</th><th></th></tr>
-${invites.length
-  ? invites.map((i) => {
-      const acct = people.find((u) => u.google?.email === i._id);
-      return `<tr><td>${esc(i._id)}</td><td class="dim">${joined(i.addedAt)}</td>
-        <td class="${acct ? 'good' : 'dim'}">${acct ? 'signed in' : 'not yet'}</td>
-        <td><form method="POST" action="/admin/revoke" style="margin:0">
-          <input type="hidden" name="email" value="${esc(i._id)}">
-          <button class="danger" type="submit">Revoke</button></form></td></tr>`;
-    }).join('')
-  : '<tr><td colspan="4" class="dim">Nobody invited yet.</td></tr>'}
-</table></div>
+${config.inviteOnly
+  ? `<form method="POST" action="/admin/invite" class="invite">
+      <input name="email" type="email" placeholder="name@example.com" required>
+      <button type="submit">Invite</button>
+    </form>
+    <div class="scroll"><table>
+    <tr><th>Invited address</th><th>Added</th><th>Status</th><th></th></tr>
+    ${invites.length
+      ? invites.map((i) => {
+          const acct = people.find((u) => u.google?.email === i._id);
+          return `<tr><td>${esc(i._id)}</td><td class="dim">${joined(i.addedAt)}</td>
+            <td class="${acct ? 'good' : 'dim'}">${acct ? 'signed in' : 'not yet'}</td>
+            <td><form method="POST" action="/admin/revoke" style="margin:0">
+              <input type="hidden" name="email" value="${esc(i._id)}">
+              <button class="danger" type="submit">Revoke</button></form></td></tr>`;
+        }).join('')
+      : '<tr><td colspan="4" class="dim">Nobody invited yet.</td></tr>'}
+    </table></div>`
+  : ''}
 ${shares.length ? `<h2>Shared results</h2><div class="scroll"><table>
 <tr><th>Book</th><th>Score</th><th>Views</th><th>Joins</th></tr>${shareRows}</table></div>` : ''}
 <p class="note">“Added a book” is the number that matters — everything before it is just a visitor.</p>
@@ -560,12 +564,13 @@ export function startServer(port = process.env.PORT || 8080) {
       try {
         let html = await readFile(fileURLToPath(new URL(file, import.meta.url)), 'utf8');
         html = html
-          .replaceAll('BOT_USERNAME', config.botUsername || 'grisha_steward_bot')
-          .replaceAll('BOT_LINK', `https://t.me/${config.botUsername || 'grisha_steward_bot'}`)
           .replaceAll('GOOGLE_CLIENT_ID', config.googleClientId || '')
           .replaceAll('APP_URL', config.appUrl);
-        // No Google client id configured → don't show a button that can't work.
-        if (!config.googleClientId) html = html.replace(/<!--GOOGLE-->[\s\S]*?<!--\/GOOGLE-->/g, '');
+        // Google is the only way in, so the page has to say something sensible if it isn't
+        // configured — a sign-in screen with no button and no explanation reads as broken.
+        html = config.googleClientId
+          ? html.replace(/<!--NOGOOGLE-->[\s\S]*?<!--\/NOGOOGLE-->/g, '')
+          : html.replace(/<!--GOOGLE-->[\s\S]*?<!--\/GOOGLE-->/g, '');
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
         res.end(wrap(html, false));
       } catch (err) {
@@ -756,13 +761,9 @@ export function startServer(port = process.env.PORT || 8080) {
     try {
       const abs = fileURLToPath(new URL(route.file, import.meta.url));
       let fragment = await readFile(abs, 'utf8');
-      // The landing page is served to strangers, so its call-to-action must point at the
-      // real bot — resolved at request time from the username discovered at boot.
-      if (route.public) {
-        fragment = fragment
-          .replaceAll('BOT_LINK', `https://t.me/${config.botUsername || 'grisha_steward_bot'}`)
-          .replaceAll('APP_URL', config.appUrl);
-      }
+      // The landing page's call-to-action goes to /app, never out to Telegram: a stranger
+      // clicking "start" should land in the product, not in a chat client they may not have.
+      if (route.public) fragment = fragment.replaceAll('APP_URL', config.appUrl);
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
       res.end(wrap(fragment, route.homeBar));
     } catch (err) {
