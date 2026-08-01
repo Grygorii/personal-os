@@ -58,6 +58,16 @@ const ROUTES = {
   '/dashboard': { file: '../webapp/dashboard.html' },
 };
 
+// iOS ignores SVG for Add to Home Screen, so a site whose only icon is an SVG gets a
+// generic thumbnail on the home screen — right after someone decided to trust it enough to
+// install. These are real PNGs (see scripts/make-icons.mjs).
+const ASSETS = {
+  '/me.jpg': { file: 'me.jpg', type: 'image/jpeg' },
+  '/icon-180.png': { file: 'icon-180.png', type: 'image/png' },
+  '/icon-192.png': { file: 'icon-192.png', type: 'image/png' },
+  '/icon-512.png': { file: 'icon-512.png', type: 'image/png' },
+};
+
 // Verify Telegram Mini App initData (https://core.telegram.org/bots/webapps#validating-data).
 // Returns the parsed user object if the signature is valid, else null.
 const INITDATA_TTL_MS = 24 * 60 * 60 * 1000; // a captured initData must not work forever
@@ -630,6 +640,8 @@ function wrap(fragment, homeBar) {
     '<!doctype html><html lang="en"><head><meta charset="utf-8">' +
     '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">' +
     '<meta name="color-scheme" content="light dark">' +
+    '<link rel="apple-touch-icon" href="/icon-180.png">' +
+    '<link rel="icon" href="/icon.svg" type="image/svg+xml">' +
     '<script src="https://telegram.org/js/telegram-web-app.js"></script>' +
     '<style>*{box-sizing:border-box}html,body{margin:0}</style></head><body>' +
     bar + fragment +
@@ -963,7 +975,12 @@ export function startServer(port = process.env.PORT || 8080) {
         background_color: '#14130F',
         theme_color: '#14130F',
         description: 'Get examined on the books you finish. Honestly.',
-        icons: [{ src: '/icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any maskable' }],
+        icons: [
+          { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+          { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+          { src: '/icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' },
+        ],
         // The installed app opens the LIBRARY, never the sales page.
         scope: '/',
       }));
@@ -978,17 +995,17 @@ export function startServer(port = process.env.PORT || 8080) {
       );
       return;
     }
-    // The one photo on the site. A fixed path, not a static directory — nothing here should
-    // be able to ask the server for an arbitrary file. Missing is fine: the page falls back
-    // to an initial, so a not-yet-uploaded photo can't leave a broken image behind.
-    if (path === '/me.jpg') {
+    // The handful of real image files. An explicit map, not a static directory — nothing
+    // should be able to ask this server for an arbitrary path. A missing file 404s cleanly:
+    // the photo falls back to an initial rather than leaving a broken image behind.
+    if (ASSETS[path]) {
       try {
-        const buf = await readFile(fileURLToPath(new URL('../webapp/me.jpg', import.meta.url)));
-        res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'public, max-age=86400' });
+        const buf = await readFile(fileURLToPath(new URL(`../webapp/${ASSETS[path].file}`, import.meta.url)));
+        res.writeHead(200, { 'Content-Type': ASSETS[path].type, 'Cache-Control': 'public, max-age=86400' });
         res.end(buf);
       } catch {
         res.writeHead(404, { 'Content-Type': 'text/plain' });
-        res.end('no photo yet');
+        res.end('not found');
       }
       return;
     }

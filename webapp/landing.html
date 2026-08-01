@@ -13,6 +13,11 @@
 <meta property="og:site_name" content="Kept">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="manifest" href="/manifest.webmanifest">
+<!-- iOS won't use an SVG for Add to Home Screen; without a PNG the home-screen icon is a
+     generic thumbnail, which is a poor first impression at the moment of installing. -->
+<link rel="apple-touch-icon" href="/icon-180.png">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<meta name="apple-mobile-web-app-title" content="Kept">
 <meta name="theme-color" content="#14130F">
 <meta name="color-scheme" content="dark">
 <script>
@@ -147,7 +152,8 @@
   /* who made this */
   .maker{display:flex;gap:16px;align-items:flex-start;background:var(--surface);
     border:1px solid var(--line);border-radius:18px;padding:20px;text-align:left}
-  .maker img,.maker .ph{width:76px;height:76px;border-radius:50%;flex:none;object-fit:cover;
+  /* A portrait cropped to a circle centres on the chest by default — bias up to the face. */
+  .maker img,.maker .ph{width:76px;height:76px;border-radius:50%;flex:none;object-fit:cover;object-position:50% 20%;
     border:2px solid var(--line);background:var(--raise);
     display:flex;align-items:center;justify-content:center;font-family:var(--serif);
     font-size:1.6rem;color:var(--accent)}
