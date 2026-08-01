@@ -146,11 +146,16 @@
   @keyframes bl{0%,80%,100%{opacity:.25}40%{opacity:1}}
   /* share sheet */
   .sheet-bg{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:flex-end;
-    justify-content:center;z-index:100;padding:0}
+    justify-content:center;z-index:100;padding:0;touch-action:none}
   .sheet{background:var(--surface);border:1px solid var(--line);border-radius:20px 20px 0 0;
-    padding:20px 18px calc(22px + env(safe-area-inset-bottom));width:100%;max-width:520px;
-    animation:up .22s ease}
+    padding:8px 18px calc(22px + env(safe-area-inset-bottom));width:100%;max-width:520px;
+    animation:up .22s ease;will-change:transform}
   @keyframes up{from{transform:translateY(24px);opacity:.6}to{transform:none;opacity:1}}
+  html.sheeting{overflow:hidden}
+  /* The handle is the promise that the sheet can be dragged away — without something to
+     grab, a swipe gesture is a secret. It's also the safe place to start one. */
+  .sheet-grab{display:block;width:40px;height:4px;border-radius:3px;background:var(--line);
+    margin:6px auto 14px;flex:none}
   .sheet-head{font-family:var(--serif);font-size:1.15rem;font-weight:600;margin-bottom:12px;color:var(--ink)}
   .sheet-preview{background:var(--raise);border-radius:12px;padding:12px 14px;font-size:.9rem;
     color:var(--muted);margin-bottom:14px;line-height:1.5;white-space:pre-wrap}
@@ -474,6 +479,69 @@ async function startExam(id){
    Everything stays inside this app: the phone's own share sheet if it has one (that's the
    real "every app you have installed"), otherwise a grid of destinations. Telegram is one
    choice among many, never a redirect we force. */
+/* ---- Bottom sheets you can swipe away ----
+   Swipe-to-dismiss is what people expect from a sheet, but done naively it fires while
+   they're scrolling the list of thoughts inside it — closing the panel when all they
+   wanted was to look further down. Four rules stop that:
+     1. a drag that starts on a button, link or field is never a dismissal
+     2. only downward, and only when the inner list has nothing left to scroll up
+     3. the sheet follows the finger, so a half-swipe visibly snaps back
+     4. it takes a real gesture — 110px, or a genuine flick
+   Tapping the dark area and pressing Escape still work; this is an extra way out, never
+   the only one. */
+function sheetDismiss(bg, close){
+  const sheet=bg.querySelector(".sheet");
+  const scroller=sheet.querySelector(".sheet-scroll");
+  const atTop=()=>!scroller||scroller.scrollTop<=0;
+  let y0=null,t0=0,dy=0,dragging=false;
+
+  sheet.addEventListener("touchstart",e=>{
+    if(e.touches.length!==1||e.target.closest("button,a,input,textarea,select")){ y0=null; return; }
+    y0=e.touches[0].clientY; t0=Date.now(); dy=0; dragging=false;
+  },{passive:true});
+
+  sheet.addEventListener("touchmove",e=>{
+    if(y0==null) return;
+    const d=e.touches[0].clientY-y0;
+    if(!dragging&&(d<=6||!atTop())){ y0=null; return; }   // it's a scroll, not a dismissal
+    dragging=true; dy=d>0?d:0;
+    e.preventDefault();                                    // now the sheet owns the gesture
+    sheet.style.transition="none";
+    sheet.style.transform=`translateY(${dy}px)`;
+  },{passive:false});
+
+  const end=()=>{
+    if(y0==null||!dragging){ y0=null; return; }
+    const flick=dy>50&&Date.now()-t0<300;
+    sheet.style.transition="transform .2s ease";
+    if(dy>110||flick){ sheet.style.transform="translateY(110%)"; setTimeout(close,170); }
+    else sheet.style.transform="";
+    y0=null; dragging=false; dy=0;
+  };
+  sheet.addEventListener("touchend",end);
+  sheet.addEventListener("touchcancel",end);
+
+  const onKey=e=>{ if(e.key==="Escape") close(); };
+  addEventListener("keydown",onKey);
+  return ()=>removeEventListener("keydown",onKey);
+}
+
+/* Every sheet opens and closes the same way, so none of them can forget to unlock the
+   page behind it. */
+function openSheet(html,label){
+  const bg=document.createElement("div");
+  bg.className="sheet-bg";
+  bg.innerHTML=`<div class="sheet" role="dialog" aria-modal="true" aria-label="${label}">
+    <span class="sheet-grab" aria-hidden="true"></span>${html}</div>`;
+  document.body.appendChild(bg);
+  document.documentElement.classList.add("sheeting");
+  let untrap=null;
+  const close=()=>{ if(untrap)untrap(); bg.remove(); document.documentElement.classList.remove("sheeting"); };
+  bg.onclick=ev=>{ if(ev.target===bg) close(); };
+  untrap=sheetDismiss(bg,close);
+  return { bg, close };
+}
+
 /* ---- Sharing, in two steps ----
    Step 1 is WHAT becomes public. It used to publish whichever thought happened to be last,
    without asking — a private note on a public URL, chosen by an array index. Now nothing
@@ -491,19 +559,14 @@ function shareBook(id){
   const chosen=new Set(notes.slice(0,PRESELECT).map(n=>n.i));
   let withScore=!!b.exam;
 
-  const wrap=document.createElement("div");
-  wrap.className="sheet-bg";
-  wrap.innerHTML=`<div class="sheet" role="dialog" aria-label="Choose what to share">
+  const { close } = openSheet(`
     <div class="sheet-head">What do you want to share?</div>
     <p class="sheet-note">Only what you tick here goes on the public page.</p>
     <div class="sheet-scroll" id="pick-list"></div>
     <div id="pick-score"></div>
     <button class="btn" id="mk-link" style="margin-top:6px">Create link →</button>
-    <button class="btn ghost" id="mk-cancel" style="margin-top:8px">Cancel</button>
-  </div>`;
-  document.body.appendChild(wrap);
-  const close=()=>wrap.remove();
-  wrap.onclick=ev=>{ if(ev.target===wrap) close(); };
+    <button class="btn ghost" id="mk-cancel" style="margin-top:8px">Cancel</button>`,
+    "Choose what to share");
   $("mk-cancel").onclick=close;
 
   function render(){
@@ -573,21 +636,15 @@ function openShareSheet({title,text,url}){
     ["Telegram","✈️",`https://t.me/share/url?url=${e(url)}&text=${e(text)}`],
     ["Email","✉️",`mailto:?subject=${e(title)}&body=${e(full)}`],
   ];
-  const wrap=document.createElement("div");
-  wrap.className="sheet-bg";
-  wrap.innerHTML=`<div class="sheet" role="dialog" aria-label="Share">
-    <div class="sheet-head">Share your result</div>
+  const { close } = openSheet(`
+    <div class="sheet-head">Send it to</div>
     <div class="sheet-preview">${esc(text)}<br><span class="sheet-url">${esc(url)}</span></div>
     ${navigator.share?`<button class="btn sheet-native" id="sh-native">Share…</button>`:""}
     <div class="sheet-grid">
       ${targets.map(([n,i,u])=>`<a class="sh" href="${u}" target="_blank" rel="noopener"><span class="sh-i">${i}</span>${n}</a>`).join("")}
       <button class="sh" id="sh-copy"><span class="sh-i">🔗</span>Copy link</button>
     </div>
-    <button class="btn ghost" id="sh-close">Close</button>
-  </div>`;
-  document.body.appendChild(wrap);
-  const close=()=>wrap.remove();
-  wrap.onclick=ev=>{ if(ev.target===wrap) close(); };
+    <button class="btn ghost" id="sh-close">Close</button>`, "Share");
   $("sh-close").onclick=close;
   $("sh-copy").onclick=async()=>{
     try{ await navigator.clipboard.writeText(full); toast("Link copied"); }
