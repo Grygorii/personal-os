@@ -124,26 +124,53 @@ async function gatherBookRecs(refresh) {
   const fresh = cached?.ts && Date.now() - new Date(cached.ts).getTime() < 7 * DAY;
   if (cached?.recs?.length && fresh && !refresh) return { recs: cached.recs, at: cached.ts };
 
-  const [profile, bookLogs, engBooks, current] = await Promise.all([
+  const [profile, bookLogs, engBooks, library, current] = await Promise.all([
     getProfile(),
     col('logs').find({ type: 'book' }).sort({ ts: -1 }).limit(20).toArray(),
     col('english_books').find().sort({ lastDiscussed: -1 }).limit(10).toArray(),
+    col('books').findOne({ _id: 'library' }),
     col('reading').findOne({ _id: 'current' }),
   ]);
-  const history =
-    [...new Set([...bookLogs.map((b) => b.title), ...engBooks.map((b) => b.title), current?.title].filter(Boolean))].join('; ') ||
-    'nothing logged yet';
+  // Their actual shelf counts as history too — recommending a book already sitting in the
+  // library is the fastest way to look like you don't know them at all.
+  const history = [
+    ...new Set(
+      [
+        ...(library?.books || []).map((b) => b.title),
+        ...bookLogs.map((b) => b.title),
+        ...engBooks.map((b) => b.title),
+        current?.title,
+      ].filter(Boolean)
+    ),
+  ];
+
+  // What we genuinely know about THIS reader. This prompt used to be hardcoded to the
+  // owner's life — his mission, his shop — so every other reader got recommendations
+  // written for somebody else. Nothing here may assume whose account this is.
+  const known = {
+    mission: profile.mission || null,
+    goals: profile.goals || null,
+    readingTaste: profile.readingTaste || null,
+    interests: profile.interests || null,
+  };
+  const knowThem = Object.values(known).some(Boolean) || history.length > 0;
 
   const sys = `${languageRule()}
-You are ${personName()}'s reading advisor and you know them well. Recommend exactly 4 books they have NOT read, each chosen FOR THEM:
-- one that advances his mission (Collections × AI — becoming the professional companies hunt),
-- one on finance/risk/decision-making matching his taste (Taleb, Marks, Housel — substantive, multi-perspective),
-- one for the builder/founder in him (SILKILINEN),
-- one wildcard from his wider interests (history, systems thinking, psychology).
-"why" must be ONE sharp sentence (max 160 chars) tied to HIS goals — never a blurb.
+You are ${personName()}'s reading advisor. Recommend exactly 4 books they have NOT read.
 
-WHO HE IS: ${JSON.stringify({ mission: profile.mission, goals: profile.goals, readingTaste: profile.readingTaste, interests: profile.interests })}
-ALREADY READ / IN PROGRESS (never recommend these): ${history}
+${
+  knowThem
+    ? `Choose FOR THIS PERSON, from what's below — and spread them out, so at least one lands.
+WHAT YOU KNOW ABOUT THEM: ${JSON.stringify(known)}
+ALREADY READ OR ON THEIR SHELF (never recommend these): ${history.join('; ') || 'nothing yet'}`
+    : `You know nothing about them yet — this is their first day, and four good books are
+still more useful than an apology. Pick four that pull in different directions: one on how
+minds and habits actually work, one on money, risk or decisions, one piece of narrative
+non-fiction or history that reads like a story, and one novel people finish and remember.
+Widely loved is right here — a new shelf needs foundations, not deep cuts.`
+}
+
+"why" is ONE sharp sentence (max 160 chars): what this reader would get out of it. Never a blurb, never marketing.
 
 Reply with ONLY JSON, no fences: {"recs":[{"title":"...","author":"...","why":"..."}]}`;
 
@@ -158,7 +185,9 @@ Reply with ONLY JSON, no fences: {"recs":[{"title":"...","author":"...","why":".
   }
   if (!Array.isArray(recs) || !recs.length) {
     if (cached?.recs?.length) return { recs: cached.recs, at: cached.ts }; // stale beats broken
-    throw new Error('no recommendations generated');
+    // Answer 200 with nothing rather than 500. A failed model call used to take the whole
+    // "Recommended next" panel off the page — including the button to try again.
+    return { recs: [], at: null, failed: true };
   }
   recs = recs.slice(0, 4).map((r) => ({ title: String(r.title || ''), author: String(r.author || ''), why: String(r.why || '') }));
   await col('meta').updateOne({ _id: cacheId }, { $set: { ts: new Date(), recs } }, { upsert: true });
@@ -418,16 +447,21 @@ function sharePage(s) {
 
 // ---- Book knowledge exam: honest questions, honest grading ----
 // Generate: 5 questions that test real understanding of THIS book — comprehension,
-// application to HIS life/mission, and one pushback. Grade: radical honesty (his standing
-// order) — vague answers score low, with the weak spot named. Results feed Mind XP.
+// application to the reader's own life, and one pushback. Grade: radical honesty — vague
+// answers score low, with the weak spot named. Results feed Mind XP.
+//
+// Everything here speaks about the reader as "they". We never ask anyone their gender, so
+// guessing one is guaranteed to be wrong for someone — and being called the wrong thing by
+// your own examiner is exactly how a product stops feeling like it's yours.
 async function generateExam({ title, author }) {
   if (!title) throw new Error('no title');
   const profile = await getProfile();
   const sys = `${languageRule()}
 You are ${personName()}'s reading examiner. Write an exam for the book "${title}"${author ? ` by ${author}` : ''} that tests whether they ACTUALLY understood and can USE it — not trivia.
+Refer to the reader as "you"; never assume their gender.
 Exactly 5 questions, each answerable in 2-4 sentences:
-- Q1-Q2: the book's core ideas (comprehension — could he explain them to a colleague?)
-- Q3-Q4: application to HIS real life and mission (${profile.mission || 'his growth'}) — make him use the idea, not recite it
+- Q1-Q2: the book's core ideas (comprehension — could they explain them to a colleague?)
+- Q3-Q4: application to their real life${profile.mission ? ` and what they're working toward (${profile.mission})` : ''} — make them use the idea, not recite it
 - Q5: pushback — where might the author be wrong, or what's the strongest counter-argument?
 Reply ONLY JSON, no fences: {"questions":["...","...","...","...","..."]}`;
   const raw = await chat({ system: sys, messages: [{ role: 'user', content: 'Write the exam.' }], maxTokens: 600, tier: 'deep' });
@@ -442,9 +476,9 @@ Reply ONLY JSON, no fences: {"questions":["...","...","...","...","..."]}`;
 async function gradeExam({ eid, answers }) {
   const exam = await col('book_exams').findOne({ eid });
   if (!exam) throw new Error('unknown exam');
-  const list = exam.questions.map((q, i) => `Q${i + 1}: ${q}\nHIS ANSWER: ${String((answers || [])[i] || '(no answer)')}`).join('\n\n');
+  const list = exam.questions.map((q, i) => `Q${i + 1}: ${q}\nTHEIR ANSWER: ${String((answers || [])[i] || '(no answer)')}`).join('\n\n');
   const sys = `${languageRule()}
-You are grading ${personName()}'s exam on "${exam.title}". The standing order is radical honesty: real scores, never inflated, never cruel — precise. A vague, generic, or bluffed answer scores under 40. A solid answer with the book's actual idea scores 60-80. Genuine insight applied to their own life scores higher. For each answer: a 0-100 score and ONE sharp sentence of feedback (name the weak spot or what landed). Then an overall 0-100 (weighted judgment, not just the average) and a one-sentence verdict they'd thank you for.
+You are grading ${personName()}'s exam on "${exam.title}". Refer to the reader as "you"; never assume their gender. The standing order is radical honesty: real scores, never inflated, never cruel — precise. A vague, generic, or bluffed answer scores under 40. A solid answer with the book's actual idea scores 60-80. Genuine insight applied to their own life scores higher. For each answer: a 0-100 score and ONE sharp sentence of feedback (name the weak spot or what landed). Then an overall 0-100 (weighted judgment, not just the average) and a one-sentence verdict they'd thank you for.
 Reply ONLY JSON, no fences: {"grades":[{"score":70,"feedback":"..."}],"overall":72,"verdict":"..."}`;
   const raw = await chat({ system: sys, messages: [{ role: 'user', content: list }], maxTokens: 900, tier: 'deep' });
   const parsed = parseModelJson(raw);
@@ -699,8 +733,11 @@ export function startServer(port = process.env.PORT || 8080) {
             if (finding) return { reply: "That's outside what I do — I'm here for your books.", blocked: true };
             const quota = await users.consumeQuota(acct);
             if (!quota.ok) return { reply: `You've used today's ${quota.cap} messages. It resets tomorrow.`, blocked: true };
-            const { reply, pings } = await coach.handle(text, null, { silent: true });
-            return { reply, pings };
+            // The reply, and only the reply. XP, levels, ranks and quests still run behind
+            // this (they're the owner's private life OS) but the app is a library and a
+            // mentor — a reader was never promised a game, so nothing gamified talks here.
+            const { reply } = await coach.handle(text, null, { silent: true });
+            return { reply };
           }
           if (path === '/api/words') {
             const rows = await col('english_words')

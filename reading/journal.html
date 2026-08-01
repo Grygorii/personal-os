@@ -28,31 +28,48 @@
     --star:#D9AE4A; --good:#43B571; --good-tint:#12291C; --bad:#E1685C; --bad-tint:#301715;
   }
   *{box-sizing:border-box}
-  .wrap{max-width:600px;margin:0 auto;padding:0 16px calc(56px + env(safe-area-inset-bottom));color:var(--ink);font-family:var(--sans);line-height:1.6;-webkit-text-size-adjust:100%}
+  html{-webkit-text-size-adjust:100%;background:var(--paper)}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);
+    -webkit-font-smoothing:antialiased;overscroll-behavior-y:contain}
+  /* Should feel like an app, not a page: no long-press selection on controls, no 300ms
+     double-tap delay, no blue flash — and a real pressed state so every tap lands. */
+  button,a.sh,.book{touch-action:manipulation;-webkit-user-select:none;user-select:none;
+    -webkit-tap-highlight-color:transparent}
+  html.chatting{overflow:hidden}         /* the mentor is a screen, not a long page */
+  .wrap{max-width:600px;margin:0 auto;
+    padding:env(safe-area-inset-top) 16px calc(var(--navh,60px) + 26px);
+    color:var(--ink);font-family:var(--sans);line-height:1.6}
   .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
-  header{padding:22px 2px 6px}
-  .kicker{font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);font-weight:600}
-  h1{font-family:var(--serif);font-weight:600;font-size:1.7rem;margin:.12rem 0 .1rem}
+  .topbar{position:sticky;top:0;z-index:30;display:flex;align-items:center;justify-content:space-between;
+    gap:10px;background:var(--paper);padding:calc(10px + env(safe-area-inset-top)) 2px 10px}
+  .brand{font-family:var(--serif);color:var(--accent);font-weight:600;font-size:1rem}
+  .iconbtn{background:transparent;border:1px solid var(--line);color:var(--muted);border-radius:11px;
+    width:40px;height:40px;font-size:1.05rem;cursor:pointer;font-family:var(--sans);flex:none}
+  .iconbtn:active{background:var(--raise)}
+  h1{font-family:var(--serif);font-weight:600;font-size:1.62rem;margin:6px 0 .1rem}
   .sub{color:var(--muted);font-size:.9rem;margin:0}
   .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:16px 0 6px}
   .stat{background:var(--raise);border-radius:10px;padding:10px 6px;text-align:center}
   .stat .n{font-size:1.35rem;font-weight:600;font-family:var(--serif)}
   .stat .l{font-size:.68rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
-  .btn{width:100%;border:1px solid var(--accent);background:var(--accent);color:#231a05;font-family:var(--sans);font-weight:600;font-size:1rem;padding:12px;border-radius:11px;cursor:pointer}
+  .btn{width:100%;border:1px solid var(--accent);background:var(--accent);color:#231a05;font-family:var(--sans);font-weight:600;font-size:1rem;padding:13px;min-height:48px;border-radius:11px;cursor:pointer;transition:transform .08s ease}
   .btn.ghost{background:transparent;color:var(--accent-strong);border-color:var(--line)}
   .btn.danger{background:transparent;color:var(--bad);border-color:var(--bad)}
   .btn:focus-visible{outline:2px solid var(--accent-strong);outline-offset:2px}
+  .btn:active{transform:scale(.985)}
   .addrow{margin:8px 0 2px}
   .form{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:15px;margin-top:10px}
   .form[hidden]{display:none}
   label{display:block;font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);font-weight:600;margin:10px 0 4px}
-  input,textarea,select{width:100%;font-family:var(--sans);font-size:1rem;padding:10px 12px;border:1px solid var(--line);border-radius:9px;background:var(--raise);color:var(--ink)}
+  /* 16px exactly: anything smaller and iOS zooms the whole page in on focus. */
+  input,textarea,select{width:100%;font-family:var(--sans);font-size:16px;padding:11px 12px;min-height:46px;border:1px solid var(--line);border-radius:10px;background:var(--raise);color:var(--ink)}
   input:focus-visible,textarea:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
   textarea{min-height:64px;resize:vertical;line-height:1.5}
   .two{display:flex;gap:8px} .two>div{flex:1}
   .list{display:flex;flex-direction:column;gap:10px;margin-top:14px}
-  .book{display:flex;gap:13px;align-items:flex-start;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px 15px;cursor:pointer}
+  .book{display:flex;gap:13px;align-items:flex-start;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px 15px;cursor:pointer;transition:transform .08s ease}
   .book:hover{border-color:var(--accent)}
+  .book:active{transform:scale(.99);background:var(--raise)}
   .spine{width:6px;align-self:stretch;border-radius:4px;background:var(--accent);flex:none}
   .spine.finished{background:var(--good)} .spine.want{background:var(--faint)}
   .bmain{flex:1;min-width:0}
@@ -65,13 +82,15 @@
   .stars .off{color:var(--line)}
   .empty{text-align:center;color:var(--faint);font-size:.9rem;padding:26px 10px}
   /* detail */
-  .back{background:transparent;border:0;color:var(--accent-strong);font-weight:600;font-size:.92rem;cursor:pointer;padding:6px 2px;font-family:var(--sans)}
-  .dethead{font-family:var(--serif);font-weight:600;font-size:1.7rem;line-height:1.2;margin:6px 0 2px}
-  .rate{display:flex;gap:4px;margin-top:4px}
-  .rate button{background:transparent;border:0;font-size:1.5rem;color:var(--line);cursor:pointer;padding:0;line-height:1}
+  .back{background:transparent;border:0;color:var(--accent-strong);font-weight:600;font-size:.95rem;cursor:pointer;padding:11px 2px;min-height:44px;font-family:var(--sans)}
+  .dethead{font-family:var(--serif);font-weight:600;font-size:1.62rem;line-height:1.2;margin:2px 0 2px}
+  .rate{display:flex;gap:2px;margin-top:4px}
+  .rate button{background:transparent;border:0;font-size:1.6rem;color:var(--line);cursor:pointer;line-height:1;
+    min-width:44px;min-height:44px;display:flex;align-items:center;justify-content:center}
   .rate button.on{color:var(--star)}
   .segs{display:flex;gap:6px;margin-top:4px}
-  .segs button{flex:1;border:1px solid var(--line);background:var(--surface);color:var(--muted);font-family:var(--sans);font-weight:600;font-size:.82rem;padding:8px 4px;border-radius:9px;cursor:pointer}
+  .segs button{flex:1;border:1px solid var(--line);background:var(--surface);color:var(--muted);font-family:var(--sans);font-weight:600;font-size:.82rem;padding:12px 4px;min-height:44px;border-radius:10px;cursor:pointer}
+  .segs button:active{background:var(--raise)}
   .segs button.on{background:var(--accent-tint);border-color:var(--accent);color:var(--accent-strong)}
   .sec{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:15px;margin-top:14px}
   .sec h3{font-family:var(--serif);font-size:1.15rem;margin:0 0 4px;font-weight:600}
@@ -82,25 +101,45 @@
   .note .ndate{font-size:.72rem;color:var(--faint)}
   .note .ntext{font-size:.96rem;margin-top:5px;white-space:pre-wrap;word-wrap:break-word}
   .note .nrm{background:transparent;border:0;color:var(--faint);cursor:pointer;font-size:.8rem;margin-top:4px;padding:0}
-  /* tabs + mentor chat */
-  .tabs{display:flex;gap:8px;margin:14px 0 4px}
-  .tab{flex:1;background:var(--surface);border:1px solid var(--line);color:var(--muted);
-    font-family:var(--sans);font-weight:600;font-size:.92rem;padding:11px;border-radius:12px;cursor:pointer}
-  .tab.on{background:var(--accent-tint);border-color:var(--accent);color:var(--accent-strong)}
-  .chat{display:flex;flex-direction:column;gap:10px;min-height:46vh;max-height:62vh;overflow-y:auto;
-    padding:14px 2px 6px}
-  .msg{max-width:86%;padding:11px 14px;border-radius:15px;font-size:.96rem;line-height:1.5;white-space:pre-wrap;word-wrap:break-word}
+  /* ---- bottom tab bar ----
+     Always on screen, the way an app's is. The switch used to live at the top of the page
+     and scrolled away, so finishing a conversation left you with no visible way back to
+     the library. A fixed bar can't get lost. */
+  :root{--navpad:var(--navh,60px)}
+  .kb{--navpad:0px}                      /* keyboard up: the bar is gone, don't pad for it */
+  .tabbar{position:fixed;left:0;right:0;bottom:0;z-index:60;display:flex;gap:4px;
+    background:var(--paper);border-top:1px solid var(--line);
+    padding:6px 10px calc(6px + env(safe-area-inset-bottom));
+    transition:transform .18s ease}
+  .tb{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+    background:transparent;border:0;border-radius:13px;padding:7px 4px 5px;min-height:50px;
+    color:var(--faint);font-family:var(--sans);font-size:.7rem;font-weight:600;letter-spacing:.02em;cursor:pointer}
+  .tb .i{font-size:1.28rem;line-height:1;opacity:.5;filter:grayscale(1)}
+  .tb.on{color:var(--accent-strong)}
+  .tb.on .i{opacity:1;filter:none}
+  .tb:active{background:var(--raise)}
+  .kb .tabbar{transform:translateY(120%)}   /* keyboard up — give the screen back */
+
+  /* ---- the mentor: its own screen ---- */
+  #view-chat{position:fixed;inset:0;z-index:50;display:flex;flex-direction:column;
+    background:var(--paper);padding:0 16px;overflow:hidden}
+  #view-chat[hidden]{display:none}
+  .chat-head{flex:none;padding:calc(12px + env(safe-area-inset-top)) 2px 11px;border-bottom:1px solid var(--line)}
+  .chat-head .ch-t{font-family:var(--serif);font-size:1.24rem;font-weight:600;line-height:1.2}
+  .chat-head .ch-s{color:var(--muted);font-size:.82rem}
+  .chat{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;
+    display:flex;flex-direction:column;gap:10px;padding:14px 0 10px}
+  .msg{max-width:86%;padding:11px 14px;border-radius:16px;font-size:.96rem;line-height:1.5;white-space:pre-wrap;word-wrap:break-word}
   .msg.them{background:var(--surface);border:1px solid var(--line);border-bottom-left-radius:5px;align-self:flex-start}
   .msg.me{background:var(--accent);color:#231a05;border-bottom-right-radius:5px;align-self:flex-end;font-weight:500}
-  .msg.ping{align-self:center;background:var(--raise);color:var(--muted);font-size:.82rem;font-family:var(--mono,monospace);
-    text-align:center;max-width:96%}
-  .chat-empty{color:var(--faint);text-align:center;padding:34px 12px;font-size:.94rem}
-  .composer{display:flex;gap:8px;align-items:flex-end;border-top:1px solid var(--line);padding-top:12px}
-  .composer textarea{flex:1;resize:none;max-height:120px;border-radius:12px}
-  .send{flex:none;width:44px;height:44px;border-radius:50%;border:0;background:var(--accent);color:#231a05;
+  .chat-empty{color:var(--faint);text-align:center;padding:34px 12px;font-size:.94rem;margin:auto 0}
+  .composer{flex:none;display:flex;gap:8px;align-items:flex-end;border-top:1px solid var(--line);
+    padding:11px 0 calc(11px + var(--kb,0px) + var(--navpad))}
+  .composer textarea{flex:1;resize:none;max-height:120px;min-height:46px;border-radius:13px}
+  .send{flex:none;width:46px;height:46px;border-radius:50%;border:0;background:var(--accent);color:#231a05;
     font-size:1.2rem;font-weight:700;cursor:pointer}
-  .send:disabled{opacity:.5}
-  .chat-hint{color:var(--faint);font-size:.8rem;text-align:center;margin:10px 0 0}
+  .send:disabled{opacity:.45}
+  .send:active{transform:scale(.94)}
   .dots3 span{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--faint);margin-right:3px;
     animation:bl 1.4s infinite both}
   .dots3 span:nth-child(2){animation-delay:.2s}.dots3 span:nth-child(3){animation-delay:.4s}
@@ -124,37 +163,38 @@
   .sh:hover{border-color:var(--accent)}
   .sh-i{font-size:1.25rem;line-height:1;font-weight:700;color:var(--ink)}
   @media(min-width:560px){.sheet-bg{align-items:center}.sheet{border-radius:20px}}
-  footer{margin-top:20px;display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
-  footer button{background:transparent;border:1px solid var(--line);color:var(--muted);border-radius:9px;padding:8px 12px;font-family:var(--sans);font-weight:600;font-size:.82rem;cursor:pointer}
-  .toast{position:sticky;bottom:14px;margin:14px auto 0;max-width:330px;text-align:center;background:var(--ink);color:var(--paper);border-radius:10px;padding:10px 14px;font-size:.86rem;opacity:0;transition:opacity .3s;pointer-events:none}
+  /* Floats above the tab bar wherever you are — including on the mentor screen. */
+  .toast{position:fixed;left:50%;transform:translateX(-50%);z-index:80;
+    bottom:calc(var(--navh,60px) + 16px);width:max-content;max-width:calc(100% - 40px);text-align:center;
+    background:var(--ink);color:var(--paper);border-radius:11px;padding:10px 16px;font-size:.86rem;
+    opacity:0;transition:opacity .28s;pointer-events:none}
   .toast.show{opacity:1}
-  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>
 
 <div class="wrap">
   <h2 class="sr">A reading journal — your books with stats, and thoughts you can tag to a page.</h2>
-  <header>
-    <div class="kicker">📕 Kept</div>
-    <h1>Your library</h1>
-    <p class="sub">Your books, what you're getting from them, and the thoughts they spark.</p>
+  <header class="topbar">
+    <div class="brand">📕 Kept</div>
+    <button class="iconbtn" id="theme" aria-label="Switch between light and dark">◐</button>
   </header>
 
-  <nav class="tabs" role="tablist">
-    <button class="tab on" id="tab-library" role="tab" aria-selected="true">📚 Library</button>
-    <button class="tab" id="tab-chat" role="tab" aria-selected="false">💬 Mentor</button>
-  </nav>
-
-  <!-- The mentor, on the website. No Telegram needed. -->
-  <section id="view-chat" hidden>
+  <!-- The mentor: a full screen of its own, with the tab bar still visible underneath. -->
+  <section id="view-chat" hidden aria-label="Mentor">
+    <div class="chat-head">
+      <div class="ch-t">Mentor</div>
+      <div class="ch-s">Tell it what you're reading — it remembers, and thinks back.</div>
+    </div>
     <div class="chat" id="chat-log"></div>
     <div class="composer">
-      <textarea id="chat-input" rows="1" placeholder="What are you reading? What struck you?"></textarea>
+      <textarea id="chat-input" rows="1" placeholder="What struck you?"></textarea>
       <button class="send" id="chat-send" aria-label="Send">↑</button>
     </div>
-    <p class="chat-hint">Tell it about the book you're on — it remembers, and it thinks back.</p>
   </section>
 
   <section id="view-library">
+    <h1>Your library</h1>
+    <p class="sub">Your books, what you're getting from them, and the thoughts they spark.</p>
     <div class="stats">
       <div class="stat"><div class="n" id="st-books">0</div><div class="l">Books</div></div>
       <div class="stat"><div class="n" id="st-reading">0</div><div class="l">Reading</div></div>
@@ -183,28 +223,33 @@
          Telegram's WebView broke into invisible text once already. */
       .recs-head{display:flex;align-items:center;justify-content:space-between;margin:22px 2px 10px}
       .recs-head .t{font-weight:600;font-size:1.02rem;font-family:var(--serif);color:var(--ink)}
-      .recs-head button{background:var(--accent-tint);border:1px solid var(--accent);color:var(--accent-strong);border-radius:9px;padding:6px 12px;cursor:pointer;font-family:var(--sans);font-weight:600;font-size:.82rem}
+      .recs-head button{background:var(--accent-tint);border:1px solid var(--accent);color:var(--accent-strong);border-radius:10px;padding:9px 14px;min-height:40px;cursor:pointer;font-family:var(--sans);font-weight:600;font-size:.82rem}
+      .recs-head button:disabled{opacity:.55}
       .rec{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px 15px;margin-bottom:10px;color:var(--ink)}
       .rec .rt{font-weight:600;font-size:1.05rem;font-family:var(--serif);color:var(--ink)}
       .rec .ra{color:var(--muted);font-size:.85rem;margin-top:1px}
       .rec .rw{color:var(--ink);font-size:.88rem;margin-top:7px;line-height:1.45}
-      .rec .rec-add{margin-top:10px;background:var(--accent-tint);border:1px solid var(--accent);border-radius:9px;padding:7px 13px;cursor:pointer;font-family:var(--sans);font-size:.84rem;font-weight:600;color:var(--accent-strong)}
+      .rec .rec-add{margin-top:10px;background:var(--accent-tint);border:1px solid var(--accent);border-radius:10px;padding:10px 14px;min-height:42px;cursor:pointer;font-family:var(--sans);font-size:.84rem;font-weight:600;color:var(--accent-strong)}
+      .rec .rec-add:active{background:var(--accent);color:#231a05}
       .recs-note{color:var(--faint);font-size:.78rem;margin:2px 2px 0}
       .recs-loading{color:var(--muted);font-size:.9rem;padding:8px 2px}
     </style>
-    <div id="recs" hidden>
+    <!-- Always on the page, even before there are any picks: this whole block used to be
+         hidden until recommendations existed, so a new reader never saw it — or the button
+         that would have generated them. -->
+    <div id="recs">
       <div class="recs-head"><span class="t">Recommended next</span><button id="recs-refresh" type="button">↻ New picks</button></div>
       <div id="recs-list"></div>
-      <div class="recs-note">Chosen for you — from your profile, goals, and what you've read.</div>
+      <div class="recs-note">Chosen for you — from what you read and what you tell the mentor.</div>
     </div>
   </section>
 
   <section id="view-book" hidden></section>
 
-  <footer>
-    <button id="export">Copy for Claude</button>
-    <button id="theme">Light / dark</button>
-  </footer>
+  <nav class="tabbar" role="tablist">
+    <button class="tb on" id="tab-library" role="tab" aria-selected="true"><span class="i">📚</span>Library</button>
+    <button class="tb" id="tab-chat" role="tab" aria-selected="false"><span class="i">💬</span>Mentor</button>
+  </nav>
   <div class="toast" id="toast" role="status"></div>
 </div>
 
@@ -235,8 +280,12 @@ async function pushBooks(){
 }
 const save=()=>{
   localStorage.setItem(KEY,JSON.stringify(state));
-  clearTimeout(syncTimer); syncTimer=setTimeout(pushBooks,600);
+  clearTimeout(syncTimer); syncTimer=setTimeout(()=>{syncTimer=null;pushBooks();},600);
 };
+/* Send a pending edit now instead of in 600ms — used before handing the shelf to the
+   mentor, and when the app goes to the background mid-edit. */
+function flushSaves(){ if(syncTimer){ clearTimeout(syncTimer); syncTimer=null; return pushBooks(); } }
+addEventListener("visibilitychange",()=>{ if(document.visibilityState==="hidden") flushSaves(); });
 async function loadBooks(){
   try{
     const r=await api("/api/books");
@@ -484,22 +533,6 @@ $("ab-save").onclick=()=>{
   $("addbook").hidden=true; renderLibrary(); toast("Book added");
 };
 
-$("export").onclick=()=>{
-  if(!state.books.length){toast("No books to copy yet");return;}
-  const d=new Date().toISOString().slice(0,10);
-  let txt=`Reading journal — ${d}\n\nBOOKS:\n`;
-  for(const b of state.books){
-    const prog=b.total?`p.${b.page||0}/${b.total}`:(b.page?`p.${b.page}`:"");
-    txt+=`- ${b.title}${b.author?` by ${b.author}`:""} — ${STATUS[b.status]}${prog?`, ${prog}`:""}${b.rating?`, ${b.rating}/5`:""}\n`;
-  }
-  const withNotes=state.books.filter(b=>b.notes&&b.notes.length);
-  if(withNotes.length){
-    txt+=`\nTHOUGHTS:\n`;
-    for(const b of withNotes) for(const n of b.notes) txt+=`- [${b.title}${n.page?` p.${n.page}`:""}] ${n.text}\n`;
-  }
-  txt+=`\nPull the key vocabulary and ideas from these into my word bank / knowledge, tell me if any book is worth a re-read, and let's discuss.`;
-  navigator.clipboard.writeText(txt).then(()=>toast("Copied — paste it to your coach"),()=>toast("Copy failed — long-press to select"));
-};
 $("theme").onclick=()=>{
   const cur=document.documentElement.getAttribute("data-theme");
   const next=cur==="dark"?"light":cur==="light"?"dark":(matchMedia("(prefers-color-scheme: dark)").matches?"light":"dark");
@@ -516,7 +549,7 @@ loadBooks();
 
   function bubble(role,text){
     const d=document.createElement("div");
-    d.className="msg "+(role==="user"?"me":role==="ping"?"ping":"them");
+    d.className="msg "+(role==="user"?"me":"them");
     d.textContent=text; log.appendChild(d);
     log.scrollTop=log.scrollHeight; return d;
   }
@@ -553,8 +586,9 @@ loadBooks();
       if(r.status===401){ bubble("coach","Please sign in again."); location.href="/app"; return; }
       const d=await r.json();
       bubble("coach", d.reply || "…");
-      (d.pings||[]).forEach(p=>bubble("ping",p));
-      loadBooks();                     // the mentor may have started a book for them
+      // The mentor can put a book on their shelf mid-conversation — pull the library back
+      // in so it's already there when they switch tabs.
+      loadBooks();
     }catch(e){ t.remove(); bubble("coach","Couldn't reach the mentor — try again."); }
     finally{ busy=false; send.disabled=false; input.focus(); }
   }
@@ -562,29 +596,69 @@ loadBooks();
   input.addEventListener("keydown",e=>{ if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();submit();} });
   input.addEventListener("input",()=>{ input.style.height="auto"; input.style.height=Math.min(input.scrollHeight,120)+"px"; });
 
+  /* The chat is a fixed full-screen layer, so the page behind it must not scroll or
+     rubber-band underneath. Remember where they were and put them back. */
+  let parkedScroll=0;
   function tab(which){
     const chat=which==="chat";
     $("tab-chat").classList.toggle("on",chat); $("tab-library").classList.toggle("on",!chat);
     $("tab-chat").setAttribute("aria-selected",chat); $("tab-library").setAttribute("aria-selected",!chat);
     $("view-chat").hidden=!chat;
     $("view-library").hidden=chat||openId!==null;
-    if(chat){ $("view-book").hidden=true; loadHistory(); input.focus(); }
-    else if(openId===null){ renderLibrary(); }
+    if(chat){
+      parkedScroll=window.scrollY;
+      document.documentElement.classList.add("chatting");
+      // Flush any half-saved edit BEFORE the mentor can touch the shelf. The library syncs
+      // as one whole document, so a debounced push landing after the mentor added a book
+      // would overwrite it with our older copy.
+      flushSaves();
+      $("view-book").hidden=true; loadHistory();
+    }else{
+      document.documentElement.classList.remove("chatting");
+      if(openId===null) renderLibrary();
+      window.scrollTo(0,parkedScroll);
+    }
   }
   $("tab-chat").onclick=()=>tab("chat");
   $("tab-library").onclick=()=>{ openId=null; tab("library"); };
+
+  /* ---- making it sit right on a phone ----
+     The tab bar's real height drives the padding everywhere else, and the on-screen
+     keyboard gets out of its own way: the bar slides down, the composer rides up. */
+  const bar=document.querySelector(".tabbar");
+  const measure=()=>document.documentElement.style.setProperty("--navh",bar.offsetHeight+"px");
+  measure();
+  addEventListener("resize",measure);
+  if(window.ResizeObserver) new ResizeObserver(measure).observe(bar);
+
+  const vv=window.visualViewport;
+  if(vv){
+    const onVV=()=>{
+      const kb=Math.max(0,Math.round(innerHeight-vv.height-vv.offsetTop));
+      document.documentElement.style.setProperty("--kb",kb+"px");
+      document.documentElement.classList.toggle("kb",kb>90);
+      if(kb>90) log.scrollTop=log.scrollHeight;
+    };
+    vv.addEventListener("resize",onVV); vv.addEventListener("scroll",onVV); onVV();
+  }
 })();
 
 /* ---- Recommended next (live, personal) ---- */
 let recData=[];
+/* The panel is always on the page and always says something. It used to hide itself
+   whenever recommendations failed or hadn't been generated — which, for a brand-new
+   reader, was always: they never saw the picks OR the button to ask for them. */
 async function loadRecs(refresh){
+  const list=$("recs-list"),btn=$("recs-refresh");
+  const msg=t=>{list.innerHTML=`<div class="recs-loading">${t}</div>`;};
+  btn.disabled=true; msg(refresh?"Choosing new picks…":"Choosing books for you…");
   try{
-    const el=$("recs"),list=$("recs-list");
-    if(refresh){el.hidden=false;list.innerHTML='<div class="recs-loading">Choosing new picks…</div>';}
     const r=await api("/api/bookrecs"+(refresh?"?refresh=1":""));
-    if(!r.ok) return;
+    if(!r.ok){ msg("Couldn't load picks — tap ↻ New picks to try again."); return; }
     const data=await r.json();
-    if(!Array.isArray(data.recs)||!data.recs.length) return;
+    if(!Array.isArray(data.recs)||!data.recs.length){
+      msg("No picks yet — tap ↻ New picks, or tell the mentor what you like."); return;
+    }
     recData=data.recs;
     list.innerHTML=recData.map((x,i)=>`<div class="rec">
       <div class="rt">${esc(x.title)}</div>
@@ -598,8 +672,8 @@ async function loadRecs(refresh){
       state.books.push({id:uid(),title:x.title,author:x.author||"",total:null,page:0,status:"want",rating:0,notes:[],started:Date.now(),updated:Date.now()});
       save();renderStats();renderLibrary();toast("Added to Want to read");
     });
-    el.hidden=false;
-  }catch(e){}
+  }catch(e){ msg("Couldn't load picks — tap ↻ New picks to try again."); }
+  finally{ btn.disabled=false; }
 }
 $("recs-refresh").onclick=()=>loadRecs(true);
 loadRecs(false);

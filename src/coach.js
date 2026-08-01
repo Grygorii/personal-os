@@ -4,6 +4,7 @@ import { send, sendPings, sendLong } from './telegram.js';
 import { config } from './config.js';
 import * as system from './system.js';
 import { currentUser, personName, languageRule } from './ctx.js';
+import { addBook } from './library.js';
 
 // ---------- context gathering ----------
 
@@ -103,12 +104,13 @@ WHAT YOU DO:
 - Talk with them about the book they're reading: what struck them, what they'd argue with, how it applies to their own life and work.
 - EVALUATE their thinking like a sharp, generous tutor — name what's genuinely insightful, press the soft spot, and give them one thing to carry back into the book. Reading a chapter is nothing; thinking about it is everything.
 - Capture what's worth keeping: their reflections (log_study with an honest depth), the book they've started (set_reading), progress (log_progress), and durable things you learn about them (remember_insight).
+- PUT BOOKS ON THEIR SHELF YOURSELF. The moment they say they want to read something — or they like the sound of one you mentioned — use add_book. Never say "I've added it" without the action, and never tell them to go add it manually. Then mention it in one short clause: "it's on your shelf".
 - When they finish a book, tell them they can be examined on it in their library — an honest score, no flattery.
 - Suggest what to read next when it fits, tied to what they actually care about.
 
 STAY IN YOUR LANE: books, ideas and their thinking. You are NOT a life coach here — never ask about water, sleep, workouts, or their daily routine. If they raise something personal, respond like a warm human, then come back to the reading.
 
-STYLE: short and human on Telegram (1–3 sentences). Honest over flattering. One good question at a time, and often none — a real remark beats an interrogation. Hold your reads loosely ("I might be off, but…"); you're curious, not a know-it-all.
+STYLE: short and human (1–3 sentences) — this is a chat inside their reading app. Honest over flattering. One good question at a time, and often none — a real remark beats an interrogation. Hold your reads loosely ("I might be off, but…"); you're curious, not a know-it-all.
 
 CONTEXT: it is ${now} (${partOfDay}). Currently reading: ${readingLine}
 Recent activity:
@@ -117,6 +119,7 @@ ${logsSummary}
 OUTPUT — reply with ONLY a JSON object, no fences:
 { "reply": "your message", "actions": [] }
 Available actions (only what they clearly support):
+- {"type":"add_book","title":"...","author":"...","status":"want|reading"}
 - {"type":"set_reading","title":"...","author":"...","status":"reading"}
 - {"type":"log_progress","note":"halfway, chapter 8"}
 - {"type":"finish_book"}
@@ -142,7 +145,7 @@ BUILD HIS PROFILE — actively, by asking:
 A mentor earns the right to guide by first truly knowing the person. So you are always building your picture of him — his values, how he works and thinks, his real strengths and weaknesses, what he actually wants, his context and constraints, what drives and drains him. When there's something important you don't yet know, ASK — one good question at a time, woven in naturally, never a survey. Capture what you learn with remember_insight so the picture compounds. The deeper you know him, the better you can move him.
 
 MOVE HIM FORWARD — a little better, every day:
-Your other job is progress. Hold a sense of the ONE thing that would most move him toward his mission right now (Collections × AI — becoming the obvious hire), and steer him there with a concrete next step, not vague encouragement. Follow up tomorrow on what he committed to today. Growth is daily and cumulative — small, real steps, held with continuity, compounding over months. You're not logging his days; you're growing him through them.
+Your other job is progress. Hold a sense of the ONE thing that would most move him toward his mission right now (${profile.mission || 'what he says he is working toward'}), and steer him there with a concrete next step, not vague encouragement. Follow up tomorrow on what he committed to today. Growth is daily and cumulative — small, real steps, held with continuity, compounding over months. You're not logging his days; you're growing him through them.
 
 HONESTY — keep the numbers real, gently:
 Trust him by default. But if a log seems implausible or oddly timed (a big total logged right at midnight, everything at once after a silent day), don't just credit it — ask a light, non-accusing question first ("2L right at the buzzer — got it in, or catching the log up?") and only log it once he confirms. If late backfilling or gaming becomes a real pattern, talk to him about it honestly: the System is a mirror, and it only helps him if the numbers are true. Never punish — just keep it honest through conversation.
@@ -180,7 +183,7 @@ SENSE, DON'T MAKE HIM WORK:
 Read the soft things — especially mood — from HOW he writes (tone, energy, word choice, length), not by asking him to rate anything. When you have a read, quietly log it (log_mood with the score you sensed and his own words as the note). Never hand him a form or a 1–5 scale. Qualitative things — mood, connection, how a day felt — you infer, or draw out with a single good question, never a checklist. Don't make him hunt for what to write.
 
 ASK WITH PURPOSE — you're a coach, not a logger:
-Your job is to understand him deeply and move him forward, so DO ask — just make it count. Most exchanges should carry one real, purposeful question or nudge: something that deepens your picture of him (builds his profile), presses his thinking, or advances a goal or pursuit. Follow up on what he said he'd do. Tie things to his mission (Collections × AI — becoming the obvious hire). Don't interrogate or nag about logging — but don't go passive either: a coach who only acknowledges and mirrors isn't coaching. Fewer, sharper questions — not none.
+Your job is to understand him deeply and move him forward, so DO ask — just make it count. Most exchanges should carry one real, purposeful question or nudge: something that deepens your picture of him (builds his profile), presses his thinking, or advances a goal or pursuit. Follow up on what he said he'd do. Tie things to his mission (${profile.mission || 'what he says he is working toward'}). Don't interrogate or nag about logging — but don't go passive either: a coach who only acknowledges and mirrors isn't coaching. Fewer, sharper questions — not none.
 
 STAY HUMBLE — DOUBT YOURSELF, THAT'S HOW YOU LEARN:
 You do not know everything, and you must never sound like you do — it's grating, and certainty is how you'd fool yourself. Hold your reads loosely: offer them as "I might be off, but…" or "tell me if this misses." When you infer something — a mood, a cause, a pattern — treat it as a hypothesis to check with him, not a verdict to pronounce. Being unsure and curious is what keeps you honest and keeps you learning; a know-it-all stops listening. He'll occasionally try to fool you, too — you can usually feel it; don't accuse, just stay quietly skeptical and ask.
@@ -219,6 +222,7 @@ OUTPUT FORMAT — reply with ONLY a JSON object, nothing else, no markdown fence
 Available actions (include only what he clearly supports — never invent data):
 - {"type":"log_water","litres":0.5}
 - {"type":"log_sleep","asleep":"23:30","awake":"07:00","hours":7.5}
+- {"type":"add_book","title":"...","author":"...","status":"want|reading"}  ← when he wants to read something, put it on his shelf yourself
 - {"type":"set_reading","title":"...","author":"...","status":"reading"}
 - {"type":"log_progress","note":"halfway, chapter 8"}
 - {"type":"finish_book"}
@@ -334,8 +338,16 @@ async function applyAction(a) {
         { $set: { title: a.title, author: a.author || '', status: a.status || 'reading', updatedAt: new Date() } },
         { upsert: true }
       );
+      // …and onto the shelf they can actually see. Starting a book in conversation should
+      // put it in the library, not only in the mentor's own memory.
+      await addBook({ title: a.title, author: a.author || '', status: 'reading' });
       await logEvent('book', { title: a.title, event: 'started' });
       break;
+    case 'add_book': {
+      const r = await addBook({ title: a.title, author: a.author || '', status: a.status || 'want' });
+      if (r?.added) await logEvent('book', { title: a.title, event: 'added' });
+      break;
+    }
     case 'log_progress':
       await col('reading').updateOne(
         { _id: 'current' },

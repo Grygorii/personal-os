@@ -38,8 +38,12 @@ export async function send(text, chatId = defaultChat()) {
 }
 
 // Send a batch of System "ping" lines as a monospaced block (no-op if empty).
+// The System — XP, levels, ranks, quests, streaks — belongs to the owner's full life OS.
+// A book reader signed up for a library and a mentor; firing "⟦ LEVEL UP ⟧" at them is a
+// different product talking. It all still runs, it just stays quiet.
 export async function sendPings(pings, chatId = defaultChat()) {
   if (!pings || !pings.length) return;
+  if (currentUser()?.product === 'books') return;
   await send('```\n' + pings.join('\n') + '\n```', chatId);
 }
 
