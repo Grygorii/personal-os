@@ -69,6 +69,23 @@ const ASSETS = {
   '/og.png': { file: 'og.png', type: 'image/png' },
 };
 
+// ---- did anyone actually come? ----
+// The admin page can only show people who SIGNED IN, so "nothing is happening" has two very
+// different causes — nobody clicked, or people clicked and left at the sign-in screen — and
+// they need opposite fixes. This is the smallest thing that can tell them apart: one integer
+// per day per page. No cookie, no identifier, no path, nothing about any person; you cannot
+// reconstruct a visitor from a counter. Link-preview scrapers are counted separately, so
+// "LinkedIn fetched the page but no humans followed" is visible as itself.
+const UA_BOT = /bot|crawl|spider|slurp|preview|facebookexternalhit|linkedinbot|whatsapp|telegram|slackbot|discord|embed|curl|wget|python-requests|headless/i;
+
+function countVisit(page, ua) {
+  const day = new Date().toISOString().slice(0, 10);
+  const kind = UA_BOT.test(String(ua || '')) ? 'bots' : 'people';
+  rawCol('meta')
+    .updateOne({ _id: `visits:${day}` }, { $inc: { [`${page}.${kind}`]: 1 } }, { upsert: true })
+    .catch(() => {}); // never let counting slow or break a page load
+}
+
 // Verify Telegram Mini App initData (https://core.telegram.org/bots/webapps#validating-data).
 // Returns the parsed user object if the signature is valid, else null.
 const INITDATA_TTL_MS = 24 * 60 * 60 * 1000; // a captured initData must not work forever
@@ -300,11 +317,12 @@ async function saveBooks(books) {
 // Deliberately one page of facts, not a dashboard: who joined, how they arrived, and the
 // only number that matters — did they add a book.
 async function adminPage() {
-  const [people, shares, stats, invites] = await Promise.all([
+  const [people, shares, stats, invites, visits] = await Promise.all([
     rawCol('users').find().sort({ createdAt: -1 }).limit(200).toArray(),
     rawCol('shares').find().sort({ createdAt: -1 }).limit(20).toArray(),
     dbStats().catch(() => null),
     users.listInvites(),
+    rawCol('meta').find({ _id: { $regex: '^visits:' } }).sort({ _id: -1 }).limit(7).toArray(),
   ]);
   const rows = await Promise.all(
     people.map(async (u) => {
@@ -338,8 +356,26 @@ async function adminPage() {
     })
     .join('');
 
+  // A share with no score used to render as "—%", a dash wearing a percent sign. And an
+  // empty share looked identical to a real one, so four test links were indistinguishable
+  // from four people sharing their reading. Show what's actually on the page, and give
+  // every row a delete — the privacy page promises a share can be removed on request, and
+  // until now there was no way to keep that promise.
   const shareRows = shares
-    .map((s) => `<tr><td>${esc(s.title)}</td><td class="dim">${s.score ?? '—'}%</td><td class="dim">${s.views || 0}</td><td class="${s.joins ? 'good' : 'dim'}">${s.joins || 0}</td></tr>`)
+    .map((s) => {
+      const thoughts = (Array.isArray(s.thoughts) ? s.thoughts.length : s.thought ? 1 : 0);
+      const empty = !thoughts && s.score == null;
+      return `<tr>
+      <td>${esc(s.title)}${empty ? ' <span class="dim">(empty)</span>' : ''}</td>
+      <td class="dim">${s.score == null ? '—' : s.score + '%'}</td>
+      <td class="dim">${thoughts || '—'}</td>
+      <td class="dim">${s.views || 0}</td>
+      <td class="${s.joins ? 'good' : 'dim'}">${s.joins || 0}</td>
+      <td class="dim">${joined(s.createdAt)}</td>
+      <td><form method="POST" action="/admin/unshare" style="margin:0">
+        <input type="hidden" name="code" value="${esc(s._id)}">
+        <button class="danger" type="submit">Delete</button></form></td></tr>`;
+    })
     .join('');
 
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">
@@ -422,7 +458,25 @@ ${config.inviteOnly
     </table></div>`
   : ''}
 ${shares.length ? `<h2>Shared results</h2><div class="scroll"><table>
-<tr><th>Book</th><th>Score</th><th>Views</th><th>Joins</th></tr>${shareRows}</table></div>` : ''}
+<tr><th>Book</th><th>Score</th><th>Thoughts</th><th>Views</th><th>Joins</th><th>Made</th><th></th></tr>
+${shareRows}</table></div>` : ''}
+<h2>Who turned up</h2>
+<p class="dim" style="font-size:.86rem;margin:0 0 10px">
+  Everything above counts people who <b>signed in</b>. This counts everyone who loaded a page,
+  so a quiet week can be told apart from a week where people arrived and left at the sign-in
+  screen. One number per day — no cookie, no identifier, nothing about any person.
+  <b>Link previews</b> are the scrapers LinkedIn, WhatsApp and the rest send when your link is
+  posted: they prove the link was shared, not that anyone clicked it.
+</p>
+<div class="scroll"><table>
+<tr><th>Day</th><th>Front page</th><th>Opened the app</th><th>Link previews</th></tr>
+${visits.length
+  ? visits.map((v) => `<tr><td>${esc(String(v._id).slice(7))}</td>
+      <td class="${v.landing?.people ? 'good' : 'dim'}">${v.landing?.people || 0}</td>
+      <td class="${v.app?.people ? 'good' : 'dim'}">${v.app?.people || 0}</td>
+      <td class="dim">${(v.landing?.bots || 0) + (v.app?.bots || 0)}</td></tr>`).join('')
+  : '<tr><td colspan="4" class="dim">Counting starts from this deploy — nothing recorded before it.</td></tr>'}
+</table></div>
 <p class="note">“Added a book” is the number that matters — everything before it is just a visitor.</p>
 </div></body></html>`;
 }
@@ -822,6 +876,7 @@ export function startServer(port = process.env.PORT || 8080) {
     // Signed in → the library. Not signed in → a sign-in screen. Deciding on the server
     // means the installed app never flashes marketing or a wrong screen first.
     if (path === '/app') {
+      countVisit('app', req.headers['user-agent']);
       const sid = readSession(parseCookies(req.headers.cookie).kept_session);
       // A signature alone isn't enough — the account must still exist and be allowed.
       // Otherwise a stale cookie loads the app shell and then every API call 401s, which
@@ -861,7 +916,7 @@ export function startServer(port = process.env.PORT || 8080) {
     // ---- owner's admin ----
     // Who joined, where they came from, and whether they actually did anything. Rendered
     // on the server so there's no API to secure separately; the session must be the owner.
-    if (path === '/admin' || path === '/admin/invite' || path === '/admin/revoke') {
+    if (path === '/admin' || path === '/admin/invite' || path === '/admin/revoke' || path === '/admin/unshare') {
       const sid = readSession(parseCookies(req.headers.cookie).kept_session);
       const me = sid ? await rawCol('users').findOne({ _id: sid }) : null;
       if (!me || me.role !== 'owner') {
@@ -873,17 +928,24 @@ export function startServer(port = process.env.PORT || 8080) {
         );
         return;
       }
-      // Adding and removing invited addresses — plain form posts, so the page needs no JS.
-      if (path === '/admin/invite' || path === '/admin/revoke') {
+      // Invites and share deletion — plain form posts, so the page needs no JS.
+      if (path === '/admin/invite' || path === '/admin/revoke' || path === '/admin/unshare') {
         const raw = await new Promise((resolve) => {
           let d = '';
           req.on('data', (c) => { d += c; if (d.length > 4000) req.destroy(); });
           req.on('end', () => resolve(d));
           req.on('error', () => resolve(''));
         });
-        const email = new URLSearchParams(raw).get('email') || '';
+        const form = new URLSearchParams(raw);
+        const email = form.get('email') || '';
         try {
-          if (path === '/admin/invite') await users.inviteEmail(email, me._id);
+          if (path === '/admin/unshare') {
+            // Taking a public page down. The link 404s immediately after this.
+            const code = form.get('code') || '';
+            if (!REF_CODE.test(code)) throw new Error('bad share code');
+            await rawCol('shares').deleteOne({ _id: code });
+            console.log(`[admin] share ${code} deleted`);
+          } else if (path === '/admin/invite') await users.inviteEmail(email, me._id);
           else await users.revokeEmail(email);
         } catch (e) {
           res.writeHead(302, { Location: '/admin?err=' + encodeURIComponent(e.message) });
@@ -1100,6 +1162,7 @@ export function startServer(port = process.env.PORT || 8080) {
       // The landing page's call-to-action goes to /app, never out to Telegram: a stranger
       // clicking "start" should land in the product, not in a chat client they may not have.
       if (route.public) fragment = fragment.replaceAll('APP_URL', config.appUrl);
+      if (path === '/') countVisit('landing', req.headers['user-agent']);
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
       res.end(wrap(fragment, route.homeBar));
     } catch (err) {
