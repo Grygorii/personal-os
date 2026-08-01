@@ -200,6 +200,21 @@
   details p{color:var(--muted);margin:10px 0 2px;font-size:.95rem}
   footer.site{text-align:center;color:var(--faint);font-size:.82rem;padding:40px 0 60px;border-top:1px solid var(--line)}
   .final{text-align:center;background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:40px 24px}
+  /* ---- movement, kept on a short leash ----
+     A page about reading shouldn't fidget. Two things only: sections rise a little as you
+     reach them, so scrolling feels like it's revealing rather than just moving; and the
+     hero phone breathes, so the page isn't a photograph. Nothing slides, bounces, parallaxes
+     or animates a gradient — that's the costume we're deliberately not wearing.
+     The .reveal class is added by JS, never written in the HTML: if the script fails, the
+     text must still be there. Hiding content behind an animation you can't guarantee is how
+     a page ends up blank. */
+  @media (prefers-reduced-motion:no-preference){
+    .reveal{opacity:0;transform:translateY(16px);
+      transition:opacity .7s cubic-bezier(.2,.7,.3,1),transform .7s cubic-bezier(.2,.7,.3,1)}
+    .reveal.in{opacity:1;transform:none}
+    .hero-shot{animation:breathe 7s ease-in-out infinite}
+    @keyframes breathe{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
+  }
   @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
@@ -261,21 +276,20 @@
          own flex item, so the gap would push the comma away from the name. -->
     <div><a class="byline" href="#maker">
       <img src="/me.jpg" alt="" width="26" height="26" onerror="this.remove()">
-      <span>Built by <u>Grygorii</u>, a reader in Ireland</span>
+      <span>Built by <u>Grygorii</u>, who forgot too many books</span>
     </a></div>
   </header>
 
   <section>
     <div class="kicker">The real reason</div>
     <h2>It was never about time.</h2>
-    <p class="lede">There's a book on your table you haven't opened in a month. You tell yourself you're busy —
-      but you found the hours for worse things. What actually stops you is quieter, and you've probably
-      never said it out loud: <em>somewhere you already know it won't stay.</em></p>
-    <p class="lede">Nine hours for a book you'll have the cover of by Christmas. Put like that, reading stops feeling
-      like building something and starts feeling like pouring water into sand. So the book stays on the table.</p>
-    <p class="lede">And you keep the cover, the mood, maybe one good line — never noticing the rest leave, because
-      feeling like you've read a book is indistinguishable from having kept it. Highlighting doesn't stop it.
-      Nor do note-taking apps. They record the book; they don't put it in you.</p>
+    <p class="lede">There's a book on your table you haven't opened in a month. Not because you're busy —
+      you found the hours for worse things. It's quieter than that: <em>you already know it won't stay.</em></p>
+    <p class="lede">Nine hours, and by Christmas you'll have the cover and nothing else. Put like that, reading
+      stops feeling like building and starts feeling like pouring water into sand.</p>
+    <p class="lede">You keep the cover, the mood, one good line — and never notice the rest go. Feeling like
+      you've read a book is indistinguishable from having kept it. Highlighting doesn't help; notes don't
+      either. They record the book, they don't put it in you.</p>
     <blockquote style="margin-top:22px">
       Being <em>asked</em> is what makes it stick. Psychologists call it the testing effect: retrieving an idea
       fixes it in memory far more firmly than reading it again ever will.
@@ -385,7 +399,7 @@
   <section>
     <div class="kicker">Questions</div>
     <details><summary>Is it free?</summary><p>Free to start, with a daily allowance that grows as you use it. Later you can support it from €3 a month — or connect your own free AI key and keep it free for good.</p></details>
-    <details><summary>Do I need to install anything?</summary><p>No. Sign in with Google and it runs in your browser. If you'd rather have an icon, add it to your home screen and it opens like any other app.</p></details>
+    <details><summary>Do I need to install anything?</summary><p>Not unless you want to. Sign in with Google and it runs in your browser straight away. Adding it to your home screen gives it an icon and opens it like any other app — which is where you'll actually use it, since that's where you read.</p></details>
     <details><summary>What does it actually ask me?</summary><p>Five questions written for the book you just read — two on its core ideas, two on applying them to your own life, and one where you argue with the author. Nothing you could answer from the blurb.</p></details>
     <details><summary>Who can see my books and notes?</summary><p>Only you. Nothing leaves your library unless you share a result, and even then only the book, the score and a thought you pick. You can export or delete everything at any time.</p></details>
     <details><summary>Does it work with any book?</summary><p>Any book, in any language. The exam is written for the specific book you read — fiction, history, business, anything.</p></details>
@@ -411,6 +425,44 @@
       navigator.serviceWorker.register('/sw.js').catch(function () {});
     });
   }
+
+  /* Sections rise as you reach them. The class is applied here rather than in the markup so
+     that a failed script leaves a readable page instead of an empty one. */
+  (function () {
+    if (!window.IntersectionObserver) return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    var els = [].slice.call(document.querySelectorAll('section > *'));
+    els.forEach(function (el, i) { el.classList.add('reveal'); el.style.transitionDelay = (i % 4) * 60 + 'ms'; });
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        if (!e.isIntersecting) return;
+        e.target.classList.add('in');
+        io.unobserve(e.target);          // reveal once; re-animating on every scroll is a tic
+      });
+    }, { rootMargin: '0px 0px -8% 0px', threshold: 0.05 });
+    els.forEach(function (el) { io.observe(el); });
+    // Anything already on screen at load appears immediately — no fade on the first paint.
+    requestAnimationFrame(function () {
+      els.forEach(function (el) {
+        if (el.getBoundingClientRect().top < innerHeight) { el.classList.add('in'); io.unobserve(el); }
+      });
+    });
+  })();
+
+  /* The one number the whole page is about, counted up once. Short, and only on load. */
+  (function () {
+    var el = document.querySelector('.hero-shot .sc');
+    if (!el || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    var target = parseInt(el.textContent, 10);
+    if (!target) return;
+    var t0 = null;
+    requestAnimationFrame(function step(ts) {
+      if (!t0) t0 = ts;
+      var p = Math.min((ts - t0) / 900, 1);
+      el.textContent = Math.round(target * (1 - Math.pow(1 - p, 3))) + '%';
+      if (p < 1) requestAnimationFrame(step);
+    });
+  })();
 
   /* ---- Installing ----
      The button is ALWAYS visible now. It used to hide itself until the browser offered a
