@@ -214,6 +214,45 @@ Reply with ONLY JSON, no fences: {"recs":[{"title":"...","author":"...","why":".
   return { recs, at: new Date() };
 }
 
+// ---- Looking a book up so nobody has to type it twice ----
+// The landing demo has always shown the author appearing on its own when you type a title.
+// The app didn't do it — you typed everything by hand, at the exact step where every reader
+// so far has stopped. Open Library is free and needs no key.
+//
+// Proxied through us rather than called from the browser for three reasons: the CSP stays
+// at connect-src 'self', the reader's IP never reaches a third party (which is what the
+// privacy page promises), and a slow upstream can't hang the page — 6s and we give up.
+async function searchBooks(q) {
+  const query = String(q || '').trim().slice(0, 120);
+  if (query.length < 3) return { results: [] };
+  const url =
+    'https://openlibrary.org/search.json?limit=6&fields=title,author_name,number_of_pages_median,cover_i,first_publish_year&q=' +
+    encodeURIComponent(query);
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 6000);
+  try {
+    const r = await fetch(url, { signal: ctrl.signal, headers: { 'User-Agent': 'Kept/1.0 (+https://readkept.com)' } });
+    if (!r.ok) return { results: [] };
+    const j = await r.json();
+    return {
+      results: (j.docs || [])
+        .map((d) => ({
+          title: String(d.title || '').slice(0, 300),
+          author: d.author_name?.[0] ? String(d.author_name[0]).slice(0, 200) : '',
+          pages: Number(d.number_of_pages_median) || null,
+          cover: Number(d.cover_i) || null,
+          year: Number(d.first_publish_year) || null,
+        }))
+        .filter((b) => b.title)
+        .slice(0, 6),
+    };
+  } catch {
+    return { results: [] }; // upstream down or slow — typing it by hand still works
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // ---- The library: server-side, so it follows the reader across devices ----
 // One document per user holding their whole shelf. A library is small (tens of books),
 // so whole-document sync keeps the client trivial and the data always consistent.
@@ -238,6 +277,7 @@ async function saveBooks(books) {
       page: n.page == null ? null : Number(n.page) || null,
       ts: Number(n.ts) || Date.now(),
     })),
+    cover: b.cover == null ? null : Number(b.cover) || null, // Open Library cover id
     exam: b.exam ? { score: Number(b.exam.score) || 0, ts: Number(b.exam.ts) || Date.now(), verdict: String(b.exam.verdict || '').slice(0, 600) } : null,
     started: Number(b.started) || Date.now(),
     updated: Number(b.updated) || Date.now(),
@@ -556,7 +596,7 @@ function sharePage(s) {
   ${thoughts.length
     ? `<div class="trail">${thoughts
         .map(
-          (t) => `<div class="t">${t.page ? `<span class="p">PAGE ${esc(String(t.page))}</span>` : ''}
+          (t) => `<div class="t">${t.page ? `<span class="p">p.${esc(String(t.page))}</span>` : ''}
       <div class="q">${esc(t.text)}</div></div>`
         )
         .join('')}</div>`
@@ -882,7 +922,7 @@ export function startServer(port = process.env.PORT || 8080) {
     if (
       path === '/api/dashboard' || path === '/api/words' || path === '/api/bookrecs' ||
       path === '/api/bookexam' || path === '/api/bookexam/grade' || path === '/api/books' ||
-      path === '/api/share' || path === '/api/chat'
+      path === '/api/share' || path === '/api/chat' || path === '/api/booksearch'
     ) {
       // Two ways to prove who you are: Telegram's Mini App signature, or a session cookie
       // from signing in on the website. The allowlist then decides if you're allowed in.
@@ -940,6 +980,9 @@ export function startServer(port = process.env.PORT || 8080) {
               .limit(200)
               .toArray();
             return rows.map((r) => ({ word: r.word, note: r.why || r.note || '', count: r.count || 1, source: r.source || 'chat' }));
+          }
+          if (path === '/api/booksearch') {
+            return searchBooks(new URL(req.url, `https://${req.headers.host}`).searchParams.get('q'));
           }
           if (path === '/api/bookrecs') return gatherBookRecs(/[?&]refresh=1/.test(req.url || ''));
           // Exams are the most expensive thing here — generate and grade both run the deep
@@ -1006,6 +1049,24 @@ export function startServer(port = process.env.PORT || 8080) {
       } catch {
         res.writeHead(404, { 'Content-Type': 'text/plain' });
         res.end('not found');
+      }
+      return;
+    }
+    // Book covers, proxied so they load under img-src 'self' and no reader's IP is handed
+    // to a third party. Strictly numeric — this must never become a general image relay.
+    const cover = path.match(/^\/cover\/(\d{1,12})$/);
+    if (cover) {
+      try {
+        const r = await fetch(`https://covers.openlibrary.org/b/id/${cover[1]}-M.jpg`, {
+          headers: { 'User-Agent': 'Kept/1.0 (+https://readkept.com)' },
+        });
+        if (!r.ok) throw new Error('upstream');
+        const buf = Buffer.from(await r.arrayBuffer());
+        res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'public, max-age=2592000, immutable' });
+        res.end(buf);
+      } catch {
+        res.writeHead(404, { 'Content-Type': 'text/plain' });
+        res.end('no cover');
       }
       return;
     }

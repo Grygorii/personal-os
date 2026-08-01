@@ -51,16 +51,33 @@
   .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:16px 0 6px}
   .stat{background:var(--raise);border-radius:10px;padding:10px 6px;text-align:center}
   .stat .n{font-size:1.35rem;font-weight:600;font-family:var(--serif)}
-  .stat .l{font-size:.68rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+  .stat .l{font-size:.73rem;color:var(--muted)}
   .btn{width:100%;border:1px solid var(--accent);background:var(--accent);color:#231a05;font-family:var(--sans);font-weight:600;font-size:1rem;padding:13px;min-height:48px;border-radius:11px;cursor:pointer;transition:transform .08s ease}
   .btn.ghost{background:transparent;color:var(--accent-strong);border-color:var(--line)}
   .btn.danger{background:transparent;color:var(--bad);border-color:var(--bad)}
   .btn:focus-visible{outline:2px solid var(--accent-strong);outline-offset:2px}
   .btn:active{transform:scale(.985)}
   .addrow{margin:8px 0 2px}
+  /* title lookup */
+  .lookup{position:relative}
+  .hits{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:20;background:var(--surface);
+    border:1px solid var(--accent);border-radius:12px;overflow:hidden;box-shadow:0 16px 40px rgba(0,0,0,.4)}
+  .hit{display:flex;gap:11px;align-items:center;width:100%;text-align:left;cursor:pointer;
+    background:transparent;border:0;border-bottom:1px solid var(--line);padding:10px 12px;
+    font-family:var(--sans);color:var(--ink)}
+  .hit:last-child{border-bottom:0}
+  .hit:active,.hit:hover{background:var(--raise)}
+  .hit img{width:34px;height:50px;object-fit:cover;border-radius:4px;flex:none;background:var(--raise)}
+  .hit .noimg{width:34px;height:50px;border-radius:4px;flex:none;background:var(--accent-tint)}
+  .hit .ht{font-size:.92rem;font-weight:600;line-height:1.25}
+  .hit .ha{font-size:.8rem;color:var(--muted)}
+  .hits .searching{padding:11px 13px;color:var(--muted);font-size:.86rem}
+  /* covers on the shelf */
+  .book .cover{width:44px;height:66px;object-fit:cover;border-radius:5px;flex:none;
+    background:var(--raise);box-shadow:0 3px 10px rgba(0,0,0,.3)}
   .form{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:15px;margin-top:10px}
   .form[hidden]{display:none}
-  label{display:block;font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);font-weight:600;margin:10px 0 4px}
+  label{display:block;font-size:.8rem;color:var(--muted);font-weight:600;margin:12px 0 5px}
   /* 16px exactly: anything smaller and iOS zooms the whole page in on focus. */
   input,textarea,select{width:100%;font-family:var(--sans);font-size:16px;padding:11px 12px;min-height:46px;border:1px solid var(--line);border-radius:10px;background:var(--raise);color:var(--ink)}
   input:focus-visible,textarea:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
@@ -76,10 +93,19 @@
   .btitle{font-family:var(--serif);font-weight:600;font-size:1.12rem;line-height:1.25}
   .bauthor{color:var(--muted);font-size:.86rem}
   .bmeta{display:flex;flex-wrap:wrap;gap:6px 12px;margin-top:7px;font-size:.8rem;color:var(--muted);align-items:center}
-  .pill{font-size:.68rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em;padding:3px 8px;border-radius:20px;background:var(--accent-tint);color:var(--accent-strong)}
+  /* A book's status is content, not a label — shouting it in caps next to a serif title
+     reads as an interface barking. Small caps stay only on true micro-labels. */
+  .pill{font-size:.72rem;font-weight:600;padding:3px 9px;border-radius:20px;background:var(--accent-tint);color:var(--accent-strong)}
   .pill.finished{background:var(--good-tint);color:var(--good)} .pill.want{background:var(--raise);color:var(--faint)}
   .stars{color:var(--star);letter-spacing:1px}
   .stars .off{color:var(--line)}
+  /* Two small windows on every book: what you put in, and what came back out. */
+  .bstats{display:flex;gap:7px;margin-top:8px}
+  .bs{display:flex;align-items:baseline;gap:4px;background:var(--raise);border-radius:8px;
+    padding:4px 9px;font-size:.72rem;color:var(--muted);white-space:nowrap}
+  .bs b{font-family:var(--serif);font-size:.95rem;font-weight:600;color:var(--ink)}
+  .bs.good b{color:var(--good)}
+  .bs.idle{color:var(--faint)} .bs.idle b{color:var(--faint)}
   .empty{text-align:center;color:var(--faint);font-size:.9rem;padding:26px 10px}
   /* detail */
   .back{background:transparent;border:0;color:var(--accent-strong);font-weight:600;font-size:.95rem;cursor:pointer;padding:11px 2px;min-height:44px;font-family:var(--sans)}
@@ -101,6 +127,23 @@
   .note .ndate{font-size:.72rem;color:var(--faint)}
   .note .ntext{font-size:.96rem;margin-top:5px;white-space:pre-wrap;word-wrap:break-word}
   .note .nrm{background:transparent;border:0;color:var(--faint);cursor:pointer;font-size:.8rem;margin-top:4px;padding:0}
+  /* quiz */
+  .qcard{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:20px 18px;margin-top:16px}
+  .qthought{font-family:var(--serif);font-size:1.16rem;line-height:1.5;color:var(--ink);
+    border-left:3px solid var(--accent);padding-left:15px;white-space:pre-wrap;word-wrap:break-word}
+  .qpage{display:inline-block;font-size:.66rem;font-weight:700;letter-spacing:.05em;color:var(--accent-strong);
+    background:var(--accent-tint);border-radius:20px;padding:3px 9px;margin-bottom:9px}
+  .qscore{display:flex;justify-content:space-between;align-items:baseline;color:var(--muted);font-size:.82rem;margin-top:16px}
+  .qverdict{display:flex;gap:13px;align-items:center;border-radius:13px;padding:14px 15px;margin-top:16px}
+  .qverdict.right{background:var(--good-tint)} .qverdict.wrong{background:var(--bad-tint)}
+  .qverdict .m{font-size:1.6rem;line-height:1;flex:none}
+  .qverdict .t{font-size:.93rem;line-height:1.4}
+  .qverdict .t b{font-family:var(--serif);font-size:1.06rem;display:block}
+  .qverdict.right .t b{color:var(--good)} .qverdict.wrong .t b{color:var(--bad)}
+  .qempty{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:24px 20px;
+    margin-top:16px;text-align:center;color:var(--muted);font-size:.94rem;line-height:1.6}
+  .qempty b{color:var(--ink);font-family:var(--serif);font-size:1.1rem;display:block;margin-bottom:7px}
+
   /* ---- bottom tab bar ----
      Always on screen, the way an app's is. The switch used to live at the top of the page
      and scrolled away, so finishing a conversation left you with no visible way back to
@@ -223,7 +266,11 @@
     <div class="addrow"><button class="btn" id="add-toggle">＋ Add a book</button></div>
     <div class="form" id="addbook" hidden>
       <label for="ab-title">Title</label>
-      <input id="ab-title" placeholder="e.g. Antifragile">
+      <div class="lookup">
+        <input id="ab-title" placeholder="Start typing — we'll find it" autocomplete="off"
+               role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="ab-hits">
+        <div id="ab-hits" role="listbox" hidden></div>
+      </div>
       <label for="ab-author">Author</label>
       <input id="ab-author" placeholder="e.g. Nassim Taleb">
       <div class="two">
@@ -263,10 +310,19 @@
     </div>
   </section>
 
+  <!-- Guess the book from your own thought. The exam only pays out when you finish a
+       book; this pays out any day you've written something down. -->
+  <section id="view-quiz" hidden>
+    <h1>Where did this come from?</h1>
+    <p class="sub">One of your own thoughts. Name the book it came out of.</p>
+    <div id="quiz-body"></div>
+  </section>
+
   <section id="view-book" hidden></section>
 
   <nav class="tabbar" role="tablist">
     <button class="tb on" id="tab-library" role="tab" aria-selected="true"><span class="i">📚</span>Library</button>
+    <button class="tb" id="tab-quiz" role="tab" aria-selected="false"><span class="i">🧠</span>Quiz</button>
     <button class="tb" id="tab-chat" role="tab" aria-selected="false"><span class="i">💬</span>Mentor</button>
   </nav>
   <div class="toast" id="toast" role="status"></div>
@@ -339,16 +395,24 @@ function renderLibrary(){
   const books=[...state.books].sort((a,b)=>(order[a.status]-order[b.status])||(b.updated||0)-(a.updated||0));
   list.innerHTML=books.map(b=>{
     const prog=b.total?`p.${b.page||0}/${b.total}`:(b.page?`p.${b.page}`:"");
-    const nc=b.notes&&b.notes.length?`${b.notes.length} thought${b.notes.length>1?"s":""}`:"";
+    const nc=(b.notes||[]).length;
     return `<div class="book" data-id="${b.id}">
-      <span class="spine ${b.status}"></span>
+      ${b.cover
+        ? `<img class="cover" src="/cover/${b.cover}" alt="" loading="lazy"
+             onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'spine ${b.status}'}))">`
+        : `<span class="spine ${b.status}"></span>`}
       <div class="bmain">
         <div class="btitle">${esc(b.title)}</div>
         ${b.author?`<div class="bauthor">${esc(b.author)}</div>`:""}
         <div class="bmeta"><span class="pill ${b.status}">${STATUS[b.status]}</span>
           ${b.rating?`<span class="stars">${stars(b.rating)}</span>`:""}
-          ${b.exam?`<span class="pill" style="background:var(--good-tint);color:var(--good)">🎓 ${b.exam.score}%</span>`:""}
-          ${prog?`<span>${prog}</span>`:""}${nc?`<span>${nc}</span>`:""}</div>
+          ${prog?`<span>${prog}</span>`:""}</div>
+        <div class="bstats">
+          <span class="bs ${nc?"":"idle"}"><b>${nc}</b> thought${nc===1?"":"s"}</span>
+          ${b.exam
+            ? `<span class="bs good"><b>${b.exam.score}%</b> exam</span>`
+            : `<span class="bs idle"><b>✕</b> not tested</span>`}
+        </div>
       </div></div>`;
   }).join("");
   list.querySelectorAll(".book").forEach(el=>el.onclick=()=>openBook(el.dataset.id));
@@ -574,7 +638,7 @@ function shareBook(id){
     $("pick-list").innerHTML = notes.length
       ? notes.map(n=>`<button class="pick ${chosen.has(n.i)?"on":""}" data-i="${n.i}" type="button">
           <span class="box">✓</span>
-          <span class="pt">${n.page?`<span class="pp">PAGE ${esc(String(n.page))}</span>`:""}${esc(n.text)}</span>
+          <span class="pt">${n.page?`<span class="pp">p.${esc(String(n.page))}</span>`:""}${esc(n.text)}</span>
         </button>`).join("")
       : '<div class="sheet-empty">No thoughts saved for this book yet.</div>';
     $("pick-score").innerHTML = b.exam
@@ -659,14 +723,66 @@ function openShareSheet({title,text,url}){
 
 function patch(id,p){const b=state.books.find(x=>x.id===id);if(!b)return;Object.assign(b,p,{updated:Date.now()});save();}
 
-$("add-toggle").onclick=()=>{const f=$("addbook");f.hidden=!f.hidden;if(!f.hidden)$("ab-title").focus();};
+/* ---- Finding the book instead of typing it ----
+   Adding the first book is where every reader so far has stopped, and the landing page has
+   always shown the author filling itself in. Type three letters and pick the book: title,
+   author, page count and cover all arrive together. Typing it by hand still works exactly
+   as before — the lookup can fail, be slow, or not know the book, and none of that is
+   allowed to block anyone. */
+let pickedCover=null;
+function clearAddForm(){
+  $("ab-title").value="";$("ab-author").value="";$("ab-total").value="";$("ab-status").value="reading";
+  pickedCover=null; hideHits();
+}
+function hideHits(){ const h=$("ab-hits"); h.hidden=true; h.innerHTML=""; $("ab-title").setAttribute("aria-expanded","false"); }
+
+(function(){
+  const input=$("ab-title"), box=$("ab-hits");
+  let timer=null, seq=0;
+
+  function show(html){ box.innerHTML=html; box.hidden=false; input.setAttribute("aria-expanded","true"); }
+
+  async function look(){
+    const q=input.value.trim();
+    if(q.length<3){ hideHits(); return; }
+    const mine=++seq;
+    show('<div class="searching">Looking it up…</div>');
+    let hits=[];
+    try{
+      const r=await api("/api/booksearch?q="+encodeURIComponent(q));
+      if(r.ok) hits=(await r.json()).results||[];
+    }catch(e){}
+    if(mine!==seq) return;                       // a later keystroke already won
+    if(!hits.length){ hideHits(); return; }      // nothing found — just let them type
+    box.innerHTML=hits.map((b,i)=>`<button class="hit" type="button" data-i="${i}" role="option">
+      ${b.cover?`<img src="/cover/${b.cover}" alt="" loading="lazy">`:'<span class="noimg"></span>'}
+      <span><span class="ht">${esc(b.title)}</span>
+      <span class="ha">${esc(b.author||"Unknown author")}${b.year?` · ${b.year}`:""}${b.pages?` · ${b.pages}p`:""}</span></span>
+    </button>`).join("");
+    box.hidden=false; input.setAttribute("aria-expanded","true");
+    box.querySelectorAll(".hit").forEach(el=>el.onclick=()=>{
+      const b=hits[+el.dataset.i];
+      input.value=b.title;
+      $("ab-author").value=b.author||"";
+      if(b.pages) $("ab-total").value=b.pages;
+      pickedCover=b.cover||null;
+      hideHits();
+    });
+  }
+
+  input.addEventListener("input",()=>{ pickedCover=null; clearTimeout(timer); timer=setTimeout(look,350); });
+  input.addEventListener("keydown",e=>{ if(e.key==="Escape") hideHits(); });
+  document.addEventListener("click",e=>{ if(!e.target.closest(".lookup")) hideHits(); });
+})();
+
+$("add-toggle").onclick=()=>{const f=$("addbook");f.hidden=!f.hidden;if(!f.hidden)$("ab-title").focus();else hideHits();};
 $("ab-save").onclick=()=>{
   const title=$("ab-title").value.trim(); if(!title){toast("A title, at least");return;}
   const total=parseInt($("ab-total").value,10);
   state.books.push({id:uid(),title,author:$("ab-author").value.trim(),total:isNaN(total)?null:total,page:0,
-    status:$("ab-status").value,rating:0,notes:[],started:Date.now(),updated:Date.now()});
+    status:$("ab-status").value,rating:0,notes:[],cover:pickedCover,started:Date.now(),updated:Date.now()});
   save();
-  $("ab-title").value="";$("ab-author").value="";$("ab-total").value="";$("ab-status").value="reading";
+  clearAddForm();
   $("addbook").hidden=true; renderLibrary(); toast("Book added");
 };
 
@@ -678,6 +794,91 @@ $("theme").onclick=()=>{
 
 renderLibrary();
 loadBooks();
+
+/* ---- Quiz: your own thought, which book was it? ----
+   Entirely local — no model call, no cost, works offline. The material is already yours,
+   so there is nothing to generate and nothing to get wrong about you.
+   Matching is deliberately forgiving: this tests whether the BOOK is still attached to the
+   idea, not whether you can spell the subtitle. */
+const norm=s=>String(s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"")
+  .replace(/[^a-z0-9\s]/g," ").replace(/\b(the|a|an)\b/g," ").replace(/\s+/g," ").trim();
+
+function editDistance(a,b){
+  if(a===b) return 0;
+  const m=a.length,n=b.length; if(!m||!n) return m||n;
+  let prev=[...Array(n+1).keys()],cur=new Array(n+1);
+  for(let i=1;i<=m;i++){
+    cur[0]=i;
+    for(let j=1;j<=n;j++) cur[j]=Math.min(prev[j]+1,cur[j-1]+1,prev[j-1]+(a[i-1]===b[j-1]?0:1));
+    [prev,cur]=[cur,prev];
+  }
+  return prev[n];
+}
+function titleMatches(guess,title){
+  const g=norm(guess),t=norm(title);
+  if(!g||!t) return false;
+  if(g===t) return true;
+  if(g.length>=4&&(t.startsWith(g)||t.includes(g)||g.includes(t))) return true;
+  return editDistance(g,t)<=Math.max(1,Math.round(t.length*0.25));  // typos, not guesses
+}
+
+let quiz={asked:[],right:0,done:0,current:null};
+function quizPool(){
+  const out=[];
+  for(const b of state.books) for(const [i,n] of (b.notes||[]).entries())
+    if(n.text&&n.text.trim().length>15) out.push({book:b,note:n,key:b.id+":"+i});
+  return out;
+}
+function startQuiz(){ quiz={asked:[],right:0,done:0,current:null}; nextQuestion(); }
+
+function nextQuestion(){
+  const body=$("quiz-body"), pool=quizPool();
+  const distinctBooks=new Set(pool.map(p=>p.book.id)).size;
+  // With one book the answer is the only book you own — that isn't a question.
+  if(distinctBooks<2||pool.length<3){
+    body.innerHTML=`<div class="qempty"><b>Not enough to play with yet</b>
+      Save a few thoughts against at least two books, and this turns into a game:
+      your own words come back, and you name where they came from.
+      <div style="margin-top:16px"><button class="btn ghost" id="q-lib">Go to your library</button></div></div>`;
+    $("q-lib").onclick=()=>{ $("tab-library").click(); };
+    return;
+  }
+  let fresh=pool.filter(p=>!quiz.asked.includes(p.key));
+  if(!fresh.length){ quiz.asked=[]; fresh=pool; }          // been through them all — loop
+  const q=fresh[Math.floor(Math.random()*fresh.length)];
+  quiz.current=q; quiz.asked.push(q.key);
+
+  body.innerHTML=`<div class="qcard">
+      ${q.note.page?`<span class="qpage">p.${esc(String(q.note.page))}</span>`:""}
+      <div class="qthought">${esc(q.note.text)}</div>
+    </div>
+    <label for="q-guess" style="margin-top:16px">Which book?</label>
+    <input id="q-guess" placeholder="Type the title…" autocomplete="off" autocapitalize="words">
+    <div style="margin-top:12px"><button class="btn" id="q-check">Check</button></div>
+    <div class="qscore"><span>${quiz.done} answered</span><span>${quiz.right} right</span></div>`;
+
+  const input=$("q-guess");
+  input.focus();
+  input.addEventListener("keydown",e=>{ if(e.key==="Enter"){e.preventDefault();check();} });
+  $("q-check").onclick=check;
+
+  function check(){
+    const guess=input.value.trim();
+    if(!guess){ toast("Have a go — a guess is the point"); return; }
+    const b=quiz.current.book;
+    const ok=titleMatches(guess,b.title);
+    quiz.done++; if(ok) quiz.right++;
+    body.insertAdjacentHTML("beforeend",
+      `<div class="qverdict ${ok?"right":"wrong"}">
+         <span class="m">${ok?"✓":"✕"}</span>
+         <span class="t"><b>${esc(b.title)}</b>${b.author?esc(b.author):""}</span>
+       </div>
+       <div style="margin-top:12px"><button class="btn" id="q-next">Next thought →</button></div>`);
+    input.disabled=true; $("q-check").hidden=true;
+    $("q-next").onclick=nextQuestion;
+    $("q-next").focus();
+  }
+}
 
 /* ---- The mentor, in the app ---- */
 (function(){
@@ -737,26 +938,34 @@ loadBooks();
      rubber-band underneath. Remember where they were and put them back. */
   let parkedScroll=0;
   function tab(which){
-    const chat=which==="chat";
-    $("tab-chat").classList.toggle("on",chat); $("tab-library").classList.toggle("on",!chat);
-    $("tab-chat").setAttribute("aria-selected",chat); $("tab-library").setAttribute("aria-selected",!chat);
-    $("view-chat").hidden=!chat;
-    $("view-library").hidden=chat||openId!==null;
-    if(chat){
+    const isChat=which==="chat", isQuiz=which==="quiz", isLib=which==="library";
+    [['tab-library',isLib],['tab-quiz',isQuiz],['tab-chat',isChat]].forEach(([id,on])=>{
+      $(id).classList.toggle("on",on); $(id).setAttribute("aria-selected",String(on));
+    });
+    $("view-chat").hidden=!isChat;
+    $("view-quiz").hidden=!isQuiz;
+    $("view-library").hidden=!isLib||openId!==null;
+    if(!isLib) $("view-book").hidden=true;
+
+    if(isChat){
       parkedScroll=window.scrollY;
       document.documentElement.classList.add("chatting");
       // Flush any half-saved edit BEFORE the mentor can touch the shelf. The library syncs
       // as one whole document, so a debounced push landing after the mentor added a book
       // would overwrite it with our older copy.
       flushSaves();
-      $("view-book").hidden=true; loadHistory();
+      loadHistory();
     }else{
+      const leavingChat=document.documentElement.classList.contains("chatting");
       document.documentElement.classList.remove("chatting");
-      if(openId===null) renderLibrary();
-      window.scrollTo(0,parkedScroll);
+      if(isQuiz) startQuiz();
+      else if(openId===null) renderLibrary();
+      if(leavingChat) window.scrollTo(0,parkedScroll);
+      else window.scrollTo(0,0);
     }
   }
   $("tab-chat").onclick=()=>tab("chat");
+  $("tab-quiz").onclick=()=>{ openId=null; tab("quiz"); };
   $("tab-library").onclick=()=>{ openId=null; tab("library"); };
 
   /* ---- making it sit right on a phone ----
