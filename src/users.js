@@ -95,7 +95,10 @@ export async function ensureGoogleUser({ sub, name = '', email = '' }) {
     displayName: name,
     role: 'member',
     product: 'books',
-    status: config.multiTenant && config.autoAccept ? 'active' : 'pending',
+    // Signing in on a public website IS the acceptance. Anyone who shouldn't be here was
+    // already turned away by the allowlist above (closed beta), and the moderator can still
+    // block them afterwards.
+    status: 'active',
     tier: 'trial',
     trialEndsAt: new Date(Date.now() + TRIAL_DAYS * DAY),
     tz: config.timezone,
@@ -150,12 +153,17 @@ export async function ensureUser({ chatId, name = '', username = '' }) {
   return doc;
 }
 
-// May this user talk to the bot right now?
+// May this user use the product right now?
+// MULTI_TENANT is a leftover from when this was one person's Telegram bot: it decides
+// whether the BOT answers anyone but the owner. The website is public by definition, so a
+// reader who just signed in with Google must not be refused by a switch about Telegram —
+// that's an invisible second door, and the first one already turned someone away once.
+// INVITE_ONLY is the single switch that closes the website.
 export function isAllowed(user) {
   if (!user) return false;
   if (user.role === 'owner') return true;
-  if (!config.multiTenant) return false; // doors closed until explicitly opened
-  return user.status === 'active';
+  if (user.status !== 'active') return false; // blocked or awaiting approval
+  return String(user._id).startsWith('g:') || config.multiTenant;
 }
 
 export async function approve(chatId, tier = 'trial') {

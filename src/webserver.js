@@ -290,11 +290,18 @@ ${body}
 </table></div>
 <h2>Access</h2>
 <p class="dim" style="font-size:.88rem;margin:0 0 14px">
+  <b>The website</b> —
   ${config.inviteOnly
-    ? '🔒 <b>Closed beta</b> — only the addresses below (plus yours) can sign in. Set <code>INVITE_ONLY=false</code> to open it.'
-    : '🌍 <b>Open</b> — anyone can sign in and use the app. Set <code>INVITE_ONLY=true</code> in Railway to run a closed beta.'}
-  <br>Admin is separate and always owner-only: <b>${esc(config.ownerEmail)}</b>.
-  Nobody else can open this page, however they signed in.
+    ? '🔒 <b>closed beta</b>: only the addresses below (plus yours) can sign in. Set <code>INVITE_ONLY=false</code> in Railway to open it.'
+    : '🌍 <b>open</b>: anyone can sign in with Google and start reading. Set <code>INVITE_ONLY=true</code> in Railway to close it.'}
+  <br><b>The Telegram bot</b> —
+  ${config.multiTenant
+    ? (config.autoAccept
+        ? '🌍 open: it answers anyone who starts it.'
+        : '🔒 approve-first: new people wait until you approve them.')
+    : '🔒 owner only: it ignores everyone but you. (<code>MULTI_TENANT</code> is not <code>true</code>.)'}
+  <br><b>This admin page</b> — always yours alone: <b>${esc(config.ownerEmail)}</b>.
+  Nobody else can open it, however they signed in.
 </p>
 ${config.inviteOnly
   ? `<form method="POST" action="/admin/invite" class="invite">
