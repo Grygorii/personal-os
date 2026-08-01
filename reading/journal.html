@@ -443,6 +443,7 @@ async function startExam(id){
     if(r.status===401){btn.disabled=false;btn.textContent="🎓 Test my knowledge";toast("Sign in to take the exam");location.href="/app";return;}
     if(!r.ok)throw 0;
     const ex=await r.json();
+    if(ex.error){ btn.disabled=false;btn.textContent="🎓 Test my knowledge";toast(ex.message||"Try again tomorrow");return; }
     btn.hidden=true;
     area.innerHTML=`<p class="sub" style="margin:8px 0 4px;color:var(--muted)">Answer in your own words — 2–4 sentences each. Graded honestly: bluff scores low.</p>`+
       ex.questions.map((q,i)=>`<div style="margin-top:12px">

@@ -9,7 +9,19 @@ import { runAs } from './ctx.js';
 import { config } from './config.js';
 
 // Bump on each deploy so we can confirm which build is actually live (read meta.boot).
-const VERSION = 'sheets-1';
+const VERSION = 'hardened-1';
+
+// A rejected promise nobody caught kills the process on modern Node, and Railway restarts
+// it — so the only trace of a whole class of bug was a silent restart. Log it, keep serving.
+// (An uncaught exception leaves state unknown, so that one is still allowed to exit, but at
+// least it says why on the way out.)
+process.on('unhandledRejection', (reason) => {
+  console.error('[fatal] unhandled rejection:', reason instanceof Error ? reason.stack : reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('[fatal] uncaught exception:', err?.stack || err);
+  process.exit(1);
+});
 
 async function main() {
   await connect();

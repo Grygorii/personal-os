@@ -48,6 +48,7 @@ const ROUTES = {
   // '/app' is the product itself and is handled separately (it needs a session gate), so
   // an installed app never opens onto marketing.
   '/': { file: '../webapp/landing.html', public: true },
+  '/privacy': { file: '../webapp/privacy.html', public: true },
   '/hub': { file: '../webapp/home.html' },
   '/home': { file: '../webapp/home.html' },
   '/deck': { file: '../english/study.html', homeBar: true },
@@ -370,7 +371,14 @@ ${shares.length ? `<h2>Shared results</h2><div class="scroll"><table>
 // A public page per shared result, so it opens on WhatsApp, X, LinkedIn, Reddit — anywhere
 // a link goes — carrying a deep link back into the bot. Only what they chose to share is
 // published: the book, the score, and optionally one thought. Never their library.
-const shareCode = () => Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-3);
+// A share link is the only thing protecting what's on that page. The old code was
+// Math.random().toString(36).slice(2,8) plus the last 3 chars of Date.now() — about 31 bits
+// from a non-cryptographic PRNG, with a suffix that is literally the clock (every share
+// made in the same 46 seconds ended in the same three characters). Guessable links were
+// survivable when a share was one line; they are not now that a page carries six personal
+// thoughts the reader chose to send to specific people.
+// 16 hex chars = 64 bits from the CSPRNG. Old 9-char links keep working.
+const shareCode = () => crypto.randomBytes(8).toString('hex');
 
 async function createShare({ title, author, score, verdict, thoughts, thought, name }) {
   const code = shareCode();
@@ -630,9 +638,47 @@ function wrap(fragment, homeBar) {
   );
 }
 
+// The baseline every site is expected to send, and this one sent none of them.
+// The CSP is deliberately tight because the app is entirely self-hosted: the only outside
+// origins it needs are Google's sign-in script and Telegram's Mini App shim. 'unsafe-inline'
+// is unavoidable for now — every page here is a single file with inline <style>/<script> —
+// so the CSP's real job is limiting WHERE anything can be loaded from or sent to.
+// Framing is the one rule that can't be the same everywhere. /admin is a page of one-click
+// POST buttons, so it must never be framed by anyone — but Telegram Web opens the Mini App
+// inside an iframe, so a blanket 'none' would lock the bot's own users out of the app.
+// X-Frame-Options can't express an allowlist, so it's sent only on the pages that deny all.
+// Both policies are constants, so they're built once at load rather than reassembled on
+// every request (including each of Railway's health checks).
+const csp = (frameAncestors) =>
+  [
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-inline' https://accounts.google.com https://telegram.org",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: https://*.googleusercontent.com",
+    "connect-src 'self' https://accounts.google.com",
+    "frame-src https://accounts.google.com",
+    "form-action 'self'",
+    "base-uri 'none'",
+    "object-src 'none'",
+    `frame-ancestors ${frameAncestors}`,
+  ].join('; ');
+
+const CSP_OPEN = csp("'self' https://web.telegram.org https://*.telegram.org");
+const CSP_NO_FRAME = csp("'none'");
+
+function setSecurityHeaders(res, { denyFraming = false } = {}) {
+  res.setHeader('Content-Security-Policy', denyFraming ? CSP_NO_FRAME : CSP_OPEN);
+  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=(), payment=(), interest-cohort=()');
+  if (denyFraming) res.setHeader('X-Frame-Options', 'DENY');
+}
+
 export function startServer(port = process.env.PORT || 8080) {
   const server = http.createServer(async (req, res) => {
     const path = (req.url || '/').split('?')[0].replace(/\/+$/, '') || '/';
+    setSecurityHeaders(res, { denyFraming: path.startsWith('/admin') });
     if (path === '/health') {
       res.writeHead(200, { 'Content-Type': 'text/plain' });
       res.end('ok');
@@ -840,6 +886,14 @@ export function startServer(port = process.env.PORT || 8080) {
         res.end(JSON.stringify({ error: 'unauthorized' }));
         return;
       }
+      // A burst ceiling on the whole API. The Telegram side has had one since the doors
+      // opened; the web side — now the only front door — had none, so a loop in a tab
+      // could hammer Mongo and the model as fast as the network allowed.
+      if (!users.rateLimit(`web:${acct._id}`, 40)) {
+        res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' });
+        res.end(JSON.stringify({ error: 'slow_down' }));
+        return;
+      }
       try {
         // Everything inside runAs reads and writes only this user's data.
         // /api/words: the LIVE word bank — words the tutor caught them missing in chat
@@ -876,7 +930,15 @@ export function startServer(port = process.env.PORT || 8080) {
             return rows.map((r) => ({ word: r.word, note: r.why || r.note || '', count: r.count || 1, source: r.source || 'chat' }));
           }
           if (path === '/api/bookrecs') return gatherBookRecs(/[?&]refresh=1/.test(req.url || ''));
-          if (path === '/api/bookexam') return generateExam(body);
+          // Exams are the most expensive thing here — generate and grade both run the deep
+          // model — and were the one endpoint with no ceiling of any kind. Generating spends
+          // the budget, so it's counted; grading is free, or a reader could be charged for
+          // an exam and then locked out of finishing it.
+          if (path === '/api/bookexam') {
+            const q = await users.consumeExam(acct);
+            if (!q.ok) return { error: 'exam_limit', message: `That's ${q.cap} exams today — it resets tomorrow.` };
+            return generateExam(body);
+          }
           if (path === '/api/bookexam/grade') return gradeExam(body);
           return gatherDashboard();
         });

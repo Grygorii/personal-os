@@ -384,11 +384,35 @@ export function dailyCap(user) {
   return DAILY_CAP[trustLevel(user)] ?? DAILY_CAP[0];
 }
 
+// Exams get their own daily allowance, deliberately separate from messages.
+// They are by far the most expensive thing here — generating AND grading both run on the
+// deep model — and until now they were the ONE endpoint with no metering at all: any
+// signed-in stranger could loop them and spend the owner's API budget without limit. A
+// separate counter means a real reader (who takes one exam per finished book) never feels
+// it, while a script is capped within a minute.
+const EXAM_CAP = { 0: 3, 1: 10, 2: 40 };
+
+// One definition of "a counter that resets at their local midnight", used by both
+// allowances. Written twice, it's two places for the reset rule to drift apart — and a
+// day-boundary rule that quietly drifted is exactly what once left a streak frozen at 14
+// through a dead week.
+function readDailyCounter(user, field) {
+  const today = localNow(user.tz).date;
+  return { today, used: user[field]?.date === today ? user[field].count || 0 : 0 };
+}
+
+export async function consumeExam(user) {
+  const { today, used } = readDailyCounter(user, 'examUsage');
+  const cap = EXAM_CAP[trustLevel(user)] ?? EXAM_CAP[0];
+  if (used >= cap) return { ok: false, used, cap };
+  await col('users').updateOne({ _id: user._id }, { $set: { 'examUsage.date': today, 'examUsage.count': used + 1 } });
+  return { ok: true, used: used + 1, cap };
+}
+
 // Count a message against today's allowance. Also tracks distinct active days, which is
 // what promotes someone from "stranger" to "real reader".
 export async function consumeQuota(user) {
-  const today = localNow(user.tz).date;
-  const used = user.usage?.date === today ? user.usage.count || 0 : 0;
+  const { today, used } = readDailyCounter(user, 'usage');
   const cap = dailyCap(user);
   if (used >= cap) return { ok: false, used, cap, level: trustLevel(user) };
 
