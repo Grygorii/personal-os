@@ -619,8 +619,8 @@ function sharePage(s) {
 
   <p class="pitch">${thoughts.length
     ? 'Read it too?<br><b>See how much of it you kept.</b>'
-    : 'You forget most of what you read.<br><b>Find out if you did.</b>'}</p>
-  <a class="cta" href="${cta}">📕 ${thoughts.length ? 'Add this book & test me' : 'Test me on a book'} →</a>
+    : 'You forget most of what you read.<br><b>Find out how much you kept.</b>'}</p>
+  <a class="cta" href="${cta}">📕 ${thoughts.length ? 'Add this book and test me' : 'Test me on a book'} →</a>
   <div class="foot">Read it. Prove you kept it.</div>
 </div></body></html>`;
 }
