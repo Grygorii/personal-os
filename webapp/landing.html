@@ -113,9 +113,51 @@
   .dot{width:8px;height:8px;border-radius:50%;border:0;background:var(--line);padding:0;cursor:pointer;
     transition:background .3s,width .3s}
   .dot.on{background:var(--accent);width:22px;border-radius:5px}
+  /* ---- App Store idiom ----
+     Borrowed on purpose. Not the look of it — the STRUCTURE: icon, name, one-line
+     subtitle, install button. It is the single most recognisable "this is a real app you
+     can put on your phone" signal there is, and it's the exact screen where people decide
+     to install things. The skin stays ours: paper, ink and a serif. */
+  .appbar{display:flex;align-items:center;gap:13px;text-align:left;
+    background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:13px 15px;
+    max-width:420px;margin:0 auto 30px}
+  .appbar .ico{width:52px;height:52px;border-radius:13px;flex:none}
+  .appbar .meta{flex:1;min-width:0}
+  .appbar .nm{font-family:var(--serif);font-weight:600;font-size:1.06rem;line-height:1.2}
+  .appbar .st{color:var(--muted);font-size:.8rem;line-height:1.35;margin-top:1px}
+  .appbar .get{flex:none;background:var(--accent);color:var(--accent-ink);border:0;border-radius:20px;
+    font-family:var(--sans);font-weight:700;font-size:.82rem;letter-spacing:.03em;
+    padding:8px 18px;min-height:34px;cursor:pointer}
+  .appbar .get:active{transform:scale(.96)}
+
+  /* the product, in a phone, above the fold */
+  .hero-shot{max-width:264px;margin:26px auto 0;background:var(--surface);border:1px solid var(--line);
+    border-radius:26px;padding:9px;box-shadow:0 26px 60px rgba(0,0,0,.5)}
+  .hero-shot .inner{background:var(--paper);border-radius:19px;padding:16px 15px 18px;text-align:left}
+  .hero-shot .bar{display:flex;justify-content:space-between;align-items:center;color:var(--faint);
+    font-size:.6rem;letter-spacing:.08em;text-transform:uppercase;margin-bottom:12px}
+  .hero-shot .bk{font-family:var(--serif);font-size:1.02rem;font-weight:600;line-height:1.2}
+  .hero-shot .au{color:var(--muted);font-size:.76rem;margin-bottom:12px}
+  .hero-shot .sc{font-family:var(--serif);font-size:3.1rem;font-weight:700;color:var(--good);line-height:1}
+  .hero-shot .sl{color:var(--muted);font-size:.72rem;margin-bottom:12px}
+  .hero-shot .th{border-left:2px solid var(--accent);padding-left:10px;font-size:.76rem;
+    color:var(--ink);line-height:1.45}
+  .hero-shot .th b{display:block;color:var(--accent);font-size:.6rem;letter-spacing:.06em;margin-bottom:3px}
+
+  /* who made this */
+  .maker{display:flex;gap:16px;align-items:flex-start;background:var(--surface);
+    border:1px solid var(--line);border-radius:18px;padding:20px;text-align:left}
+  .maker img,.maker .ph{width:76px;height:76px;border-radius:50%;flex:none;object-fit:cover;
+    border:2px solid var(--line);background:var(--raise);
+    display:flex;align-items:center;justify-content:center;font-family:var(--serif);
+    font-size:1.6rem;color:var(--accent)}
+  .maker p{margin:0 0 9px;font-size:.95rem;color:var(--muted)}
+  .maker p:last-child{margin-bottom:0}
+  .maker b{color:var(--ink)}
+  @media(max-width:420px){.maker{flex-direction:column;align-items:center;text-align:center}}
+
   /* install */
   .install-row{margin-top:14px}
-  #install-btn{display:none}
   .ios-help{display:none;background:var(--surface);border:1px solid var(--line);border-radius:14px;
     padding:16px 18px;margin-top:16px;text-align:left;font-size:.93rem;color:var(--muted)}
   .ios-help b{color:var(--ink)}
@@ -151,11 +193,32 @@
 
 <div class="wrap">
   <header>
-    <div class="brand">📕 Kept</div>
+    <div class="appbar">
+      <img class="ico" src="/icon.svg" alt="" width="52" height="52">
+      <div class="meta">
+        <div class="nm">Kept</div>
+        <div class="st">Reading · tests you on the books you finish</div>
+      </div>
+      <button class="get" id="get-btn" type="button">GET</button>
+    </div>
+
     <h1>You finished the book.<br>How much is <em>left</em>?</h1>
-    <p class="sub">Kept reads along with you, then tests you when you turn the last page. Five questions, marked honestly — so you finally know what stayed.</p>
+    <p class="sub">Five questions when you turn the last page, marked honestly. So you finally know what stayed.</p>
+
+    <!-- The payoff, in a phone, before a single word of explanation. -->
+    <div class="hero-shot" aria-hidden="true">
+      <div class="inner">
+        <div class="bar"><span>📕 Kept</span><span>Exam result</span></div>
+        <div class="bk">Atomic Habits</div>
+        <div class="au">James Clear</div>
+        <div class="sc">72%</div>
+        <div class="sl">honest comprehension score</div>
+        <div class="th"><b>PAGE 128</b>Identity comes first — you don't get habits by wanting them, you get them by becoming the person who has them.</div>
+      </div>
+    </div>
+
     <a class="cta" href="/app">Start with your current book →</a>
-    <div class="install-row"><button class="cta ghost" id="install-btn">📲 Install as app</button></div>
+    <div class="install-row"><button class="cta ghost" id="install-btn">📲 Add to your phone</button></div>
     <div class="ios-help" id="ios-help">
       <div id="ios-safari">
         <b>Add Kept to your iPhone</b>
@@ -168,8 +231,15 @@
       <div id="ios-other" hidden>
         <b>Almost — one step first</b>
         <p style="margin:8px 0 0">iPhone only allows this from <b>Safari</b>. Copy the link below,
-        open it in Safari, then tap <b>Install as app</b> again.</p>
+        open it in Safari, then tap <b>Add to your phone</b> again.</p>
         <button class="cta ghost" id="copy-link" style="margin-top:12px;width:100%">Copy readkept.com</button>
+      </div>
+      <div id="desk-help" hidden>
+        <b>Kept lives on your phone</b>
+        <p style="margin:8px 0 0">That's where you read, and where the mentor should be able to
+        reach you. Open <b>readkept.com</b> on your phone and tap <b>Add to your phone</b>.
+        It works fine in this browser too.</p>
+        <button class="cta ghost" id="copy-link-desk" style="margin-top:12px;width:100%">Copy readkept.com</button>
       </div>
     </div>
     <p class="note">Free to start · works on any phone · <a href="#demo" style="color:var(--muted)">see how it works ↓</a></p>
@@ -283,6 +353,21 @@
   </section>
 
   <section>
+    <div class="kicker">Who made this</div>
+    <h2 style="margin-bottom:20px">One person, one honest problem.</h2>
+    <div class="maker">
+      <img src="/me.jpg" alt="Grygorii, who built Kept" width="76" height="76"
+           onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'ph',textContent:'G'}))">
+      <div>
+        <p>Hi — I'm <b>Grygorii</b>. I built Kept because I kept finishing books and, a month
+        later, couldn't tell you what was in them. I'd have sworn I knew. I didn't.</p>
+        <p>No team, no investors. I work in financial services in Ireland and I made the tool
+        I wanted to have.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
     <div class="final">
       <h2>What was the last book you finished?</h2>
       <p class="sub" style="margin-top:12px">Find out how much of it you still have.</p>
@@ -303,24 +388,30 @@
     });
   }
 
-  /* ---- Install button ----
-     Android/Chrome hands us a real install prompt; iOS Safari has no such API, so there we
-     show the exact taps instead. Already installed → the button disappears. */
+  /* ---- Installing ----
+     The button is ALWAYS visible now. It used to hide itself until the browser offered a
+     prompt, which meant the one action we most want was invisible on the platform where
+     it matters most. Every platform gets an answer: a real prompt where one exists, the
+     exact Safari taps on iPhone, and "open it on your phone" on a desktop.
+     Both the GET chip at the top and the button below it do the same thing. */
   (function () {
     var btn = document.getElementById('install-btn');
+    var get = document.getElementById('get-btn');
     var help = document.getElementById('ios-help');
     var deferred = null;
     var standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
     var isIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
-    if (standalone) return;                       // they already have it
+    if (standalone) {                             // they already have it
+      btn.style.display = 'none';
+      if (get) { get.textContent = 'OPEN'; get.onclick = function () { location.href = '/app'; }; }
+      return;
+    }
 
     window.addEventListener('beforeinstallprompt', function (e) {
       e.preventDefault();
       deferred = e;
-      btn.style.display = 'inline-block';
     });
     if (isIos) {
-      btn.style.display = 'inline-block'; // no install API on iOS — offer the steps instead
       // Add to Home Screen exists ONLY in Safari on iOS. In Chrome/Firefox/Edge the option
       // simply isn't there, so send them to Safari rather than let them hunt for it.
       var ua = navigator.userAgent;
@@ -337,7 +428,18 @@
       });
     }
 
-    btn.addEventListener('click', async function () {
+    // No install API and not an iPhone → a desktop. Don't show them iPhone taps.
+    if (!isIos) {
+      document.getElementById('ios-safari').hidden = true;
+      document.getElementById('desk-help').hidden = false;
+      var cd = document.getElementById('copy-link-desk');
+      if (cd) cd.addEventListener('click', function () {
+        navigator.clipboard && navigator.clipboard.writeText('https://readkept.com');
+        cd.textContent = 'Copied — open it on your phone';
+      });
+    }
+
+    async function install() {
       if (deferred) {
         deferred.prompt();
         await deferred.userChoice;
@@ -347,6 +449,10 @@
       }
       help.style.display = help.style.display === 'block' ? 'none' : 'block';
       help.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+    if (get) get.addEventListener('click', install);
+    btn.addEventListener('click', async function () {
+      await install();
     });
     window.addEventListener('appinstalled', function () { btn.style.display = 'none'; });
   })();

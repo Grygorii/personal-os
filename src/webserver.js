@@ -978,6 +978,20 @@ export function startServer(port = process.env.PORT || 8080) {
       );
       return;
     }
+    // The one photo on the site. A fixed path, not a static directory — nothing here should
+    // be able to ask the server for an arbitrary file. Missing is fine: the page falls back
+    // to an initial, so a not-yet-uploaded photo can't leave a broken image behind.
+    if (path === '/me.jpg') {
+      try {
+        const buf = await readFile(fileURLToPath(new URL('../webapp/me.jpg', import.meta.url)));
+        res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'public, max-age=86400' });
+        res.end(buf);
+      } catch {
+        res.writeHead(404, { 'Content-Type': 'text/plain' });
+        res.end('no photo yet');
+      }
+      return;
+    }
     if (path === '/sw.js') {
       // Deliberately minimal: claim control, serve the network. Caching pages that show
       // live personal data would be worse than useless.
