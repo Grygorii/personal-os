@@ -9,13 +9,17 @@ import { runAs } from './ctx.js';
 import { config } from './config.js';
 
 // Bump on each deploy so we can confirm which build is actually live (read meta.boot).
-const VERSION = 'app-feel-1';
+const VERSION = 'reaches-everyone-1';
 
 async function main() {
   await connect();
   await col('meta').updateOne({ _id: 'boot' }, { $set: { version: VERSION, at: new Date() } }, { upsert: true });
   console.log(`[boot] ${VERSION}`);
   await ensureIndexes();
+  // Bring everyone already signed up in line with the rules as they stand today. Shipping
+  // a change only fixes the next person unless something walks back over the existing ones.
+  const fixed = await users.reconcileAccounts();
+  if (Object.keys(fixed).length) console.log('[boot] reconciled accounts:', fixed);
   // Learn our own @username so shared result pages can link back into the bot.
   const me = await getMe();
   if (me?.username) {

@@ -116,12 +116,20 @@ async function gatherDashboard() {
 
 // Personal book recommendations for the Reading journal — generated from his profile,
 // goals, and reading history; cached a week so it costs one model call, not one per open.
+// Bump whenever the prompt below changes in a way that makes old answers wrong. A cached
+// result from an earlier version counts as a miss — otherwise fixing the prompt fixes
+// nothing for the people already holding a week-old answer from the broken one.
+const RECS_PROMPT_VERSION = 2;
+
 async function gatherBookRecs(refresh) {
   const DAY = 86400000;
   // meta is a global collection, so this cache key must carry the user itself.
   const cacheId = `book_recs:${uid()}`;
   const cached = await col('meta').findOne({ _id: cacheId });
-  const fresh = cached?.ts && Date.now() - new Date(cached.ts).getTime() < 7 * DAY;
+  const fresh =
+    cached?.ts &&
+    cached.v === RECS_PROMPT_VERSION &&
+    Date.now() - new Date(cached.ts).getTime() < 7 * DAY;
   if (cached?.recs?.length && fresh && !refresh) return { recs: cached.recs, at: cached.ts };
 
   const [profile, bookLogs, engBooks, library, current] = await Promise.all([
@@ -190,7 +198,7 @@ Reply with ONLY JSON, no fences: {"recs":[{"title":"...","author":"...","why":".
     return { recs: [], at: null, failed: true };
   }
   recs = recs.slice(0, 4).map((r) => ({ title: String(r.title || ''), author: String(r.author || ''), why: String(r.why || '') }));
-  await col('meta').updateOne({ _id: cacheId }, { $set: { ts: new Date(), recs } }, { upsert: true });
+  await col('meta').updateOne({ _id: cacheId }, { $set: { ts: new Date(), v: RECS_PROMPT_VERSION, recs } }, { upsert: true });
   return { recs, at: new Date() };
 }
 

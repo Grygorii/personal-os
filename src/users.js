@@ -166,6 +166,36 @@ export function isAllowed(user) {
   return String(user._id).startsWith('g:') || config.multiTenant;
 }
 
+// ---------- making a fix reach the people already here ----------
+// A user document freezes whatever the rules were on the day it was created. Change a
+// default in code and everyone who signed up before it keeps the old one — the fix ships,
+// and the people it was written for never receive it. This runs on every boot, is
+// idempotent, and only ever moves an account toward what the CURRENT rules say.
+// It must never override a deliberate decision: 'blocked' is the moderator's, not ours.
+export async function reconcileAccounts() {
+  const changed = {};
+
+  // Signed up on the website back when it was gated. Signing in on a public site IS the
+  // acceptance now, so nobody should still be sitting in a waiting room that's been
+  // demolished.
+  const opened = await col('users').updateMany(
+    { _id: { $regex: '^g:' }, status: 'pending' },
+    { $set: { status: 'active', openedAt: new Date() } }
+  );
+  if (opened.modifiedCount) changed.webAccountsOpened = opened.modifiedCount;
+
+  // `product` decides which mentor they meet. A member without it falls through to the
+  // OWNER's prompt — his mission, his shop, his life — which is the worst version of the
+  // multi-tenant bug we keep having to kill. Default anyone who predates the field.
+  const scoped = await col('users').updateMany(
+    { role: { $ne: 'owner' }, product: { $exists: false } },
+    { $set: { product: 'books' } }
+  );
+  if (scoped.modifiedCount) changed.productDefaulted = scoped.modifiedCount;
+
+  return changed;
+}
+
 export async function approve(chatId, tier = 'trial') {
   await col('users').updateOne({ _id: String(chatId) }, { $set: { status: 'active', tier, approvedAt: new Date() } });
 }
