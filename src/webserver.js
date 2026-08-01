@@ -278,6 +278,15 @@ async function saveBooks(books) {
       ts: Number(n.ts) || Date.now(),
     })),
     cover: b.cover == null ? null : Number(b.cover) || null, // Open Library cover id
+    // How this book is holding up in the quiz. Kept per book rather than per thought: it's
+    // the book fading that's worth knowing, and it keeps the document small.
+    quiz: b.quiz
+      ? {
+          asked: Math.max(0, Math.min(9999, Number(b.quiz.asked) || 0)),
+          right: Math.max(0, Math.min(9999, Number(b.quiz.right) || 0)),
+          last: Number(b.quiz.last) || null,
+        }
+      : null,
     exam: b.exam ? { score: Number(b.exam.score) || 0, ts: Number(b.exam.ts) || Date.now(), verdict: String(b.exam.verdict || '').slice(0, 600) } : null,
     started: Number(b.started) || Date.now(),
     updated: Number(b.updated) || Date.now(),

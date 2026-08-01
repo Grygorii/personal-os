@@ -128,7 +128,30 @@
   .note .ntext{font-size:.96rem;margin-top:5px;white-space:pre-wrap;word-wrap:break-word}
   .note .nrm{background:transparent;border:0;color:var(--faint);cursor:pointer;font-size:.8rem;margin-top:4px;padding:0}
   /* quiz */
-  .qcard{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:20px 18px;margin-top:16px}
+  .qhead{display:flex;justify-content:space-between;align-items:center;gap:10px;
+    color:var(--muted);font-size:.8rem;margin-top:16px}
+  .qdots{display:flex;gap:6px;margin-top:9px}
+  .qdot{flex:1;height:4px;border-radius:3px;background:var(--line)}
+  .qdot.done{background:var(--good)} .qdot.miss{background:var(--bad)} .qdot.now{background:var(--accent)}
+  .qcard{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:20px 18px;margin-top:14px}
+  .qmeta{display:flex;gap:12px;align-items:center;margin-top:14px}
+  .qmeta img{width:40px;height:60px;object-fit:cover;border-radius:5px;flex:none;background:var(--raise)}
+  .qmeta .qm{flex:1;min-width:0}
+  .qlink{background:transparent;border:0;color:var(--accent-strong);font-weight:600;font-size:.86rem;
+    cursor:pointer;padding:8px 0;font-family:var(--sans);min-height:40px}
+  /* end of round */
+  .qsum{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:22px 18px;margin-top:16px;text-align:center}
+  .qbig{font-family:var(--serif);font-size:3rem;font-weight:700;line-height:1;color:var(--accent)}
+  .qbiglabel{color:var(--muted);font-size:.86rem;margin-top:2px}
+  .qrows{margin-top:18px;text-align:left}
+  .qrow{display:flex;justify-content:space-between;align-items:baseline;gap:10px;
+    border-top:1px solid var(--line);padding:10px 2px;font-size:.9rem}
+  .qrow:first-child{border-top:0}
+  .qrow .n{color:var(--muted);font-size:.84rem;white-space:nowrap}
+  .qrow .n.good{color:var(--good)} .qrow .n.bad{color:var(--bad)}
+  .qcallout{background:var(--raise);border-radius:12px;padding:13px 15px;margin-top:16px;
+    font-size:.9rem;color:var(--muted);text-align:left;line-height:1.5}
+  .qcallout b{color:var(--ink)}
   .qthought{font-family:var(--serif);font-size:1.16rem;line-height:1.5;color:var(--ink);
     border-left:3px solid var(--accent);padding-left:15px;white-space:pre-wrap;word-wrap:break-word}
   .qpage{display:inline-block;font-size:.66rem;font-weight:700;letter-spacing:.05em;color:var(--accent-strong);
@@ -313,8 +336,8 @@
   <!-- Guess the book from your own thought. The exam only pays out when you finish a
        book; this pays out any day you've written something down. -->
   <section id="view-quiz" hidden>
-    <h1>Where did this come from?</h1>
-    <p class="sub">One of your own thoughts. Name the book it came out of.</p>
+    <h1 id="quiz-h">Where did this come from?</h1>
+    <p class="sub" id="quiz-sub">One of your own thoughts. Name the book it came out of.</p>
     <div id="quiz-body"></div>
   </section>
 
@@ -822,41 +845,93 @@ function titleMatches(guess,title){
   return editDistance(g,t)<=Math.max(1,Math.round(t.length*0.25));  // typos, not guesses
 }
 
-let quiz={asked:[],right:0,done:0,current:null};
+const ROUND=5;
+let quiz={asked:[],results:[],current:null};
+
 function quizPool(){
   const out=[];
   for(const b of state.books) for(const [i,n] of (b.notes||[]).entries())
     if(n.text&&n.text.trim().length>15) out.push({book:b,note:n,key:b.id+":"+i});
   return out;
 }
-function startQuiz(){ quiz={asked:[],right:0,done:0,current:null}; nextQuestion(); }
+function ago(ts){
+  if(!ts) return "";
+  const d=Math.floor((Date.now()-ts)/86400000);
+  if(d<1) return "today"; if(d===1) return "yesterday";
+  if(d<14) return `${d} days ago`;
+  if(d<60) return `${Math.round(d/7)} weeks ago`;
+  return `${Math.round(d/30)} months ago`;
+}
+/* Books you keep getting wrong, and books you haven't been asked about in a while, come up
+   first. That's the whole testing-effect argument the landing page makes — practise the
+   things that are actually slipping, not the ones you already have. */
+function weightOf(p){
+  const q=p.book.quiz;
+  if(!q||!q.asked) return 3;                                  // never tested — ask it
+  const accuracy=q.right/q.asked;
+  const staleDays=q.last?(Date.now()-q.last)/86400000:99;
+  return 1+(1-accuracy)*3+Math.min(staleDays/7,2);
+}
+function pickWeighted(list){
+  const total=list.reduce((s,p)=>s+weightOf(p),0);
+  let r=Math.random()*total;
+  for(const p of list){ r-=weightOf(p); if(r<=0) return p; }
+  return list[list.length-1];
+}
+
+function startQuiz(){
+  quiz={asked:[],results:[],current:null};
+  $("quiz-h").textContent="Where did this come from?";
+  $("quiz-sub").textContent="One of your own thoughts. Name the book it came out of.";
+  nextQuestion();
+}
+
+function quizStats(){
+  const pool=quizPool();
+  const books=[...new Set(pool.map(p=>p.book.id))];
+  const tested=state.books.filter(b=>b.quiz?.asked);
+  const overall=tested.reduce((a,b)=>({r:a.r+b.quiz.right,t:a.t+b.quiz.asked}),{r:0,t:0});
+  return {pool,books:books.length,thoughts:pool.length,
+    recall:overall.t?Math.round(overall.r/overall.t*100):null};
+}
 
 function nextQuestion(){
-  const body=$("quiz-body"), pool=quizPool();
-  const distinctBooks=new Set(pool.map(p=>p.book.id)).size;
+  const body=$("quiz-body");
+  const {pool,books,thoughts,recall}=quizStats();
+
   // Two books with one thought each is already a real question. The only thing that isn't
   // is a single book, where the answer is the only book you own.
-  if(distinctBooks<2){
+  if(books<2){
     body.innerHTML=`<div class="qempty"><b>Not enough to play with yet</b>
-      Save a few thoughts against at least two books, and this turns into a game:
-      your own words come back, and you name where they came from.
+      Save a thought against at least two books and this becomes the useful half of Kept:
+      your own words come back weeks later, and you say where they came from.
       <div style="margin-top:16px"><button class="btn ghost" id="q-lib">Go to your library</button></div></div>`;
     $("q-lib").onclick=()=>{ $("tab-library").click(); };
     return;
   }
+  if(quiz.results.length>=Math.min(ROUND,pool.length)) return endRound();
+
   let fresh=pool.filter(p=>!quiz.asked.includes(p.key));
-  if(!fresh.length){ quiz.asked=[]; fresh=pool; }          // been through them all — loop
-  const q=fresh[Math.floor(Math.random()*fresh.length)];
+  if(!fresh.length){ quiz.asked=[]; fresh=pool; }
+  const q=pickWeighted(fresh);
   quiz.current=q; quiz.asked.push(q.key);
 
-  body.innerHTML=`<div class="qcard">
+  const n=quiz.results.length;
+  const total=Math.min(ROUND,pool.length);
+  body.innerHTML=`
+    <div class="qhead">
+      <span>Question <b>${n+1}</b> of ${total}</span>
+      <span>${thoughts} thought${thoughts===1?"":"s"} · ${books} books${recall!=null?` · ${recall}% recall`:""}</span>
+    </div>
+    <div class="qdots">${Array.from({length:total},(_,i)=>
+      `<span class="qdot ${i<n?(quiz.results[i].ok?"done":"miss"):i===n?"now":""}"></span>`).join("")}</div>
+    <div class="qcard">
       ${q.note.page?`<span class="qpage">p.${esc(String(q.note.page))}</span>`:""}
       <div class="qthought">${esc(q.note.text)}</div>
     </div>
-    <label for="q-guess" style="margin-top:16px">Which book?</label>
+    <label for="q-guess">Which book was this?</label>
     <input id="q-guess" placeholder="Type the title…" autocomplete="off" autocapitalize="words">
-    <div style="margin-top:12px"><button class="btn" id="q-check">Check</button></div>
-    <div class="qscore"><span>${quiz.done} answered</span><span>${quiz.right} right</span></div>`;
+    <div style="margin-top:12px"><button class="btn" id="q-check">Check</button></div>`;
 
   const input=$("q-guess");
   input.focus();
@@ -865,20 +940,64 @@ function nextQuestion(){
 
   function check(){
     const guess=input.value.trim();
-    if(!guess){ toast("Have a go — a guess is the point"); return; }
-    const b=quiz.current.book;
-    const ok=titleMatches(guess,b.title);
-    quiz.done++; if(ok) quiz.right++;
+    if(!guess){ toast("Have a go — the guessing is the point"); return; }
+    const b=quiz.current.book, ok=titleMatches(guess,b.title);
+    quiz.results.push({ok,bookId:b.id,title:b.title});
+    // Remember it: which books are fading is the signal this whole product exists to give,
+    // and a score that dies when you leave the tab tells nobody anything.
+    b.quiz={asked:(b.quiz?.asked||0)+1,right:(b.quiz?.right||0)+(ok?1:0),last:Date.now()};
+    b.updated=Date.now(); save();
+
+    input.disabled=true; $("q-check").hidden=true;
     body.insertAdjacentHTML("beforeend",
       `<div class="qverdict ${ok?"right":"wrong"}">
-         <span class="m">${ok?"✓":"✕"}</span>
+         <span class="m">${ok?"✓":"×"}</span>
          <span class="t"><b>${esc(b.title)}</b>${b.author?esc(b.author):""}</span>
        </div>
-       <div style="margin-top:12px"><button class="btn" id="q-next">Next thought →</button></div>`);
-    input.disabled=true; $("q-check").hidden=true;
+       <div class="qmeta">
+         ${b.cover?`<img src="/cover/${b.cover}" alt="" loading="lazy">`:""}
+         <span class="qm"><span style="color:var(--muted);font-size:.86rem">You wrote this ${ago(quiz.current.note.ts)}${
+           b.quiz.asked>1?` · you've been asked about this book ${b.quiz.asked} times`:""}</span></span>
+       </div>
+       <div style="display:flex;gap:10px;align-items:center;margin-top:10px">
+         <button class="btn" id="q-next" style="flex:1">${quiz.results.length>=Math.min(ROUND,pool.length)?"See how you did →":"Next thought →"}</button>
+         <button class="qlink" id="q-open">Open book</button>
+       </div>`);
     $("q-next").onclick=nextQuestion;
+    $("q-open").onclick=()=>{ $("tab-library").click(); openBook(b.id); };
     $("q-next").focus();
   }
+}
+
+function endRound(){
+  const body=$("quiz-body");
+  $("quiz-h").textContent="How that went";
+  $("quiz-sub").textContent="Which of your books are holding, and which are going.";
+  const right=quiz.results.filter(r=>r.ok).length, total=quiz.results.length;
+  // Per book, so the answer to "what's slipping?" is a book title and not a percentage.
+  const byBook=new Map();
+  for(const r of quiz.results){
+    const e=byBook.get(r.bookId)||{title:r.title,right:0,asked:0};
+    e.asked++; if(r.ok) e.right++; byBook.set(r.bookId,e);
+  }
+  const rows=[...byBook.values()].sort((a,b)=>a.right/a.asked-b.right/b.asked);
+  const weakest=rows.find(r=>r.right<r.asked);
+
+  body.innerHTML=`<div class="qsum">
+    <div class="qbig">${right}/${total}</div>
+    <div class="qbiglabel">${right===total?"Every one of them. That book is in you."
+      :right===0?"None of them — which is exactly what this is for."
+      :"Now you know which ones are holding."}</div>
+    <div class="qrows">${rows.map(r=>`<div class="qrow"><span>${esc(r.title)}</span>
+      <span class="n ${r.right===r.asked?"good":r.right?"":"bad"}">${r.right} of ${r.asked}</span></div>`).join("")}</div>
+    ${weakest?`<div class="qcallout"><b>${esc(weakest.title)}</b> is the one slipping.
+      Open it, reread what you wrote, or take the exam and find out how deep it goes.</div>`:""}
+    <div style="margin-top:16px"><button class="btn" id="q-again">Another round</button></div>
+    ${weakest?`<div style="margin-top:8px"><button class="btn ghost" id="q-weak">Open ${esc(weakest.title)}</button></div>`:""}
+  </div>`;
+  $("q-again").onclick=startQuiz;
+  const w=$("q-weak");
+  if(w) w.onclick=()=>{ const b=[...byBook].find(([,v])=>v===weakest); $("tab-library").click(); openBook(b[0]); };
 }
 
 /* ---- The mentor, in the app ---- */
