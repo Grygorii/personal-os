@@ -66,6 +66,7 @@ const ASSETS = {
   '/icon-180.png': { file: 'icon-180.png', type: 'image/png' },
   '/icon-192.png': { file: 'icon-192.png', type: 'image/png' },
   '/icon-512.png': { file: 'icon-512.png', type: 'image/png' },
+  '/og.png': { file: 'og.png', type: 'image/png' },
 };
 
 // Verify Telegram Mini App initData (https://core.telegram.org/bots/webapps#validating-data).

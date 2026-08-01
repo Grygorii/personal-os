@@ -114,3 +114,52 @@ for (const size of [180, 192, 512]) {
   writeFileSync(out, buf);
   console.log(`  icon-${size}.png  ${(buf.length / 1024).toFixed(1)} KB`);
 }
+
+// The link-preview card. Without one, a shared link renders as a grey box on LinkedIn,
+// WhatsApp and X — which is most of the first impression, on the surface where a stranger
+// decides whether to click. 1200x630 is the ratio that gets the LARGE card rather than a
+// thumbnail; the words come from og:title and og:description, which every scraper renders
+// underneath, so this only has to carry the mark.
+function renderOg() {
+  const W = 1200, H = 630, SS = 3;
+  const px = Buffer.alloc(W * H * 4);
+  const mark = 300, mx = (W - mark) / 2, my = (H - mark) / 2;
+  const s = mark / 512;
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      let r = 0, g = 0, b = 0;
+      for (let sy = 0; sy < SS; sy++) {
+        for (let sx = 0; sx < SS; sx++) {
+          const fx = x + (sx + 0.5) / SS, fy = y + (sy + 0.5) / SS;
+          let c;
+          if (fy < 10) c = GOLD;                                   // the rule along the top
+          else if (fx >= mx && fx < mx + mark && fy >= my && fy < my + mark)
+            c = sample((fx - mx) / s, (fy - my) / s);
+          else c = INK;
+          r += c[0]; g += c[1]; b += c[2];
+        }
+      }
+      const n = SS * SS, o = (y * W + x) * 4;
+      px[o] = Math.round(r / n); px[o + 1] = Math.round(g / n); px[o + 2] = Math.round(b / n);
+      px[o + 3] = 255;
+    }
+  }
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(W, 0); ihdr.writeUInt32BE(H, 4); ihdr[8] = 8; ihdr[9] = 6;
+  const raw = Buffer.alloc(H * (W * 4 + 1));
+  for (let y = 0; y < H; y++) {
+    raw[y * (W * 4 + 1)] = 0;
+    px.copy(raw, y * (W * 4 + 1) + 1, y * W * 4, (y + 1) * W * 4);
+  }
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk('IHDR', ihdr),
+    chunk('IDAT', deflateSync(raw, { level: 9 })),
+    chunk('IEND', Buffer.alloc(0)),
+  ]);
+}
+{
+  const buf = renderOg();
+  writeFileSync(fileURLToPath(new URL('../webapp/og.png', import.meta.url)), buf);
+  console.log(`  og.png        ${(buf.length / 1024).toFixed(1)} KB  (1200x630)`);
+}
