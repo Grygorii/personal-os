@@ -411,7 +411,7 @@ function renderLibrary(){
           <span class="bs ${nc?"":"idle"}"><b>${nc}</b> thought${nc===1?"":"s"}</span>
           ${b.exam
             ? `<span class="bs good"><b>${b.exam.score}%</b> exam</span>`
-            : `<span class="bs idle"><b>✕</b> not tested</span>`}
+            : `<span class="bs idle"><b>&times;</b> not tested</span>`}
         </div>
       </div></div>`;
   }).join("");
@@ -834,8 +834,9 @@ function startQuiz(){ quiz={asked:[],right:0,done:0,current:null}; nextQuestion(
 function nextQuestion(){
   const body=$("quiz-body"), pool=quizPool();
   const distinctBooks=new Set(pool.map(p=>p.book.id)).size;
-  // With one book the answer is the only book you own — that isn't a question.
-  if(distinctBooks<2||pool.length<3){
+  // Two books with one thought each is already a real question. The only thing that isn't
+  // is a single book, where the answer is the only book you own.
+  if(distinctBooks<2){
     body.innerHTML=`<div class="qempty"><b>Not enough to play with yet</b>
       Save a few thoughts against at least two books, and this turns into a game:
       your own words come back, and you name where they came from.
