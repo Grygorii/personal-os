@@ -149,6 +149,14 @@
     color:var(--ink);line-height:1.45}
   .hero-shot .th b{display:block;color:var(--accent);font-size:.6rem;letter-spacing:.06em;margin-bottom:3px}
 
+  /* The author's name on the cover; the story stays at the back of the book. */
+  .byline{display:inline-flex;align-items:center;gap:9px;margin-top:20px;text-decoration:none;
+    color:var(--faint);font-size:.84rem}
+  .byline img{width:26px;height:26px;border-radius:50%;object-fit:cover;object-position:50% 20%;
+    border:1px solid var(--line)}
+  .byline u{text-decoration:none;border-bottom:1px solid var(--line)}
+  .byline:hover u{border-color:var(--accent)}
+
   /* who made this */
   .maker{display:flex;gap:16px;align-items:flex-start;background:var(--surface);
     border:1px solid var(--line);border-radius:18px;padding:20px;text-align:left}
@@ -249,6 +257,11 @@
       </div>
     </div>
     <p class="note">Free to start · works on any phone · <a href="#demo" style="color:var(--muted)">see how it works ↓</a></p>
+    <div><a class="byline" href="#maker">
+      <img src="/me.jpg" alt="" width="26" height="26"
+           onerror="this.remove()">
+      Built by <u>Grygorii</u>, a reader in Ireland
+    </a></div>
   </header>
 
   <section>
@@ -354,16 +367,7 @@
     </blockquote>
   </section>
 
-  <section>
-    <div class="kicker">Questions</div>
-    <details><summary>Is it free?</summary><p>Free to start, with a daily allowance that grows as you use it. Later you can support it from €3 a month — or connect your own free AI key and keep it free for good.</p></details>
-    <details><summary>Do I need to install anything?</summary><p>No. Sign in with Google and it runs in your browser. If you'd rather have an icon, add it to your home screen and it opens like any other app.</p></details>
-    <details><summary>What does it actually ask me?</summary><p>Five questions written for the book you just read — two on its core ideas, two on applying them to your own life, and one where you argue with the author. Nothing you could answer from the blurb.</p></details>
-    <details><summary>Who can see my books and notes?</summary><p>Only you. Nothing leaves your library unless you share a result, and even then only the book, the score and a thought you pick. You can export or delete everything at any time.</p></details>
-    <details><summary>Does it work with any book?</summary><p>Any book, in any language. The exam is written for the specific book you read — fiction, history, business, anything.</p></details>
-  </section>
-
-  <section>
+  <section id="maker">
     <div class="kicker">Who made this</div>
     <h2 style="margin-bottom:20px">One person, one honest problem.</h2>
     <div class="maker">
@@ -376,6 +380,14 @@
         part: what the first readers say is what gets built next.</p>
       </div>
     </div>
+  </section>
+  <section>
+    <div class="kicker">Questions</div>
+    <details><summary>Is it free?</summary><p>Free to start, with a daily allowance that grows as you use it. Later you can support it from €3 a month — or connect your own free AI key and keep it free for good.</p></details>
+    <details><summary>Do I need to install anything?</summary><p>No. Sign in with Google and it runs in your browser. If you'd rather have an icon, add it to your home screen and it opens like any other app.</p></details>
+    <details><summary>What does it actually ask me?</summary><p>Five questions written for the book you just read — two on its core ideas, two on applying them to your own life, and one where you argue with the author. Nothing you could answer from the blurb.</p></details>
+    <details><summary>Who can see my books and notes?</summary><p>Only you. Nothing leaves your library unless you share a result, and even then only the book, the score and a thought you pick. You can export or delete everything at any time.</p></details>
+    <details><summary>Does it work with any book?</summary><p>Any book, in any language. The exam is written for the specific book you read — fiction, history, business, anything.</p></details>
   </section>
 
   <section>
