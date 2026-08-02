@@ -85,6 +85,26 @@
           })
           .catch(function () { document.getElementById('err').textContent = 'Network problem — try again.'; });
       }
+      // Her phone was showing a sign-in page old enough to predate the current build, which
+      // is its own reason a button can appear dead. The app already self-updates; this is the
+      // same check for the one page a first-time visitor actually lands on.
+      (function () {
+        var mine = null;
+        function check() {
+          if (document.hidden) return;
+          fetch('/version', { cache: 'no-store' })
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (d) {
+              if (!d) return;
+              if (!mine) mine = d.build;
+              else if (d.build !== mine) location.reload(true);
+            })
+            .catch(function () {});
+        }
+        check();
+        document.addEventListener('visibilitychange', function () { if (!document.hidden) check(); });
+      })();
+
       // Detect the embedded browsers Google refuses to sign in from, and show the way out
       // instead of a button that silently does nothing.
       (function () {
