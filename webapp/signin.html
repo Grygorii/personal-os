@@ -139,8 +139,13 @@
         });
       })();
 
-      window.addEventListener('load', function () {
-        if (!window.google || !'GOOGLE_CLIENT_ID') return;
+      // The Google library is loaded asynchronously. On a quick connection it is ready by
+      // window.load; on a slower one it arrives afterwards. Initialise from both events,
+      // but only render once, so the sign-in page never becomes a blank dead end.
+      var googleButtonStarted = false;
+      function startGoogleButton() {
+        if (googleButtonStarted || !window.google || !'GOOGLE_CLIENT_ID') return;
+        googleButtonStarted = true;
         try {
           // Redirect, not popup. The popup flow depends on a window Safari blocks routinely
           // and on third-party cookies it increasingly refuses — which looks, to the person
@@ -155,8 +160,13 @@
           google.accounts.id.renderButton(document.getElementById('g-btn'), {
             theme: 'filled_black', size: 'large', shape: 'pill', text: 'continue_with', width: 260,
           });
-        } catch (e) {}
-      });
+        } catch (e) {
+          googleButtonStarted = false;
+        }
+      }
+      window.addEventListener('load', startGoogleButton);
+      document.querySelector('script[src="https://accounts.google.com/gsi/client"]')
+        .addEventListener('load', startGoogleButton);
     </script>
     <!--/GOOGLE-->
   </div>

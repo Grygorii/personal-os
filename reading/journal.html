@@ -43,6 +43,9 @@
   .topbar{position:sticky;top:0;z-index:30;display:flex;align-items:center;justify-content:space-between;
     gap:10px;background:var(--paper);padding:calc(10px + env(safe-area-inset-top)) 2px 10px}
   .brand{font-family:var(--serif);color:var(--accent);font-weight:600;font-size:1rem}
+  /* An author `display` rule beats the hidden attribute, so without this guard the banner
+     showed to everyone — including the owner, signed in, next to his own Admin button. */
+  .guestbar[hidden]{display:none}
   .guestbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;
     background:var(--accent-tint);border:1px solid var(--accent);border-radius:12px;
     padding:10px 14px;margin-bottom:14px;font-size:.84rem;color:var(--muted)}
@@ -314,7 +317,7 @@
        and nothing else — without nagging on every screen. -->
   <div class="guestbar" id="guestbar" hidden>
     <span><b>Not signed in.</b> Your books live on this device only.</span>
-    <a href="/signin">Keep them →</a>
+    <a id="guest-signin" href="/signin">Keep them →</a>
   </div>
 
   <section id="view-library">
@@ -1062,6 +1065,16 @@ renderLibrary();
 loadBooks();
 /* A guest gets the app, plus one honest line about the only thing they're missing. */
 if(GUEST) $("guestbar").hidden=false;
+
+/* Google will not sign a reader in inside Telegram's embedded browser. Opening the sign-in
+   page through the Mini App API hands it to the device browser; everywhere else this remains
+   an ordinary link, including installed and desktop versions of Kept. */
+$("guest-signin").addEventListener("click",function(e){
+  const tg=window.Telegram&&Telegram.WebApp;
+  if(!tg||typeof tg.openLink!=="function")return;
+  e.preventDefault();
+  tg.openLink(location.origin+"/signin");
+});
 
 /* ---- Quiz: your own thought, which book was it? ----
    Entirely local — no model call, no cost, works offline. The material is already yours,

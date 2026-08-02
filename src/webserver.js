@@ -55,7 +55,11 @@ const ROUTES = {
   '/home': { file: '../webapp/home.html' },
   '/deck': { file: '../english/study.html', homeBar: true },
   '/body': { file: '../body/map.html', homeBar: true },
-  '/reading': { file: '../reading/journal.html', homeBar: true },
+  // NOT the journal any more. This route served journal.html raw, so the placeholders the
+  // /app handler fills in were shipped as literal text — OWNER_LINK printed on screen and
+  // IS_GUEST threw a ReferenceError that killed the whole app script. Anyone still holding
+  // an old link or home-screen icon from the Telegram days landed on a dead page.
+  '/reading': { redirect: '/app' },
   '/routine': { file: '../routines/today.html', homeBar: true },
   '/dashboard': { file: '../webapp/dashboard.html' },
 };
@@ -1061,8 +1065,15 @@ export function startServer(port = process.env.PORT || 8080, build = 'dev') {
       const validRef = code && REF_CODE.test(code) ? code : null;
       if (validRef && signedIn) await attributeReferral(validRef, acct);
 
+      // Already signed in and asking for the door? Say so with a redirect. Quietly serving
+      // the app instead makes the tap look like it did nothing at all.
+      if (path === '/signin' && signedIn) {
+        res.writeHead(302, { Location: '/app' });
+        res.end();
+        return;
+      }
       // /signin is the door, asked for deliberately. /app is the product, always open.
-      const file = path === '/signin' && !signedIn ? '../webapp/signin.html' : '../reading/journal.html';
+      const file = path === '/signin' ? '../webapp/signin.html' : '../reading/journal.html';
       try {
         let html = await readFile(fileURLToPath(new URL(file, import.meta.url)), 'utf8');
         html = html
@@ -1345,6 +1356,18 @@ export function startServer(port = process.env.PORT || 8080, build = 'dev') {
     if (!route) {
       res.writeHead(404, { 'Content-Type': 'text/plain' });
       res.end('Not found');
+      return;
+    }
+    if (route.redirect) {
+      res.writeHead(301, { Location: route.redirect });
+      res.end();
+      return;
+    }
+    // A page that needs the /app handler's substitutions must never be served from here —
+    // the placeholders would ship as literal text and the script would die on them.
+    if (route.file && route.file.includes('journal.html')) {
+      res.writeHead(301, { Location: '/app' });
+      res.end();
       return;
     }
     try {
