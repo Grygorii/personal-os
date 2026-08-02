@@ -296,78 +296,8 @@
       It's where the thoughts you have while reading are saved, and handed back long
       after you've closed the book.</p>
 
-    <!-- The payoff, in a phone, before a single word of explanation. It used to show an exam
-         score directly beneath a subhead promising saved thoughts — the picture contradicted
-         the sentence above it. It shows a kept thought coming back instead, which is the
-         actual promise, with the score demoted to a footnote where it belongs. -->
-    <div class="hero-shot" aria-hidden="true">
-      <div class="inner">
-        <div class="bar"><span>📕 Kept</span><span>Atomic Habits</span></div>
-        <div class="th"><b>p.128</b>Identity comes first — you don't get habits by wanting them, you get them by becoming the person who has them.</div>
-        <div class="thmeta">You kept this 3 weeks ago.<br>It came back on Tuesday, and you named the book.</div>
-      </div>
-    </div>
-
-    <a class="cta" href="/app">Start with the book you're reading →</a>
-    <div class="install-row"><button class="cta ghost" id="install-btn">📲 Add to your phone</button></div>
-    <!-- Never the word "PWA". Naming the technology is jargon, and explaining a technology
-         plants the very doubt it's meant to settle. Answer what they're actually asking:
-         will this end up on my home screen, and do I need the App Store for it. -->
-    <p class="note" style="margin-top:10px">No App Store, nothing to download — it becomes an icon on your home screen.</p>
-    <div class="ios-help" id="ios-help">
-      <div id="ios-safari">
-        <b>Add Kept to your iPhone</b>
-        <ol>
-          <li>Tap <b class="ic">&#xFE0E;⬆️</b> <b>Share</b> at the bottom of Safari</li>
-          <li>Scroll down and tap <b>Add to Home Screen</b></li>
-          <li>Tap <b>Add</b> — Kept opens like any other app</li>
-        </ol>
-      </div>
-      <div id="ios-other" hidden>
-        <b>Almost — one step first</b>
-        <p style="margin:8px 0 0">iPhone only allows this from <b>Safari</b>. Copy the link below,
-        open it in Safari, then tap <b>Add to your phone</b> again.</p>
-        <button class="cta ghost" id="copy-link" style="margin-top:12px;width:100%">Copy readkept.com</button>
-      </div>
-      <div id="desk-help" hidden>
-        <b>Kept lives on your phone</b>
-        <p style="margin:8px 0 0">That's where you read, and where the mentor should be able to
-        reach you. Open <b>readkept.com</b> on your phone and tap <b>Add to your phone</b>.
-        It works fine in this browser too.</p>
-        <button class="cta ghost" id="copy-link-desk" style="margin-top:12px;width:100%">Copy readkept.com</button>
-      </div>
-    </div>
-    <p class="note">Free to start · works on any phone · <a href="#demo" style="color:var(--muted)">see how it works ↓</a></p>
-    <!-- The text is one <span> on purpose: in a flex row every bare text node becomes its
-         own flex item, so the gap would push the comma away from the name. -->
-    <div><a class="byline" href="#maker">
-      <img src="/me.jpg" alt="" width="26" height="26" onerror="this.remove()">
-      <span>Built by <u>Grygorii</u>, who forgot too many books</span>
-    </a></div>
-  </header>
-
-  <section>
-    <div class="kicker">The real reason</div>
-    <h2>It was never about time.</h2>
-    <p class="lede">There's a book on your table you haven't opened in a month. Not because you're busy —
-      you found the hours for worse things. It's quieter than that: <em>you already know it won't stay.</em></p>
-    <p class="lede">Nine hours, and by Christmas you'll have the cover and nothing else. Put like that, reading
-      stops feeling like building and starts feeling like pouring water into sand.</p>
-    <p class="lede">You keep the cover, the mood, one good line — and never notice the rest go. Feeling like
-      you've read a book is indistinguishable from having kept it. Highlighting doesn't help; notes don't
-      either. They record the book, they don't put it in you.</p>
-    <blockquote style="margin-top:22px">
-      Being <em>asked</em> is what makes it stick. Psychologists call it the testing effect: retrieving an idea
-      fixes it in memory far more firmly than reading it again ever will.
-      <footer>Kept is that test — for the books you actually read.</footer>
-    </blockquote>
-  </section>
-
-  <section id="demo">
-    <div class="kicker">See it work</div>
-    <h2>From a line that struck you to something you still have.</h2>
-    <p class="lede" id="demo-caption">Adding your first book takes one tap.</p>
-
+    <!-- The live demo sits in the hero: a phone that plays the whole product before a
+         single word of explanation. It replaced a static card, which had to be read. -->
     <div class="demo-wrap">
       <div class="demo-phone">
         <div class="statusbar"><span>9:41</span><span class="dotrow"><i></i><i></i><i></i></span></div>
@@ -441,6 +371,80 @@
       <button class="dot" data-go="3" aria-label="The quiz"></button>
       <button class="dot" data-go="4" aria-label="The exam"></button>
     </div>
+    <p class="note" id="demo-caption" style="margin-top:12px">Type a few letters. It finds the book for you.</p>
+
+    <a class="cta" href="/app">Start with the book you're reading →</a>
+    <div class="install-row"><button class="cta ghost" id="install-btn">📲 Add to your phone</button></div>
+    <!-- Never the word "PWA". Naming the technology is jargon, and explaining a technology
+         plants the very doubt it's meant to settle. Answer what they're actually asking:
+         will this end up on my home screen, and do I need the App Store for it. -->
+    <p class="note" style="margin-top:10px">No App Store, nothing to download — it becomes an icon on your home screen.</p>
+    <div class="ios-help" id="ios-help">
+      <div id="ios-safari">
+        <b>Add Kept to your iPhone</b>
+        <ol>
+          <li>Tap <b class="ic">&#xFE0E;⬆️</b> <b>Share</b> at the bottom of Safari</li>
+          <li>Scroll down and tap <b>Add to Home Screen</b></li>
+          <li>Tap <b>Add</b> — Kept opens like any other app</li>
+        </ol>
+      </div>
+      <div id="ios-other" hidden>
+        <b>Almost — one step first</b>
+        <p style="margin:8px 0 0">iPhone only allows this from <b>Safari</b>. Copy the link below,
+        open it in Safari, then tap <b>Add to your phone</b> again.</p>
+        <button class="cta ghost" id="copy-link" style="margin-top:12px;width:100%">Copy readkept.com</button>
+      </div>
+      <div id="desk-help" hidden>
+        <b>Kept lives on your phone</b>
+        <p style="margin:8px 0 0">That's where you read, and where the mentor should be able to
+        reach you. Open <b>readkept.com</b> on your phone and tap <b>Add to your phone</b>.
+        It works fine in this browser too.</p>
+        <button class="cta ghost" id="copy-link-desk" style="margin-top:12px;width:100%">Copy readkept.com</button>
+      </div>
+    </div>
+    <p class="note">Free to start · works on any phone</p>
+    <!-- The text is one <span> on purpose: in a flex row every bare text node becomes its
+         own flex item, so the gap would push the comma away from the name. -->
+    <div><a class="byline" href="#maker">
+      <img src="/me.jpg" alt="" width="26" height="26" onerror="this.remove()">
+      <span>Built by <u>Grygorii</u>, who forgot too many books</span>
+    </a></div>
+  </header>
+
+  <section>
+    <div class="kicker">The real reason</div>
+    <h2>It was never about time.</h2>
+    <p class="lede">There's a book on your table you haven't opened in a month. Not because you're busy —
+      you found the hours for worse things. It's quieter than that: <em>you already know it won't stay.</em></p>
+    <p class="lede">Nine hours, and by Christmas you'll have the cover and nothing else. Put like that, reading
+      stops feeling like building and starts feeling like pouring water into sand.</p>
+    <p class="lede">You keep the cover, the mood, one good line — and never notice the rest go. Feeling like
+      you've read a book is indistinguishable from having kept it. Highlighting doesn't help; notes don't
+      either. They record the book, they don't put it in you.</p>
+    <blockquote style="margin-top:22px">
+      Being <em>asked</em> is what makes it stick. Psychologists call it the testing effect: retrieving an idea
+      fixes it in memory far more firmly than reading it again ever will.
+      <footer>Kept is that test — for the books you actually read.</footer>
+    </blockquote>
+  </section>
+
+  <section>
+    <div class="kicker">The check</div>
+    <h2>It will not flatter you.</h2>
+    <p class="lede">When you turn the last page it asks five questions written for that book —
+      two on its ideas, two on using them in your own life, and one where you argue with the
+      author. Bluff an answer and it scores you under 40, then names the chapter to go back to.</p>
+    <div class="hero-shot" style="margin:26px auto 0" aria-hidden="true">
+      <div class="inner">
+        <div class="bar"><span>📕 Kept</span><span>Exam result</span></div>
+        <div class="bk">Atomic Habits</div>
+        <div class="au">James Clear</div>
+        <div class="sc">72%</div>
+        <div class="sl">honest comprehension score</div>
+        <div class="thmeta">Solid on habit stacking. Vague on the 2-minute rule — worth re-reading ch. 13.</div>
+      </div>
+    </div>
+    <p class="note" style="text-align:center">The first score is usually humbling. That is rather the point.</p>
   </section>
 
   <section>
@@ -455,15 +459,6 @@
     </div>
   </section>
 
-  <section>
-    <div class="kicker">The rule</div>
-    <h2>It will not flatter you.</h2>
-    <blockquote>
-      An assistant that tells you what you want to hear is worse than none at all. Bluff an answer and Kept scores it
-      under 40 — then tells you exactly which chapter to go back to.
-      <footer>The first score is usually humbling. That is rather the point.</footer>
-    </blockquote>
-  </section>
 
   <section id="maker">
     <div class="kicker">Who made this</div>
@@ -699,7 +694,7 @@
           if (!e.isIntersecting && timer) { clearInterval(timer); timer = null; }
           else if (e.isIntersecting && !timer && !manual) play();
         });
-      }, { threshold: 0.2 }).observe(document.getElementById('demo'));
+      }, { threshold: 0.2 }).observe(document.querySelector(".demo-wrap"));
     }
   })();
 </script>
