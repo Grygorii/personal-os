@@ -796,10 +796,7 @@ const GUEST = IS_GUEST;
 function needsAccount(what, why){
   const { close } = openSheet(`
     <div class="sheet-head">${esc(what)} needs an account</div>
-    <p class="sheet-note">${esc(why)}</p>
-    <p class="sheet-note">Signing in with Google tells me your name and email — nothing else.
-      I can't read your Gmail, your files or anything in your account, and you can disconnect
-      it whenever you like. Everything you've written so far comes with you.</p>
+    <p class="sheet-note">${esc(why)} Everything you've written so far comes with you.</p>
     <a class="btn" href="/signin" style="display:block;text-align:center;text-decoration:none;line-height:1.4">Sign in and keep it</a>
     <button class="btn ghost" id="na-x" style="margin-top:8px">Not now</button>`,
     'Sign in to continue');
