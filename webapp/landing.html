@@ -6,7 +6,7 @@
 <title>Kept — keep what you take from the books you read</title>
 <meta name="description" content="Keep what you take from the books you read. Save a thought against the page it came from, and Kept hands it back weeks later — plus an honest exam when you finish.">
 <link rel="canonical" href="APP_URL/">
-<meta property="og:title" content="You finished the book. How much is left?">
+<meta property="og:title" content="You finished the book. How much do you remember?">
 <meta property="og:description" content="Save the thoughts you have while reading, tagged to the page. Kept hands them back long after you close the book.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="APP_URL/">
@@ -86,9 +86,24 @@
   .typing span:nth-child(2){animation-delay:.2s} .typing span:nth-child(3){animation-delay:.4s}
   @keyframes blink{0%,80%,100%{opacity:.25}40%{opacity:1}}
   /* animated demo */
-  .demo-wrap{margin-top:24px}
-  .demo-phone{position:relative;overflow:hidden}
-  .screen-stack{position:relative;min-height:330px}
+  /* A phone that reads as a phone: a body, a status bar, and the app's own bottom tab bar.
+     Without those it was just a card, and people had to be told it was a screenshot. */
+  .demo-wrap{margin-top:24px;display:flex;justify-content:center}
+  .demo-phone{position:relative;overflow:hidden;width:100%;max-width:330px;padding:10px 10px 0;
+    border-radius:34px;border:1px solid var(--line);background:#0C0B09;
+    box-shadow:0 26px 70px rgba(0,0,0,.55)}
+  .statusbar{display:flex;justify-content:space-between;align-items:center;
+    color:var(--faint);font-size:.62rem;padding:4px 12px 8px}
+  .statusbar .dotrow{display:flex;gap:3px;align-items:center}
+  .statusbar i{width:4px;height:4px;border-radius:50%;background:var(--faint);display:block;font-style:normal}
+  .demo-inner{background:var(--paper);border-radius:26px 26px 0 0;padding:14px 14px 0;position:relative}
+  .screen-stack{position:relative;min-height:322px}
+  /* the real bottom bar from the app */
+  .demo-tabs{display:flex;border-top:1px solid var(--line);margin:0 -14px;padding:7px 10px 12px}
+  .demo-tab{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;
+    font-size:.62rem;font-weight:600;color:var(--faint)}
+  .demo-tab .i{font-size:1.05rem;line-height:1;opacity:.5;filter:grayscale(1)}
+  .demo-tab.on{color:var(--accent)} .demo-tab.on .i{opacity:1;filter:none}
   .screen{position:absolute;inset:0;opacity:0;transform:translateY(10px);pointer-events:none;
     transition:opacity .45s ease,transform .45s ease}
   .screen.on{opacity:1;transform:none;pointer-events:auto}
@@ -104,6 +119,22 @@
     50%{transform:scale(1.02);box-shadow:0 0 0 12px rgba(217,174,74,0)}}
   .fld{display:block;font-size:.78rem;color:var(--faint);
     font-weight:700;margin:12px 0 5px}
+  /* pieces of the real app, reproduced for the demo screens */
+  .hits-demo{border:1px solid var(--accent);border-radius:11px;overflow:hidden;margin-top:6px}
+  .hit-demo{display:flex;gap:9px;align-items:center;padding:8px 10px;border-bottom:1px solid var(--line);font-size:.78rem}
+  .hit-demo:last-child{border-bottom:0}
+  .hit-demo.on{background:var(--raise)}
+  .hit-demo .hc{width:24px;height:34px;border-radius:3px;background:var(--accent);flex:none;opacity:.85}
+  .hit-demo b{display:block;color:var(--ink);font-weight:600}
+  .hit-demo span span{color:var(--muted);font-size:.72rem}
+  .caps-demo{display:flex;gap:7px;margin-top:8px}
+  .caps-demo span{flex:1;text-align:center;background:var(--raise);border:1px solid var(--line);
+    border-radius:9px;padding:8px 4px;font-size:.72rem;font-weight:600;color:var(--muted)}
+  .qdemo{background:var(--surface);border:1px solid var(--line);border-radius:13px;padding:14px}
+  .qp{display:inline-block;font-size:.6rem;font-weight:700;color:var(--accent);
+    background:var(--accent-tint,#2C2510);border-radius:20px;padding:2px 8px;margin-bottom:7px}
+  .qt{font-family:var(--serif);font-size:.92rem;line-height:1.45;color:var(--ink)}
+  .demo-note{color:var(--faint);font-size:.72rem;margin:10px 0 0}
   .input{background:var(--raise);border:1px solid var(--line);border-radius:10px;padding:11px 13px;
     font-size:.95rem;min-height:42px}
   .input.dim{color:var(--muted)}
@@ -156,7 +187,9 @@
   .hero-shot .sl{color:var(--muted);font-size:.72rem;margin-bottom:12px}
   .hero-shot .th{border-left:2px solid var(--accent);padding-left:10px;font-size:.76rem;
     color:var(--ink);line-height:1.45}
-  .hero-shot .th b{display:block;color:var(--accent);font-size:.6rem;letter-spacing:.06em;margin-bottom:3px}
+  .hero-shot .th b{display:block;color:var(--accent);font-size:.62rem;margin-bottom:4px}
+  .hero-shot .thmeta{color:var(--faint);font-size:.72rem;line-height:1.5;margin-top:14px;
+    border-top:1px solid var(--line);padding-top:11px}
 
   /* The author's name on the cover; the story stays at the back of the book. */
   .byline{display:inline-flex;align-items:center;gap:9px;margin-top:20px;text-decoration:none;
@@ -253,7 +286,9 @@
       <button class="get" id="get-btn" type="button">GET</button>
     </div>
 
-    <h1>You finished the book.<br>How much is <em>left</em>?</h1>
+    <!-- "How much is left?" read as "how many pages remain" — the opposite of the meaning.
+         His wife asked "left what?", and the words were on her side. Say the actual question. -->
+    <h1>You finished the book.<br>How much do you <em>remember</em>?</h1>
     <!-- Several people read the old subhead as "a place that gives you books" or "somewhere
          to store your books". Kept has no books in it, and that has to be settled in the
          first sentence — before the words "library" and "add a book" pull them the wrong way. -->
@@ -261,19 +296,19 @@
       It's where the thoughts you have while reading are saved, and handed back long
       after you've closed the book.</p>
 
-    <!-- The payoff, in a phone, before a single word of explanation. -->
+    <!-- The payoff, in a phone, before a single word of explanation. It used to show an exam
+         score directly beneath a subhead promising saved thoughts — the picture contradicted
+         the sentence above it. It shows a kept thought coming back instead, which is the
+         actual promise, with the score demoted to a footnote where it belongs. -->
     <div class="hero-shot" aria-hidden="true">
       <div class="inner">
-        <div class="bar"><span>📕 Kept</span><span>Exam result</span></div>
-        <div class="bk">Atomic Habits</div>
-        <div class="au">James Clear</div>
-        <div class="sc">72%</div>
-        <div class="sl">honest comprehension score</div>
+        <div class="bar"><span>📕 Kept</span><span>Atomic Habits</span></div>
         <div class="th"><b>p.128</b>Identity comes first — you don't get habits by wanting them, you get them by becoming the person who has them.</div>
+        <div class="thmeta">You kept this 3 weeks ago.<br>It came back on Tuesday, and you named the book.</div>
       </div>
     </div>
 
-    <a class="cta" href="/app">Start with your current book →</a>
+    <a class="cta" href="/app">Start with the book you're reading →</a>
     <div class="install-row"><button class="cta ghost" id="install-btn">📲 Add to your phone</button></div>
     <!-- Never the word "PWA". Naming the technology is jargon, and explaining a technology
          plants the very doubt it's meant to settle. Answer what they're actually asking:
@@ -334,62 +369,77 @@
     <p class="lede" id="demo-caption">Adding your first book takes one tap.</p>
 
     <div class="demo-wrap">
-      <div class="phone demo-phone">
-        <div class="screen-stack">
+      <div class="demo-phone">
+        <div class="statusbar"><span>9:41</span><span class="dotrow"><i></i><i></i><i></i></span></div>
+        <div class="demo-inner">
+          <div class="screen-stack">
 
-          <!-- 1. the empty library -->
-          <div class="screen on" data-step="0">
-            <div class="app-bar">📚 My library</div>
-            <div class="empty-shelf">No books yet.<br><span>Add the one in your hands.</span></div>
-            <button class="app-btn pulse">＋ Add a book</button>
+            <!-- 1. finding the book, which the app really does now -->
+            <div class="screen on" data-step="0">
+              <div class="app-bar">＋ Add a book</div>
+              <span class="fld">Title</span>
+              <div class="input"><span class="typed" data-text="Atomic Habits"></span><i class="caret"></i></div>
+              <div class="hits-demo">
+                <div class="hit-demo on"><span class="hc"></span><span><b>Atomic Habits</b><span>James Clear · 2016 · 320p</span></span></div>
+                <div class="hit-demo"><span class="hc"></span><span><b>Atomic Habits Journal</b><span>2020</span></span></div>
+              </div>
+              <p class="demo-note">Author, page count and cover fill themselves in.</p>
+            </div>
+
+            <!-- 2. keeping a thought — the actual promise -->
+            <div class="screen" data-step="1">
+              <div class="app-bar">💭 Keep a thought</div>
+              <div class="input" style="min-height:74px">Identity comes first — you don't get habits by wanting them, you get them by becoming the person who has them.</div>
+              <div class="caps-demo"><span>📷 Photograph the page</span><span>✨ Tidy it up</span></div>
+              <p class="demo-note">Say it, type it, or photograph the page and crop the bit you want.</p>
+            </div>
+
+            <!-- 3. the mentor -->
+            <div class="screen" data-step="2">
+              <div class="app-bar">💬 Mentor</div>
+              <div class="bubble me">p.94 — habit stacking is just a trigger I already have</div>
+              <div class="bubble them">Good catch. Which existing habit would you attach the new one to?</div>
+              <div class="bubble me">Coffee. Read 10 pages while it brews.</div>
+              <div class="bubble them typing"><span></span><span></span><span></span></div>
+            </div>
+
+            <!-- 4. the quiz — weeks later, your own words come back -->
+            <div class="screen" data-step="3">
+              <div class="app-bar">🧠 Where did this come from?</div>
+              <div class="qdemo">
+                <span class="qp">p.128</span>
+                <div class="qt">Identity comes first — you don't get habits by wanting them, you get them by becoming the person who has them.</div>
+              </div>
+              <span class="fld">Which book was this?</span>
+              <div class="input dim">Type the title…</div>
+              <p class="demo-note">Three weeks later. You wrote it — can you place it?</p>
+            </div>
+
+            <!-- 5. the exam, and something to send a friend -->
+            <div class="screen" data-step="4">
+              <div class="app-bar">🎓 Exam · Atomic Habits</div>
+              <div class="big-score">72<small>%</small></div>
+              <div class="verdict">Solid on habit stacking. Vague on the 2-minute rule — worth re-reading ch. 13.</div>
+              <div class="chips"><span>✓ Q1 88%</span><span>✓ Q2 74%</span><span class="low">Q4 41%</span></div>
+              <button class="app-btn ghost-btn">📤 Share what you kept</button>
+            </div>
+
           </div>
-
-          <!-- 2. typing the title -->
-          <div class="screen" data-step="1">
-            <div class="app-bar">＋ Add a book</div>
-            <label class="fld">Title</label>
-            <div class="input"><span class="typed" data-text="Atomic Habits"></span><i class="caret"></i></div>
-            <label class="fld">Author</label>
-            <div class="input dim">James Clear</div>
-            <button class="app-btn">Add book</button>
+          <div class="demo-tabs">
+            <span class="demo-tab on"><span class="i">📚</span>Library</span>
+            <span class="demo-tab"><span class="i">🧠</span>Quiz</span>
+            <span class="demo-tab"><span class="i">💬</span>Mentor</span>
           </div>
-
-          <!-- 3. thoughts while reading -->
-          <div class="screen" data-step="2">
-            <div class="app-bar">💬 While you read</div>
-            <div class="bubble me">p.94 — habit stacking is just a trigger I already have</div>
-            <div class="bubble them">Good catch. Which existing habit would you attach the new one to?</div>
-            <div class="bubble me">Coffee. Read 10 pages while it brews.</div>
-            <div class="bubble them typing"><span></span><span></span><span></span></div>
-          </div>
-
-          <!-- 4. the exam -->
-          <div class="screen" data-step="3">
-            <div class="app-bar">🎓 Exam · Atomic Habits</div>
-            <div class="q"><b>Q2.</b> You said you'd read while coffee brews. What breaks that system first, and what would you change?</div>
-            <div class="answer">Probably travel days — no kitchen, no trigger…</div>
-            <button class="app-btn">Submit for honest grading</button>
-          </div>
-
-          <!-- 5. the score -->
-          <div class="screen" data-step="4">
-            <div class="app-bar">Result</div>
-            <div class="big-score">72<small>%</small></div>
-            <div class="verdict">Solid on habit stacking. Vague on the 2-minute rule — worth re-reading ch. 13.</div>
-            <div class="chips"><span>✓ Q1 88%</span><span>✓ Q2 74%</span><span class="low">Q4 41%</span></div>
-            <button class="app-btn ghost-btn">📤 Share my result</button>
-          </div>
-
         </div>
       </div>
+    </div>
 
-      <div class="dots" role="tablist" aria-label="Demo steps">
-        <button class="dot on" data-go="0" aria-label="Add a book"></button>
-        <button class="dot" data-go="1" aria-label="Enter the title"></button>
-        <button class="dot" data-go="2" aria-label="Send thoughts"></button>
-        <button class="dot" data-go="3" aria-label="Take the exam"></button>
-        <button class="dot" data-go="4" aria-label="Get your score"></button>
-      </div>
+    <div class="dots" role="tablist" aria-label="Demo steps">
+      <button class="dot on" data-go="0" aria-label="Add a book"></button>
+      <button class="dot" data-go="1" aria-label="Keep a thought"></button>
+      <button class="dot" data-go="2" aria-label="Talk to the mentor"></button>
+      <button class="dot" data-go="3" aria-label="The quiz"></button>
+      <button class="dot" data-go="4" aria-label="The exam"></button>
     </div>
   </section>
 
@@ -600,11 +650,11 @@
     var dots = [].slice.call(document.querySelectorAll('.dot'));
     var caption = document.getElementById('demo-caption');
     var texts = [
-      'Open your library and tap “Add a book”.',
-      'Type the title — that’s the whole setup.',
-      'As you read, message any thought. It thinks back.',
-      'Finished? Five questions about your book.',
-      'An honest score, and exactly where you’re thin.',
+      'Type a few letters. It finds the book for you.',
+      'Keep a thought the moment it lands — typed, spoken, or photographed.',
+      'Talk it over. The mentor has read along with you.',
+      'Weeks later your own words come back. Which book was it?',
+      'And when you finish: five questions, marked honestly.',
     ];
     var i = 0, timer = null, manual = false;
 
@@ -613,7 +663,7 @@
       screens.forEach(function (s, k) { s.classList.toggle('on', k === i); });
       dots.forEach(function (d, k) { d.classList.toggle('on', k === i); });
       caption.textContent = texts[i];
-      if (i === 1) typeTitle();
+      if (i === 0) typeTitle();   // the title field is screen 0 now
     }
     function typeTitle() {
       var el = document.querySelector('.typed');
