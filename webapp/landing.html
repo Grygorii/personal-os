@@ -554,19 +554,44 @@
     });
   })();
 
-  /* The one number the whole page is about, counted up once. Short, and only on load. */
+  /* The score counts itself up, once, WHEN IT COMES INTO VIEW — it used to run on load,
+     which was right when the card sat in the hero and pointless now that it's most of a page
+     down: the animation finished long before anyone had scrolled to it.
+     The number is only zeroed once we know we can animate it. If motion is turned off, or
+     the browser has no observer, the real score is simply there — a 0% that never counts up
+     because a script stalled would be worse than no animation at all. */
   (function () {
     var el = document.querySelector('.hero-shot .sc');
-    if (!el || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    if (!el) return;
     var target = parseInt(el.textContent, 10);
     if (!target) return;
-    var t0 = null;
-    requestAnimationFrame(function step(ts) {
-      if (!t0) t0 = ts;
-      var p = Math.min((ts - t0) / 900, 1);
-      el.textContent = Math.round(target * (1 - Math.pow(1 - p, 3))) + '%';
-      if (p < 1) requestAnimationFrame(step);
-    });
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    if (!window.IntersectionObserver) return;
+
+    // The zero only ever exists DURING the animation. An earlier version set it to 0% up
+    // front and waited for the observer, which meant any browser that never fired one left
+    // the headline number reading 0% — a wrong number is far worse than no animation. Now
+    // the real score is what's on the page until the instant it starts counting.
+    var ran = false;
+    function run() {
+      if (ran) return;
+      ran = true;
+      var t0 = null;
+      requestAnimationFrame(function step(ts) {
+        if (!t0) t0 = ts;
+        var p = Math.min((ts - t0) / 1100, 1);
+        el.textContent = Math.round(target * (1 - Math.pow(1 - p, 3))) + '%';
+        if (p < 1) requestAnimationFrame(step);
+      });
+    }
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        if (!e.isIntersecting) return;
+        io.disconnect();
+        setTimeout(run, 200);          // let the card finish rising first
+      });
+    }, { threshold: 0.25 });
+    io.observe(el.closest('.hero-shot') || el);   // a whole card is a far easier target than one number
   })();
 
   /* ---- Installing ----
