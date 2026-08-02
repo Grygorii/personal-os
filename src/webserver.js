@@ -927,7 +927,7 @@ export function startServer(port = process.env.PORT || 8080, build = 'dev') {
       const q = Object.fromEntries(new URL(req.url, `https://${req.headers.host}`).searchParams);
       const tgUser = verifyTelegramLogin(q);
       if (!tgUser) {
-        res.writeHead(302, { Location: '/app?error=login' });
+        res.writeHead(302, { Location: '/signin?error=login' });
         res.end();
         return;
       }
@@ -946,7 +946,7 @@ export function startServer(port = process.env.PORT || 8080, build = 'dev') {
       }
       const acct = await users.ensureUser({ chatId: tgUser.id, name: tgUser.first_name, username: tgUser.username });
       if (!users.isAllowed(acct)) {
-        res.writeHead(302, { Location: '/app?error=waiting' });
+        res.writeHead(302, { Location: '/signin?error=waiting' });
         res.end();
         return;
       }
@@ -1005,19 +1005,19 @@ export function startServer(port = process.env.PORT || 8080, build = 'dev') {
       const sent = form.get('g_csrf_token');
       if (!sent || sent !== cookies.g_csrf_token) {
         console.warn('[auth] google redirect: csrf token mismatch');
-        res.writeHead(302, { Location: '/app?error=login' });
+        res.writeHead(302, { Location: '/signin?error=login' });
         res.end();
         return;
       }
       const g = await verifyGoogleToken(form.get('credential'));
       if (!g || !(await users.isEmailAllowed(g.email))) {
-        res.writeHead(302, { Location: '/app?error=login' });
+        res.writeHead(302, { Location: '/signin?error=login' });
         res.end();
         return;
       }
       const acct = await users.resolveGoogleUser(g);
       if (!users.isAllowed(acct)) {
-        res.writeHead(302, { Location: '/app?error=waiting' });
+        res.writeHead(302, { Location: '/signin?error=waiting' });
         res.end();
         return;
       }
@@ -1040,7 +1040,13 @@ export function startServer(port = process.env.PORT || 8080, build = 'dev') {
     // ---- the app itself ----
     // Signed in → the library. Not signed in → a sign-in screen. Deciding on the server
     // means the installed app never flashes marketing or a wrong screen first.
-    if (path === '/app') {
+    // The app opens for everybody now, signed in or not. Twenty-six people reached a login
+    // wall in one day and none of them got past it: we were asking a stranger to hand over a
+    // Google account before showing them a single thing. Adding books, keeping thoughts and
+    // the quiz all run on the device and cost nothing, so they need no account at all. The
+    // account is asked for at the moment it starts to mean something — when the work would
+    // otherwise be lost, or when an action costs real money.
+    if (path === '/app' || path === '/signin') {
       countVisit('app', req.headers['user-agent']);
       const sid = readSession(parseCookies(req.headers.cookie).kept_session);
       // A signature alone isn't enough — the account must still exist and be allowed.
@@ -1055,12 +1061,14 @@ export function startServer(port = process.env.PORT || 8080, build = 'dev') {
       const validRef = code && REF_CODE.test(code) ? code : null;
       if (validRef && signedIn) await attributeReferral(validRef, acct);
 
-      const file = signedIn ? '../reading/journal.html' : '../webapp/signin.html';
+      // /signin is the door, asked for deliberately. /app is the product, always open.
+      const file = path === '/signin' && !signedIn ? '../webapp/signin.html' : '../reading/journal.html';
       try {
         let html = await readFile(fileURLToPath(new URL(file, import.meta.url)), 'utf8');
         html = html
           .replaceAll('GOOGLE_CLIENT_ID', config.googleClientId || '')
           .replaceAll('APP_URL', config.appUrl)
+          .replaceAll('IS_GUEST', signedIn ? 'false' : 'true')
           // The owner gets a way back to the admin page from his phone. For anybody else the
           // markup is removed here, so it isn't a hidden control they could find and press.
           .replaceAll(

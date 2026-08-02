@@ -43,6 +43,11 @@
   .topbar{position:sticky;top:0;z-index:30;display:flex;align-items:center;justify-content:space-between;
     gap:10px;background:var(--paper);padding:calc(10px + env(safe-area-inset-top)) 2px 10px}
   .brand{font-family:var(--serif);color:var(--accent);font-weight:600;font-size:1rem}
+  .guestbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;
+    background:var(--accent-tint);border:1px solid var(--accent);border-radius:12px;
+    padding:10px 14px;margin-bottom:14px;font-size:.84rem;color:var(--muted)}
+  .guestbar b{color:var(--ink)}
+  .guestbar a{color:var(--accent-strong);font-weight:700;text-decoration:none;white-space:nowrap}
   .topact{display:flex;align-items:center;gap:8px}
   .iconbtn{background:transparent;border:1px solid var(--line);color:var(--muted);border-radius:11px;
     width:40px;height:40px;font-size:1.05rem;cursor:pointer;font-family:var(--sans);flex:none;
@@ -305,6 +310,13 @@
     </div>
   </section>
 
+  <!-- Shown to guests only. Honest about the one real cost of not signing in — this device
+       and nothing else — without nagging on every screen. -->
+  <div class="guestbar" id="guestbar" hidden>
+    <span><b>Not signed in.</b> Your books live on this device only.</span>
+    <a href="/signin">Keep them →</a>
+  </div>
+
   <section id="view-library">
     <h1>Your library</h1>
     <p class="sub">Your books, what you're getting from them, and the thoughts they spark.</p>
@@ -546,6 +558,7 @@ function openBook(id){
      Both of these END in the same editable box rather than saving anything: a model guessing
      at an accent or a blurry page must never be the last word on someone's own note. */
   $("n-tidy").onclick=async()=>{
+    if(guestBlocked("Tidying up","It runs on a model on the server, so it needs to know whose it is.")) return;
     const ta=$("n-text"), before=ta.value.trim();
     if(!before){ toast("Write or dictate something first"); return; }
     const bt=$("n-tidy"); bt.disabled=true; bt.textContent="✨ Tidying…";
@@ -563,7 +576,10 @@ function openBook(id){
     bt.disabled=false; bt.textContent="✨ Tidy it up";
   };
 
-  $("n-shot").onclick=()=>$("n-file").click();
+  $("n-shot").onclick=()=>{
+    if(guestBlocked("Reading a page","A photo is read by a model on the server, which costs real money to run.")) return;
+    $("n-file").click();
+  };
   $("n-file").onchange=async(ev)=>{
     const file=ev.target.files&&ev.target.files[0];
     ev.target.value="";                                  // let them pick the same photo twice
@@ -712,8 +728,14 @@ function openBook(id){
     };
   });
   $("b-del").onclick=()=>{ if(confirm("Delete this book and its thoughts?")){ state.books=state.books.filter(x=>x.id!==id); save(); $("b-back").click(); } };
-  $("b-exam").onclick=()=>startExam(id);
-  $("b-share").onclick=()=>shareBook(id);
+  $("b-exam").onclick=()=>{
+    if(guestBlocked("The exam","Your questions are written for this book by a model, and marked by one.")) return;
+    startExam(id);
+  };
+  $("b-share").onclick=()=>{
+    if(guestBlocked("Sharing","A shared page lives on the server, so it needs somewhere to live.")) return;
+    shareBook(id);
+  };
 }
 
 /* ---- Knowledge exam: honest questions, honestly graded ---- */
@@ -763,6 +785,34 @@ async function startExam(id){
    Everything stays inside this app: the phone's own share sheet if it has one (that's the
    real "every app you have installed"), otherwise a grid of destinations. Telegram is one
    choice among many, never a redirect we force. */
+/* ---- Signed in, or not ----
+   Everything that runs on the device is free and needs no account: adding books, keeping
+   thoughts, editing them, the quiz. The account is asked for at exactly two moments — when
+   the work would otherwise be lost, and when an action costs real money to run. That line
+   isn't arbitrary: it's the difference between what this device can do alone and what a
+   server has to pay for. */
+const GUEST = IS_GUEST;
+
+function needsAccount(what, why){
+  const { close } = openSheet(`
+    <div class="sheet-head">${esc(what)} needs an account</div>
+    <p class="sheet-note">${esc(why)}</p>
+    <p class="sheet-note">Signing in with Google tells me your name and email — nothing else.
+      I can't read your Gmail, your files or anything in your account, and you can disconnect
+      it whenever you like. Everything you've written so far comes with you.</p>
+    <a class="btn" href="/signin" style="display:block;text-align:center;text-decoration:none;line-height:1.4">Sign in and keep it</a>
+    <button class="btn ghost" id="na-x" style="margin-top:8px">Not now</button>`,
+    'Sign in to continue');
+  $("na-x").onclick=close;
+}
+
+/* One gate, so no paid call can slip out unauthenticated by being forgotten later. */
+function guestBlocked(what, why){
+  if(!GUEST) return false;
+  needsAccount(what, why);
+  return true;
+}
+
 /* ---- Bottom sheets you can swipe away ----
    Swipe-to-dismiss is what people expect from a sheet, but done naively it fires while
    they're scrolling the list of thoughts inside it — closing the panel when all they
@@ -1013,6 +1063,8 @@ $("theme").onclick=()=>{
 
 renderLibrary();
 loadBooks();
+/* A guest gets the app, plus one honest line about the only thing they're missing. */
+if(GUEST) $("guestbar").hidden=false;
 
 /* ---- Quiz: your own thought, which book was it? ----
    Entirely local — no model call, no cost, works offline. The material is already yours,
@@ -1280,7 +1332,10 @@ function endRound(){
       else window.scrollTo(0,0);
     }
   }
-  $("tab-chat").onclick=()=>tab("chat");
+  $("tab-chat").onclick=()=>{
+    if(guestBlocked("The mentor","It remembers your books between conversations, which needs an account to remember into.")) return;
+    tab("chat");
+  };
   $("tab-quiz").onclick=()=>{ openId=null; tab("quiz"); };
   $("tab-library").onclick=()=>{ openId=null; tab("library"); };
 
@@ -1367,6 +1422,11 @@ async function loadRecs(refresh){
   }catch(e){ msg("Couldn't load picks — tap ↻ New picks to try again."); }
   finally{ btn.disabled=false; }
 }
-$("recs-refresh").onclick=()=>loadRecs(true);
-loadRecs(false);
+$("recs-refresh").onclick=()=>{
+  if(guestBlocked("Recommendations","They're chosen for you by a model, from what you have read.")) return;
+  loadRecs(true);
+};
+if(GUEST){
+  $("recs-list").innerHTML='<div class="recs-loading">Sign in and Kept will pick your next four books.</div>';
+}else loadRecs(false);
 </script>

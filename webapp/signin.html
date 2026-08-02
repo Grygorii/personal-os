@@ -25,6 +25,9 @@
   .err{color:#E1685C;font-size:.9rem;min-height:1.2em;margin-top:16px}
   .note{color:var(--faint);font-size:.84rem;margin-top:16px}
   .foot{color:var(--faint);font-size:.78rem;margin-top:34px}
+  .reassure{color:var(--muted);font-size:.82rem;line-height:1.55;margin:14px auto 0;max-width:23rem;
+    background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+  .reassure b{color:var(--ink)}
   .inapp{background:var(--surface);border:1px solid var(--accent);border-radius:14px;
     padding:17px 18px;margin-top:18px;text-align:left}
   .inapp b{color:var(--ink);display:block;margin-bottom:7px}
@@ -44,6 +47,10 @@
     <div class="widget"><div id="g-btn"></div></div>
     <div class="err" id="err"></div>
     <p class="note" id="note">One tap. No password to invent.</p>
+    <!-- His read on why nobody signs in: they assume this hands over their Google account.
+         Saying what it actually does costs two lines and answers the real fear. -->
+    <p class="reassure">Google tells me your <b>name and email</b> — that's all it can.
+      Not your Gmail, not your files, not your contacts. Disconnect it any time.</p>
 
     <!-- Tapping a link inside LinkedIn, Facebook or Instagram opens their own embedded
          browser, and Google will not run sign-in in one — the button simply does nothing.
