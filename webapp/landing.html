@@ -134,6 +134,8 @@
     background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:13px 15px;
     max-width:420px;margin:0 auto 30px}
   .appbar .ico{width:52px;height:52px;border-radius:13px;flex:none}
+  .appbar .ico-fb{display:flex;align-items:center;justify-content:center;background:var(--surface);
+    border:1px solid var(--line);font-size:1.6rem}
   .appbar .meta{flex:1;min-width:0}
   .appbar .nm{font-family:var(--serif);font-weight:600;font-size:1.06rem;line-height:1.2}
   .appbar .st{color:var(--muted);font-size:.8rem;line-height:1.35;margin-top:1px}
@@ -230,7 +232,11 @@
 <div class="wrap">
   <header>
     <div class="appbar">
-      <img class="ico" src="/icon.svg" alt="" width="52" height="52">
+      <!-- Every other image on the site degrades to something clean if it fails; this one
+           didn't, and a broken-image glyph sitting in the App Store row is the worst place
+           on the page to have one. -->
+      <img class="ico" src="/icon.svg" alt="" width="52" height="52"
+           onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'ico ico-fb',textContent:'📕'}))">
       <div class="meta">
         <div class="nm">Kept</div>
         <div class="st">Reading · tests you on the books you finish</div>
@@ -239,7 +245,11 @@
     </div>
 
     <h1>You finished the book.<br>How much is <em>left</em>?</h1>
-    <p class="sub">Five questions when you turn the last page, marked honestly. So you finally know what stayed.</p>
+    <!-- Several people read the old subhead as "a place that gives you books" or "somewhere
+         to store your books". Kept has no books in it, and that has to be settled in the
+         first sentence — before the words "library" and "add a book" pull them the wrong way. -->
+    <p class="sub">Read on paper, Kindle or audio — Kept isn't where you read.
+      It's the five questions when you finish, marked honestly.</p>
 
     <!-- The payoff, in a phone, before a single word of explanation. -->
     <div class="hero-shot" aria-hidden="true">
@@ -410,6 +420,7 @@
   <section>
     <div class="kicker">Questions</div>
     <details><summary>Is it free?</summary><p>Free to start, with a daily allowance that grows as you use it. Later you can support it from €3 a month — or connect your own free AI key and keep it free for good.</p></details>
+    <details><summary>Do I read the books in Kept?</summary><p>No — there are no books in Kept, and it doesn't sell or lend them. You read however you already do: paper, Kindle, a library copy, an audiobook. Kept is where you jot what struck you while you're reading, and where you get tested once you've finished. It never asks you to change how you read.</p></details>
     <details><summary>Do I need to install anything?</summary><p>Not unless you want to. Sign in with Google and it runs in your browser straight away. Adding it to your home screen gives it an icon and opens it like any other app — which is where you'll actually use it, since that's where you read.</p></details>
     <details><summary>Why isn't it in the App Store?</summary><p>Because it doesn't need to be. Tap <b>Add to your phone</b> and Kept installs from this page in one step — an icon on your home screen, opening full screen, no download and no updates to sit through. It also means when you tell me something's wrong I can fix it that day, instead of waiting a week for a review. If enough people ask for a store listing, I'll make one.</p></details>
     <details><summary>What does it actually ask me?</summary><p>Five questions written for the book you just read — two on its core ideas, two on applying them to your own life, and one where you argue with the author. Nothing you could answer from the blurb.</p></details>
