@@ -412,6 +412,11 @@
         open it in Safari, then tap <b>Add to your phone</b> again.</p>
         <button class="cta solid" id="copy-link" style="margin-top:12px;width:100%">Copy readkept.com</button>
       </div>
+      <div id="android-help" hidden>
+        <b>One more tap</b>
+        <p style="margin:8px 0 0">Open the <b>⋮</b> menu in your browser and choose
+        <b>Install app</b> (or <b>Add to Home screen</b>).</p>
+      </div>
       <div id="desk-help" hidden>
         <b>Kept lives on your phone</b>
         <p style="margin:8px 0 0">That's where you read, and where the mentor should be able to
@@ -635,34 +640,42 @@
       e.preventDefault();
       deferred = e;
     });
-    if (isIos) {
-      // Add to Home Screen exists ONLY in Safari on iOS. In Chrome/Firefox/Edge the option
-      // simply isn't there, so send them to Safari rather than let them hunt for it.
-      var ua = navigator.userAgent;
-      var isSafari = /Safari/.test(ua) && !/CriOS|FxiOS|EdgiOS|OPiOS|Instagram|FBAN|FBAV|Line/.test(ua);
-      if (!isSafari) {
-        document.getElementById('ios-safari').hidden = true;
-        document.getElementById('ios-other').hidden = false;
-        btn.textContent = '📲 How to install on iPhone';
-      }
-      var copy = document.getElementById('copy-link');
-      if (copy) copy.addEventListener('click', function () {
-        navigator.clipboard && navigator.clipboard.writeText('https://readkept.com');
-        copy.textContent = 'Copied — now open Safari';
+
+    var ua = navigator.userAgent;
+    var isAndroid = /android/i.test(ua);
+    var isPhone = isIos || isAndroid || /Mobile/i.test(ua);
+    // Add to Home Screen exists ONLY in Safari on iOS — Chrome and Firefox on iPhone don't
+    // have the option at all, so those people need sending to Safari rather than hunting.
+    var isSafari = /Safari/.test(ua) && !/CriOS|FxiOS|EdgiOS|OPiOS|Instagram|FBAN|FBAV|Line/.test(ua);
+
+    // Nothing is decided up front any more. The old code treated "not an iPhone" as "a
+    // desktop", so an Android phone was handed the desktop panel telling it to open the site
+    // on a phone — which is where it already was.
+    function explain() {
+      ['ios-safari', 'ios-other', 'android-help', 'desk-help'].forEach(function (id) {
+        document.getElementById(id).hidden = true;
       });
+      var id = isIos ? (isSafari ? 'ios-safari' : 'ios-other')
+             : !isPhone ? 'desk-help'
+             : 'android-help';
+      document.getElementById(id).hidden = false;
+      help.style.display = 'block';
+      help.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
 
-    // No install API and not an iPhone → a desktop. Don't show them iPhone taps.
-    if (!isIos) {
-      document.getElementById('ios-safari').hidden = true;
-      document.getElementById('desk-help').hidden = false;
-      var cd = document.getElementById('copy-link-desk');
-      if (cd) cd.addEventListener('click', function () {
-        navigator.clipboard && navigator.clipboard.writeText('https://readkept.com');
-        cd.textContent = 'Copied — open it on your phone';
+    [['copy-link', 'Copied — now open Safari'], ['copy-link-desk', 'Copied — open it on your phone']]
+      .forEach(function (pair) {
+        var el = document.getElementById(pair[0]);
+        if (!el) return;
+        el.addEventListener('click', function () {
+          navigator.clipboard && navigator.clipboard.writeText('https://readkept.com');
+          el.textContent = pair[1];
+        });
       });
-    }
 
+    // Add to your phone should ADD. An explanation is a last resort for the two cases where
+    // the browser genuinely gives us no way to do it: a desktop, and an iPhone (where only
+    // Safari can, and only by hand).
     async function install() {
       if (deferred) {
         deferred.prompt();
@@ -671,8 +684,7 @@
         btn.style.display = 'none';
         return;
       }
-      help.style.display = help.style.display === 'block' ? 'none' : 'block';
-      help.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      explain();
     }
     if (get) get.addEventListener('click', install);
     btn.addEventListener('click', async function () {
