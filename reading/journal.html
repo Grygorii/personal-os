@@ -43,8 +43,12 @@
   .topbar{position:sticky;top:0;z-index:30;display:flex;align-items:center;justify-content:space-between;
     gap:10px;background:var(--paper);padding:calc(10px + env(safe-area-inset-top)) 2px 10px}
   .brand{font-family:var(--serif);color:var(--accent);font-weight:600;font-size:1rem}
+  .topact{display:flex;align-items:center;gap:8px}
   .iconbtn{background:transparent;border:1px solid var(--line);color:var(--muted);border-radius:11px;
-    width:40px;height:40px;font-size:1.05rem;cursor:pointer;font-family:var(--sans);flex:none}
+    width:40px;height:40px;font-size:1.05rem;cursor:pointer;font-family:var(--sans);flex:none;
+    display:inline-flex;align-items:center;justify-content:center;text-decoration:none}
+  .iconbtn.wide{width:auto;padding:0 13px;font-size:.82rem;font-weight:600;color:var(--accent-strong);
+    border-color:var(--accent)}
   .iconbtn:active{background:var(--raise)}
   h1{font-family:var(--serif);font-weight:600;font-size:1.62rem;margin:6px 0 .1rem}
   .sub{color:var(--muted);font-size:.9rem;margin:0}
@@ -280,7 +284,12 @@
   <h2 class="sr">A reading journal — your books with stats, and thoughts you can tag to a page.</h2>
   <header class="topbar">
     <div class="brand">📕 Kept</div>
-    <button class="iconbtn" id="theme" aria-label="Switch between light and dark">◐</button>
+    <span class="topact">
+      <!-- Owner only. The server strips this entirely for everyone else, so it isn't a
+           hidden button someone can find — for another account it does not exist. -->
+      OWNER_LINK
+      <button class="iconbtn" id="theme" aria-label="Switch between light and dark">◐</button>
+    </span>
   </header>
 
   <!-- The mentor: a full screen of its own, with the tab bar still visible underneath. -->

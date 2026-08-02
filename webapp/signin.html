@@ -22,6 +22,13 @@
   .err{color:#E1685C;font-size:.9rem;min-height:1.2em;margin-top:16px}
   .note{color:var(--faint);font-size:.84rem;margin-top:16px}
   .foot{color:var(--faint);font-size:.78rem;margin-top:34px}
+  .inapp{background:var(--surface);border:1px solid var(--accent);border-radius:14px;
+    padding:17px 18px;margin-top:18px;text-align:left}
+  .inapp b{color:var(--ink);display:block;margin-bottom:7px}
+  .inapp p{color:var(--muted);font-size:.9rem;margin:0 0 12px}
+  .inapp .tiny{font-size:.8rem;color:var(--faint);margin:10px 0 0}
+  .copybtn{width:100%;background:var(--accent);color:#231a05;border:0;border-radius:11px;
+    padding:13px;min-height:46px;font-family:var(--sans);font-weight:700;font-size:.95rem;cursor:pointer}
 </style>
 </head>
 <body>
@@ -33,7 +40,19 @@
     <!--GOOGLE-->
     <div class="widget"><div id="g-btn"></div></div>
     <div class="err" id="err"></div>
-    <p class="note">One tap. No password to invent.</p>
+    <p class="note" id="note">One tap. No password to invent.</p>
+
+    <!-- Tapping a link inside LinkedIn, Facebook or Instagram opens their own embedded
+         browser, and Google will not run sign-in in one — the button simply does nothing.
+         Thirteen people reached this screen and none got in; a button that cannot work is
+         worse than no button, so those visitors get the way out instead. -->
+    <div class="inapp" id="inapp" hidden>
+      <b>This app's browser won't let Google sign you in</b>
+      <p>Not your fault — Google blocks sign-in inside <span id="inapp-name">in-app</span> browsers.
+      Open <b>readkept.com</b> in Safari or Chrome and it takes one tap.</p>
+      <button class="copybtn" id="inapp-copy">Copy readkept.com</button>
+      <p class="tiny" id="inapp-how">Or tap ••• at the top and choose "Open in browser".</p>
+    </div>
     <!--/GOOGLE-->
 
     <!--NOGOOGLE-->
@@ -66,6 +85,35 @@
           })
           .catch(function () { document.getElementById('err').textContent = 'Network problem — try again.'; });
       }
+      // Detect the embedded browsers Google refuses to sign in from, and show the way out
+      // instead of a button that silently does nothing.
+      (function () {
+        var ua = navigator.userAgent || '';
+        var apps = [
+          [/LinkedInApp/i, 'LinkedIn'], [/FBAN|FBAV|FB_IAB/i, 'Facebook'],
+          [/Instagram/i, 'Instagram'], [/Snapchat/i, 'Snapchat'], [/TikTok/i, 'TikTok'],
+          [/MicroMessenger/i, 'WeChat'], [/Line\//i, 'LINE'], [/Twitter/i, 'X'],
+        ];
+        var hit = null;
+        for (var i = 0; i < apps.length; i++) if (apps[i][0].test(ua)) { hit = apps[i][1]; break; }
+        if (!hit) return;
+        document.querySelector('.widget').hidden = true;
+        document.getElementById('note').hidden = true;
+        document.getElementById('inapp-name').textContent = hit + "'s";
+        document.getElementById('inapp').hidden = false;
+        if (/iphone|ipad|ipod/i.test(ua)) {
+          document.getElementById('inapp-how').textContent =
+            'Or tap the ••• menu and choose "Open in browser".';
+        }
+        document.getElementById('inapp-copy').addEventListener('click', function () {
+          var btn = this;
+          try {
+            navigator.clipboard.writeText('https://readkept.com');
+            btn.textContent = 'Copied — now open your browser';
+          } catch (e) { btn.textContent = 'Go to readkept.com in your browser'; }
+        });
+      })();
+
       window.addEventListener('load', function () {
         if (!window.google || !'GOOGLE_CLIENT_ID') return;
         try {

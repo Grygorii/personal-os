@@ -79,10 +79,15 @@ const ASSETS = {
 // reconstruct a visitor from a counter. Link-preview scrapers are counted separately, so
 // "LinkedIn fetched the page but no humans followed" is visible as itself.
 const UA_BOT = /bot|crawl|spider|slurp|preview|facebookexternalhit|linkedinbot|whatsapp|telegram|slackbot|discord|embed|curl|wget|python-requests|headless/i;
+// Tapping a link inside LinkedIn, Facebook or Instagram opens their own embedded browser,
+// and Google refuses to run sign-in in one. Counted separately because it is the difference
+// between "nobody wanted to sign in" and "nobody was allowed to" — two opposite problems.
+const UA_INAPP = /LinkedInApp|FBAN|FBAV|FB_IAB|Instagram|Snapchat|TikTok|Line\/|MicroMessenger|Twitter/i;
 
 function countVisit(page, ua) {
   const day = new Date().toISOString().slice(0, 10);
-  const kind = UA_BOT.test(String(ua || '')) ? 'bots' : 'people';
+  const s = String(ua || '');
+  const kind = UA_BOT.test(s) ? 'bots' : UA_INAPP.test(s) ? 'inapp' : 'people';
   rawCol('meta')
     .updateOne({ _id: `visits:${day}` }, { $inc: { [`${page}.${kind}`]: 1 } }, { upsert: true })
     .catch(() => {}); // never let counting slow or break a page load
@@ -528,13 +533,14 @@ ${shareRows}</table></div>` : ''}
   posted: they prove the link was shared, not that anyone clicked it.
 </p>
 <div class="scroll"><table>
-<tr><th>Day</th><th>Front page</th><th>Opened the app</th><th>Link previews</th></tr>
+<tr><th>Day</th><th>Front page</th><th>Reached sign-in</th><th>In-app browser</th><th>Link previews</th></tr>
 ${visits.length
   ? visits.map((v) => `<tr><td>${esc(String(v._id).slice(7))}</td>
       <td class="${v.landing?.people ? 'good' : 'dim'}">${v.landing?.people || 0}</td>
       <td class="${v.app?.people ? 'good' : 'dim'}">${v.app?.people || 0}</td>
+      <td class="${(v.landing?.inapp || 0) + (v.app?.inapp || 0) ? 'bad' : 'dim'}">${(v.landing?.inapp || 0) + (v.app?.inapp || 0)}</td>
       <td class="dim">${(v.landing?.bots || 0) + (v.app?.bots || 0)}</td></tr>`).join('')
-  : '<tr><td colspan="4" class="dim">Counting starts from this deploy — nothing recorded before it.</td></tr>'}
+  : '<tr><td colspan="5" class="dim">Counting starts from this deploy — nothing recorded before it.</td></tr>'}
 </table></div>
 <p class="note">“Kept a thought” is the number that matters now — a book with nothing written against it is somebody who tried and got nothing back.</p>
 </div></body></html>`;
@@ -970,7 +976,13 @@ export function startServer(port = process.env.PORT || 8080, build = 'dev') {
         let html = await readFile(fileURLToPath(new URL(file, import.meta.url)), 'utf8');
         html = html
           .replaceAll('GOOGLE_CLIENT_ID', config.googleClientId || '')
-          .replaceAll('APP_URL', config.appUrl);
+          .replaceAll('APP_URL', config.appUrl)
+          // The owner gets a way back to the admin page from his phone. For anybody else the
+          // markup is removed here, so it isn't a hidden control they could find and press.
+          .replaceAll(
+            'OWNER_LINK',
+            acct?.role === 'owner' ? '<a class="iconbtn wide" href="/admin">Admin</a>' : ''
+          );
         // Google is the only way in, so the page has to say something sensible if it isn't
         // configured — a sign-in screen with no button and no explanation reads as broken.
         html = config.googleClientId
