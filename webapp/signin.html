@@ -117,7 +117,16 @@
       window.addEventListener('load', function () {
         if (!window.google || !'GOOGLE_CLIENT_ID') return;
         try {
-          google.accounts.id.initialize({ client_id: 'GOOGLE_CLIENT_ID', callback: onGoogleCredential });
+          // Redirect, not popup. The popup flow depends on a window Safari blocks routinely
+          // and on third-party cookies it increasingly refuses — which looks, to the person
+          // holding the phone, exactly like a button that does nothing. A redirect is a plain
+          // navigation: it works with popups blocked, cookies restricted, and on old browsers.
+          google.accounts.id.initialize({
+            client_id: 'GOOGLE_CLIENT_ID',
+            ux_mode: 'redirect',
+            login_uri: 'APP_URL/auth/google/redirect',
+            callback: onGoogleCredential,   // still used if a browser gives us the popup path
+          });
           google.accounts.id.renderButton(document.getElementById('g-btn'), {
             theme: 'filled_black', size: 'large', shape: 'pill', text: 'continue_with', width: 260,
           });

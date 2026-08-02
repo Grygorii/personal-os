@@ -69,6 +69,12 @@
     transition:transform .08s ease}
   .cta:active{transform:scale(.98)}
   .cta.ghost{background:transparent;color:var(--ink);border:1px solid var(--line);font-weight:600;margin-left:8px}
+  /* His wife tried to SWIPE this one. A pale outline inside a bordered panel reads as another
+     card, not a control — so the thing you're meant to press is now filled, like every other
+     button that does something, and it presses visibly. */
+  .cta.solid{background:var(--accent);color:var(--accent-ink);border:0;font-weight:700;
+    box-shadow:0 6px 18px rgba(217,174,74,.22)}
+  .cta.solid:active{transform:scale(.98);box-shadow:none}
   .note{color:var(--faint);font-size:.86rem;margin-top:14px}
   /* the problem */
   .stat{font-family:var(--serif);font-size:clamp(3rem,13vw,5rem);color:var(--accent);line-height:1;font-weight:700}
@@ -392,14 +398,14 @@
         <b>Almost — one step first</b>
         <p style="margin:8px 0 0">iPhone only allows this from <b>Safari</b>. Copy the link below,
         open it in Safari, then tap <b>Add to your phone</b> again.</p>
-        <button class="cta ghost" id="copy-link" style="margin-top:12px;width:100%">Copy readkept.com</button>
+        <button class="cta solid" id="copy-link" style="margin-top:12px;width:100%">Copy readkept.com</button>
       </div>
       <div id="desk-help" hidden>
         <b>Kept lives on your phone</b>
         <p style="margin:8px 0 0">That's where you read, and where the mentor should be able to
         reach you. Open <b>readkept.com</b> on your phone and tap <b>Add to your phone</b>.
         It works fine in this browser too.</p>
-        <button class="cta ghost" id="copy-link-desk" style="margin-top:12px;width:100%">Copy readkept.com</button>
+        <button class="cta solid" id="copy-link-desk" style="margin-top:12px;width:100%">Copy readkept.com</button>
       </div>
     </div>
     <p class="note">Free to start · works on any phone</p>

@@ -842,7 +842,9 @@ const csp = (frameAncestors) =>
     "img-src 'self' data: blob: https://*.googleusercontent.com",
     "connect-src 'self' https://accounts.google.com",
     "frame-src https://accounts.google.com",
-    "form-action 'self'",
+    // Google's redirect sign-in submits a form to accounts.google.com. Without it here the
+    // button would be blocked by our own policy — the same way blob: silently killed photos.
+    "form-action 'self' https://accounts.google.com",
     "base-uri 'none'",
     "object-src 'none'",
     `frame-ancestors ${frameAncestors}`,
@@ -945,6 +947,51 @@ export function startServer(port = process.env.PORT || 8080, build = 'dev') {
         'Set-Cookie': [sessionCookie(createSession(acct._id)), clearedRefCookie],
       });
       res.end(JSON.stringify({ ok: true }));
+      return;
+    }
+    // Google's redirect sign-in lands here: it POSTs the credential as a normal form instead
+    // of handing it to a popup. This is the path that works when Safari blocks the popup or
+    // restricts third-party cookies — which, from the outside, looks exactly like a button
+    // that does nothing. Nobody ever reported "the popup was blocked"; they reported "it
+    // doesn't work", which is why this took so long to find.
+    if (path === '/auth/google/redirect' && req.method === 'POST') {
+      const raw = await new Promise((resolve) => {
+        let d = '';
+        req.on('data', (c) => { d += c; if (d.length > 8000) req.destroy(); });
+        req.on('end', () => resolve(d));
+        req.on('error', () => resolve(''));
+      });
+      const form = new URLSearchParams(raw);
+      const cookies = parseCookies(req.headers.cookie);
+      // Google sends the same token as a cookie and a form field; equal means the POST came
+      // from the flow we started, not from someone else's page.
+      const sent = form.get('g_csrf_token');
+      if (!sent || sent !== cookies.g_csrf_token) {
+        console.warn('[auth] google redirect: csrf token mismatch');
+        res.writeHead(302, { Location: '/app?error=login' });
+        res.end();
+        return;
+      }
+      const g = await verifyGoogleToken(form.get('credential'));
+      if (!g || !(await users.isEmailAllowed(g.email))) {
+        res.writeHead(302, { Location: '/app?error=login' });
+        res.end();
+        return;
+      }
+      const acct = await users.resolveGoogleUser(g);
+      if (!users.isAllowed(acct)) {
+        res.writeHead(302, { Location: '/app?error=waiting' });
+        res.end();
+        return;
+      }
+      const ref = cookies.kept_ref;
+      if (ref && REF_CODE.test(ref)) await attributeReferral(ref, acct);
+      console.log(`[auth] ${acct._id} signed in (redirect)`);
+      res.writeHead(302, {
+        Location: '/app',
+        'Set-Cookie': [sessionCookie(createSession(acct._id)), clearedRefCookie],
+      });
+      res.end();
       return;
     }
     if (path === '/auth/logout') {
