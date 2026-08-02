@@ -382,6 +382,13 @@ async function adminPage() {
     users.listInvites(),
     rawCol('meta').find({ _id: { $regex: '^visits:' } }).sort({ _id: -1 }).limit(7).toArray(),
   ]);
+  // Sign-ups per day, so the funnel finishes on the same row. "25 reached sign-in" sitting
+  // in one table while "4 people" sits in another is what made these numbers look broken.
+  const signupsOn = {};
+  for (const u of people) {
+    const d = u.createdAt ? new Date(u.createdAt).toISOString().slice(0, 10) : null;
+    if (d) signupsOn[d] = (signupsOn[d] || 0) + 1;
+  }
   const rows = await Promise.all(
     people.map(async (u) => {
       const [shelf, msgs, exams] = await Promise.all([
@@ -533,14 +540,15 @@ ${shareRows}</table></div>` : ''}
   posted: they prove the link was shared, not that anyone clicked it.
 </p>
 <div class="scroll"><table>
-<tr><th>Day</th><th>Front page</th><th>Reached sign-in</th><th>In-app browser</th><th>Link previews</th></tr>
+<tr><th>Day</th><th>Front page</th><th>Reached sign-in</th><th>Signed up</th><th>Couldn't — social app</th><th>Link previews</th></tr>
 ${visits.length
   ? visits.map((v) => `<tr><td>${esc(String(v._id).slice(7))}</td>
       <td class="${v.landing?.people ? 'good' : 'dim'}">${v.landing?.people || 0}</td>
       <td class="${v.app?.people ? 'good' : 'dim'}">${v.app?.people || 0}</td>
+      <td class="${signupsOn[String(v._id).slice(7)] ? 'good' : 'bad'}">${signupsOn[String(v._id).slice(7)] || 0}</td>
       <td class="${(v.landing?.inapp || 0) + (v.app?.inapp || 0) ? 'bad' : 'dim'}">${(v.landing?.inapp || 0) + (v.app?.inapp || 0)}</td>
       <td class="dim">${(v.landing?.bots || 0) + (v.app?.bots || 0)}</td></tr>`).join('')
-  : '<tr><td colspan="5" class="dim">Counting starts from this deploy — nothing recorded before it.</td></tr>'}
+  : '<tr><td colspan="6" class="dim">Counting starts from this deploy — nothing recorded before it.</td></tr>'}
 </table></div>
 <p class="note">“Kept a thought” is the number that matters now — a book with nothing written against it is somebody who tried and got nothing back.</p>
 </div></body></html>`;
