@@ -1,0 +1,21 @@
+# Runs on every push. The suite is pure logic — no database, no network, no secrets — so it
+# can run on a clean checkout in seconds and never touches anyone's real data.
+name: test
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      # A syntax error in any of these is a site-down bug, and it costs a second to catch.
+      - name: check every source file parses
+        run: for f in src/*.js src/agents/*.js scripts/*.mjs; do node --check "$f" || exit 1; done
