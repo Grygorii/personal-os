@@ -134,6 +134,13 @@
   .cap:active{background:var(--accent-tint);border-color:var(--accent);color:var(--accent-strong)}
   .cap:disabled{opacity:.55}
   .caphint{color:var(--faint);font-size:.76rem;margin:7px 2px 0}
+  /* choosing the part of the page to read */
+  .cropbox{position:relative;touch-action:none;-webkit-user-select:none;user-select:none;
+    background:var(--raise);border-radius:12px;overflow:hidden;display:flex;justify-content:center}
+  .cropbox img{display:block;max-width:100%;max-height:46vh;width:auto;height:auto;pointer-events:none}
+  .cropsel{position:absolute;border:2px solid var(--accent);background:rgba(217,174,74,.18);
+    pointer-events:none;border-radius:3px}
+  .cropdim{position:absolute;inset:0;background:rgba(0,0,0,.45);pointer-events:none}
   .note .nact{display:flex;gap:16px;margin-top:6px}
   .note .nrm{background:transparent;border:0;color:var(--faint);cursor:pointer;font-size:.8rem;padding:6px 0;min-height:34px;font-family:var(--sans)}
   .note .nrm:active{color:var(--accent-strong)}
@@ -552,9 +559,13 @@ function openBook(id){
     const file=ev.target.files&&ev.target.files[0];
     ev.target.value="";                                  // let them pick the same photo twice
     if(!file) return;
+    // Ask which part BEFORE sending: a whole page costs more to read and leaves more to
+    // delete afterwards. Cancelling here means nothing is sent and nothing is charged.
+    const region=await cropSheet(file);
+    if(!region) return;
     const bt=$("n-shot"); bt.disabled=true; bt.textContent="📷 Reading the page…";
     try{
-      const dataUrl=await shrink(file);
+      const dataUrl=await shrink(file,region);
       const r=await api("/api/readpage",{method:"POST",headers:{"Content-Type":"application/json"},
         body:JSON.stringify({image:dataUrl})});
       const d=r.ok?await r.json():null;
@@ -572,20 +583,79 @@ function openBook(id){
   };
 
   /* A phone camera photo is several megabytes; the page only needs to be legible. Resizing
-     here keeps the upload small, the request fast, and the model's bill down. */
-  function shrink(file, max=1400, quality=0.72){
+     here keeps the upload small, the request fast, and the model's bill down. `region` is
+     the fraction of the photo they selected, so a cropped strip is cheaper again. */
+  function shrink(file, region, max=1400, quality=0.72){
     return new Promise((resolve,reject)=>{
       const img=new Image(), url=URL.createObjectURL(file);
       img.onload=()=>{
         URL.revokeObjectURL(url);
-        const scale=Math.min(1,max/Math.max(img.width,img.height));
+        const r=region&&region.w>0?region:{x:0,y:0,w:1,h:1};
+        const sx=Math.round(r.x*img.width), sy=Math.round(r.y*img.height);
+        const sw=Math.max(1,Math.round(r.w*img.width)), sh=Math.max(1,Math.round(r.h*img.height));
+        const scale=Math.min(1,max/Math.max(sw,sh));
         const c=document.createElement("canvas");
-        c.width=Math.round(img.width*scale); c.height=Math.round(img.height*scale);
-        c.getContext("2d").drawImage(img,0,0,c.width,c.height);
+        c.width=Math.round(sw*scale); c.height=Math.round(sh*scale);
+        c.getContext("2d").drawImage(img,sx,sy,sw,sh,0,0,c.width,c.height);
         resolve(c.toDataURL("image/jpeg",quality));
       };
       img.onerror=()=>{ URL.revokeObjectURL(url); reject(new Error("not an image")); };
       img.src=url;
+    });
+  }
+
+  /* Drag across the words you want. Resolves to a {x,y,w,h} fraction of the photo, or null
+     if they backed out. Fractions rather than pixels, so the crop survives the downscale. */
+  function cropSheet(file){
+    return new Promise((resolve)=>{
+      const url=URL.createObjectURL(file);
+      let done=false;
+      const finish=(v)=>{ if(done)return; done=true; URL.revokeObjectURL(url); close(); resolve(v); };
+      const { bg, close }=openSheet(`
+        <div class="sheet-head">Which part?</div>
+        <p class="sheet-note">Drag across the words you want — or read the whole page.</p>
+        <div class="cropbox" id="cropbox"><img id="cropimg" alt=""><div class="cropsel" id="cropsel" hidden></div></div>
+        <button class="btn" id="crop-go" style="margin-top:12px" disabled>Drag to choose a part</button>
+        <button class="btn ghost" id="crop-all" style="margin-top:8px">Read the whole page</button>`,
+        "Choose the part to read");
+      $("cropimg").src=url;
+
+      const box=$("cropbox"), sel=$("cropsel"), img=$("cropimg"), go=$("crop-go");
+      let start=null, rect=null;
+      const imgBox=()=>{ const i=img.getBoundingClientRect(), b=box.getBoundingClientRect();
+        return { left:i.left-b.left, top:i.top-b.top, w:i.width, h:i.height }; };
+
+      box.addEventListener("pointerdown",(e)=>{
+        const ib=imgBox(), b=box.getBoundingClientRect();
+        start={ x:e.clientX-b.left, y:e.clientY-b.top, ib };
+        box.setPointerCapture(e.pointerId);
+      });
+      box.addEventListener("pointermove",(e)=>{
+        if(!start) return;
+        const b=box.getBoundingClientRect();
+        const x2=e.clientX-b.left, y2=e.clientY-b.top;
+        const x=Math.min(start.x,x2), y=Math.min(start.y,y2);
+        rect={ x, y, w:Math.abs(x2-start.x), h:Math.abs(y2-start.y) };
+        Object.assign(sel.style,{left:x+"px",top:y+"px",width:rect.w+"px",height:rect.h+"px"});
+        sel.hidden=false;
+        const big=rect.w>24&&rect.h>24;
+        go.disabled=!big;
+        go.textContent=big?"Read the selected part":"Drag to choose a part";
+      });
+      const end=()=>{ start=null; };
+      box.addEventListener("pointerup",end);
+      box.addEventListener("pointercancel",end);
+
+      go.onclick=()=>{
+        const ib=imgBox();
+        if(!rect||!ib.w||!ib.h) return finish({x:0,y:0,w:1,h:1});
+        // Clamp to the image: a drag that ran off the edge shouldn't crop outside it.
+        const x=Math.max(0,Math.min(1,(rect.x-ib.left)/ib.w));
+        const y=Math.max(0,Math.min(1,(rect.y-ib.top)/ib.h));
+        finish({ x, y, w:Math.min(1-x,rect.w/ib.w), h:Math.min(1-y,rect.h/ib.h) });
+      };
+      $("crop-all").onclick=()=>finish({x:0,y:0,w:1,h:1});
+      bg.addEventListener("click",(e)=>{ if(e.target===bg) finish(null); }); // tapped away
     });
   }
 

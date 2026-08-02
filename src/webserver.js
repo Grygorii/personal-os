@@ -379,20 +379,24 @@ async function adminPage() {
   ]);
   const rows = await Promise.all(
     people.map(async (u) => {
-      const [books, msgs, exams] = await Promise.all([
-        rawCol('books').findOne({ userId: u._id }).then((d) => d?.books?.length || 0),
+      const [shelf, msgs, exams] = await Promise.all([
+        rawCol('books').findOne({ userId: u._id }),
         rawCol('conversation').countDocuments({ userId: u._id, role: 'user' }),
         rawCol('book_exams').countDocuments({ userId: u._id, status: 'graded' }),
       ]);
-      return { u, books, msgs, exams };
+      const list = shelf?.books || [];
+      return { u, books: list.length, thoughts: list.reduce((n, b) => n + (b.notes?.length || 0), 0), msgs, exams };
     })
   );
   const withBooks = rows.filter((r) => r.books > 0).length;
+  // The number that actually matters, now that the promise is "keep what you read".
+  // A book with no thoughts against it is somebody who tried and got nothing back.
+  const withThoughts = rows.filter((r) => r.thoughts > 0).length;
   const joined = (d) => (d ? new Date(d).toISOString().slice(0, 10) : '—');
   const via = (u) => (u.referredBy ? 'share' : String(u._id).startsWith('g:') ? 'google' : 'telegram');
 
   const body = rows
-    .map(({ u, books, msgs, exams }) => {
+    .map(({ u, books, thoughts, msgs, exams }) => {
       const dot = u.status === 'active' ? '#43B571' : u.status === 'blocked' ? '#E1685C' : '#D9AE4A';
       return `<tr>
       <td><span class="dot" style="background:${dot}"></span>${esc(u.displayName || u.name || u._id)}
@@ -401,6 +405,7 @@ async function adminPage() {
       <td class="dim">${via(u)}</td>
       <td class="dim">${esc(u.language || '—')}</td>
       <td class="${books ? 'good' : 'dim'}">${books}</td>
+      <td class="${thoughts ? 'good' : 'dim'}">${thoughts}</td>
       <td class="dim">${msgs}</td>
       <td class="${exams ? 'good' : 'dim'}">${exams}</td>
       <td class="dim">${joined(u.createdAt)}</td>
@@ -468,12 +473,13 @@ async function adminPage() {
   <div class="card"><div class="n">${people.length}</div><div class="l">People</div></div>
   <div class="card"><div class="n">${people.filter((u) => u.status === 'active').length}</div><div class="l">Active</div></div>
   <div class="card"><div class="n" style="color:${withBooks ? '#43B571' : '#E1685C'}">${withBooks}</div><div class="l">Added a book</div></div>
+  <div class="card"><div class="n" style="color:${withThoughts ? '#43B571' : '#E1685C'}">${withThoughts}</div><div class="l">Kept a thought</div></div>
   <div class="card"><div class="n">${rows.reduce((n, r) => n + r.exams, 0)}</div><div class="l">Exams taken</div></div>
   <div class="card"><div class="n">${stats ? stats.totalMB.toFixed(0) : '?'}<span style="font-size:.9rem">/512MB</span></div><div class="l">Storage</div></div>
 </div>
 <h2>Everyone</h2>
 <div class="scroll"><table>
-<tr><th>Name</th><th>Via</th><th>Lang</th><th>Books</th><th>Msgs</th><th>Exams</th><th>Joined</th><th></th></tr>
+<tr><th>Name</th><th>Via</th><th>Lang</th><th>Books</th><th>Thoughts</th><th>Msgs</th><th>Exams</th><th>Joined</th><th></th></tr>
 ${body}
 </table></div>
 <h2>Access</h2>
@@ -530,7 +536,7 @@ ${visits.length
       <td class="dim">${(v.landing?.bots || 0) + (v.app?.bots || 0)}</td></tr>`).join('')
   : '<tr><td colspan="4" class="dim">Counting starts from this deploy — nothing recorded before it.</td></tr>'}
 </table></div>
-<p class="note">“Added a book” is the number that matters — everything before it is just a visitor.</p>
+<p class="note">“Kept a thought” is the number that matters now — a book with nothing written against it is somebody who tried and got nothing back.</p>
 </div></body></html>`;
 }
 
@@ -823,7 +829,11 @@ const csp = (frameAncestors) =>
     "default-src 'self'",
     "script-src 'self' 'unsafe-inline' https://accounts.google.com https://telegram.org",
     "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' data: https://*.googleusercontent.com",
+    // blob: is required for the photo capture — the browser reads the chosen file through a
+    // blob URL before downscaling it. Leaving it out silently broke photographing a page:
+    // the image never loaded, so it failed before the model was ever called. A blob URL can
+    // only be minted by this origin's own scripts, so it adds no new reach.
+    "img-src 'self' data: blob: https://*.googleusercontent.com",
     "connect-src 'self' https://accounts.google.com",
     "frame-src https://accounts.google.com",
     "form-action 'self'",
