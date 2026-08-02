@@ -27,6 +27,18 @@
 <meta name="apple-mobile-web-app-title" content="Kept">
 <meta name="theme-color" content="#14130F">
 <meta name="color-scheme" content="dark">
+<!-- Tells a crawler what this is instead of leaving it to infer from prose. Every claim here
+     is one the page itself makes; a schema that oversells is worse than none. -->
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"WebApplication",
+ "name":"Kept",
+ "url":"APP_URL/",
+ "applicationCategory":"EducationalApplication",
+ "operatingSystem":"Any browser, installable on iOS and Android",
+ "description":"Save the thoughts you have while reading, tagged to the page they came from. Kept hands them back weeks later and tests you honestly on the books you finish.",
+ "offers":{"@type":"Offer","price":"0","priceCurrency":"EUR"},
+ "author":{"@type":"Person","name":"Grygorii"}}
+</script>
 <script>
   // An installed app must never open onto the sales page. A PWA's start_url is fixed at
   // install time, so anyone who installed before it changed would land here forever —

@@ -693,6 +693,10 @@ function sharePage(s) {
 <meta name="twitter:title" content="${esc(headline)}">
 <meta name="twitter:description" content="${esc(lead)}">
 <meta name="twitter:image" content="${config.appUrl}/r/${s._id}/card.svg">
+<!-- Shareable, but not searchable. Someone sending a friend their reading notes has not
+     agreed to those notes turning up in Google. Link previews still work — noindex stops
+     search engines keeping it, not messaging apps unfurling it. -->
+<meta name="robots" content="noindex, nofollow">
 <style>
  :root{color-scheme:dark}
  *{box-sizing:border-box} body{margin:0;background:#14130F;color:#ECE8DF;
@@ -875,6 +879,31 @@ export function startServer(port = process.env.PORT || 8080, build = 'dev') {
     if (path === '/health') {
       res.writeHead(200, { 'Content-Type': 'text/plain' });
       res.end('ok');
+      return;
+    }
+    // Crawlers ask for these two before anything else, and a 404 for both is what an
+    // unfinished site looks like. Everything private is refused by name rather than by hope:
+    // the app shell has nothing to read, and /r/ pages carry people's own reading notes —
+    // "anyone with the link" was never meant to mean "anyone searching Google".
+    if (path === '/robots.txt') {
+      res.writeHead(200, { 'Content-Type': 'text/plain', 'Cache-Control': 'public, max-age=86400' });
+      res.end(
+        `User-agent: *\nAllow: /$\nAllow: /privacy\n` +
+          `Disallow: /app\nDisallow: /admin\nDisallow: /api/\nDisallow: /r/\nDisallow: /auth/\n` +
+          `Disallow: /hub\nDisallow: /deck\nDisallow: /body\nDisallow: /reading\nDisallow: /routine\nDisallow: /dashboard\n\n` +
+          `Sitemap: ${config.appUrl}/sitemap.xml\n`
+      );
+      return;
+    }
+    if (path === '/sitemap.xml') {
+      const day = new Date().toISOString().slice(0, 10);
+      res.writeHead(200, { 'Content-Type': 'application/xml', 'Cache-Control': 'public, max-age=86400' });
+      res.end(
+        `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n` +
+          `  <url><loc>${config.appUrl}/</loc><lastmod>${day}</lastmod><priority>1.0</priority></url>\n` +
+          `  <url><loc>${config.appUrl}/privacy</loc><lastmod>${day}</lastmod><priority>0.3</priority></url>\n` +
+          `</urlset>\n`
+      );
       return;
     }
     // Tiny, public, uncached: the whole point is that it always tells the truth.
