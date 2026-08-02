@@ -14,13 +14,15 @@ import { runAs, uid, personName, languageRule } from './ctx.js';
 import { verifyTelegramLogin, verifyGoogleToken, createSession, readSession, parseCookies, sessionCookie, clearedCookie, refCookie, clearedRefCookie } from './auth.js';
 import { addBook } from './library.js';
 
-// Read a small JSON request body (exam answers etc.). Hard 200KB cap.
-function readJson(req) {
+// Read a small JSON request body (exam answers etc.). Hard cap, raised only for the one
+// endpoint that carries a photograph — the client downscales first, so this is a ceiling
+// against abuse rather than a size anyone should reach.
+function readJson(req, cap = 200000) {
   return new Promise((resolve) => {
     let data = '';
     req.on('data', (c) => {
       data += c;
-      if (data.length > 200000) req.destroy();
+      if (data.length > cap) req.destroy();
     });
     req.on('end', () => {
       try { resolve(JSON.parse(data || '{}')); } catch { resolve({}); }
@@ -230,6 +232,57 @@ Reply with ONLY JSON, no fences: {"recs":[{"title":"...","author":"...","why":".
   recs = recs.slice(0, 4).map((r) => ({ title: String(r.title || ''), author: String(r.author || ''), why: String(r.why || '') }));
   await col('meta').updateOne({ _id: cacheId }, { $set: { ts: new Date(), v: RECS_PROMPT_VERSION, recs } }, { upsert: true });
   return { recs, at: new Date() };
+}
+
+// ---- Capturing a thought without typing it ----
+// Two ways in, both landing in the same editable box: dictate it (the phone's own keyboard
+// mic already does the speech part for free, so all that's missing is tidying the result),
+// or photograph the page. Neither is allowed to overwrite what the reader wrote — both hand
+// back text for them to accept or change, because a note is theirs and a model guessing at
+// a blurry page or an accent must never be the last word.
+
+// Spelling and punctuation only. Explicitly NOT an editor: it must not improve, shorten or
+// formalise anyone's thinking, and it must stay in the language they wrote in.
+async function tidyText(raw) {
+  const text = String(raw || '').trim().slice(0, 2000);
+  if (text.length < 2) return { text };
+  const sys = `${languageRule()}
+You fix typing, nothing else, in a note ${personName()} jotted while reading.
+Correct spelling, grammar and punctuation. Keep their exact words, their voice, their meaning
+and their language. Never add an idea, never remove one, never summarise, never make it more
+formal, never translate. If it already reads correctly, return it exactly as it is.
+Reply with ONLY the corrected note. No preamble, no quotes, no explanation.`;
+  const out = await chat({ system: sys, messages: [{ role: 'user', content: text }], maxTokens: 700 });
+  const cleaned = String(out || '').trim().replace(/^["']|["']$/g, '');
+  // A model that returns nothing, or an essay, gets ignored rather than trusted.
+  if (!cleaned || cleaned.length > text.length * 3 + 80) return { text };
+  return { text: cleaned.slice(0, 2000) };
+}
+
+// Read a photographed page. Returns the words on it and nothing else — no summary, no
+// interpretation, because the reader is going to trim it down to the bit they wanted.
+async function readPage(dataUrl) {
+  const m = String(dataUrl || '').match(/^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/);
+  if (!m) throw new Error('not an image');
+  const [, mediaType, data] = m;
+  if (data.length > 1_400_000) throw new Error('image too large');
+  const sys = `${languageRule()}
+You transcribe photographs of book pages.
+Return ONLY the text visible in the image, as written, keeping its line breaks and punctuation.
+If part is cut off or unreadable, leave it out rather than guessing. If the photo contains no
+readable text, reply with exactly: NO_TEXT
+Never summarise, never comment, never add anything of your own.`;
+  const out = await chat({
+    system: sys,
+    messages: [{ role: 'user', content: [
+      { type: 'image', source: { type: 'base64', media_type: mediaType, data } },
+      { type: 'text', text: 'Transcribe this page.' },
+    ] }],
+    maxTokens: 900,
+  });
+  const text = String(out || '').trim();
+  if (!text || text === 'NO_TEXT') return { text: '', empty: true };
+  return { text: text.slice(0, 4000) };
 }
 
 // ---- Looking a book up so nobody has to type it twice ----
@@ -791,13 +844,25 @@ function setSecurityHeaders(res, { denyFraming = false } = {}) {
   if (denyFraming) res.setHeader('X-Frame-Options', 'DENY');
 }
 
-export function startServer(port = process.env.PORT || 8080) {
+// The build the server is running. An open app polls this and reloads itself when it
+// changes, so a deploy reaches a phone that's been sitting on the kitchen table for a week
+// without anybody being asked to do anything.
+let BUILD = 'dev';
+
+export function startServer(port = process.env.PORT || 8080, build = 'dev') {
+  BUILD = build;
   const server = http.createServer(async (req, res) => {
     const path = (req.url || '/').split('?')[0].replace(/\/+$/, '') || '/';
     setSecurityHeaders(res, { denyFraming: path.startsWith('/admin') });
     if (path === '/health') {
       res.writeHead(200, { 'Content-Type': 'text/plain' });
       res.end('ok');
+      return;
+    }
+    // Tiny, public, uncached: the whole point is that it always tells the truth.
+    if (path === '/version') {
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+      res.end(JSON.stringify({ build: BUILD }));
       return;
     }
     // ---- signing in on the website ----
@@ -994,7 +1059,8 @@ export function startServer(port = process.env.PORT || 8080) {
     if (
       path === '/api/dashboard' || path === '/api/words' || path === '/api/bookrecs' ||
       path === '/api/bookexam' || path === '/api/bookexam/grade' || path === '/api/books' ||
-      path === '/api/share' || path === '/api/chat' || path === '/api/booksearch'
+      path === '/api/share' || path === '/api/chat' || path === '/api/booksearch' ||
+      path === '/api/tidy' || path === '/api/readpage'
     ) {
       // Two ways to prove who you are: Telegram's Mini App signature, or a session cookie
       // from signing in on the website. The allowlist then decides if you're allowed in.
@@ -1024,8 +1090,11 @@ export function startServer(port = process.env.PORT || 8080) {
         // plus the curriculum words synced from english/words.md. Chat-caught first.
         const needsBody =
           path === '/api/bookexam' || path === '/api/bookexam/grade' || path === '/api/share' ||
-          path === '/api/chat' || (path === '/api/books' && req.method === 'PUT');
-        const body = needsBody ? await readJson(req) : null;
+          path === '/api/chat' || path === '/api/tidy' || path === '/api/readpage' ||
+          (path === '/api/books' && req.method === 'PUT');
+        // Only the photo endpoint may send more than 200KB, and only because it carries an
+        // image the client has already downscaled.
+        const body = needsBody ? await readJson(req, path === '/api/readpage' ? 2_000_000 : 200000) : null;
         const data = await runAs(acct, async () => {
           if (path === '/api/books') return req.method === 'PUT' ? saveBooks(body?.books) : getBooks();
           if (path === '/api/share') return createShare({ ...body, name: body?.name || acct.name });
@@ -1052,6 +1121,14 @@ export function startServer(port = process.env.PORT || 8080) {
               .limit(200)
               .toArray();
             return rows.map((r) => ({ word: r.word, note: r.why || r.note || '', count: r.count || 1, source: r.source || 'chat' }));
+          }
+          if (path === '/api/tidy') return tidyText(body?.text);
+          if (path === '/api/readpage') {
+            // A photograph costs far more than a message, so it draws on the same daily
+            // allowance the exams do rather than being free to loop.
+            const q = await users.consumeExam(acct);
+            if (!q.ok) return { error: 'limit', message: `That's ${q.cap} photos and exams today — it resets tomorrow.` };
+            return readPage(body?.image);
           }
           if (path === '/api/booksearch') {
             return searchBooks(new URL(req.url, `https://${req.headers.host}`).searchParams.get('q'));
