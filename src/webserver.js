@@ -1063,9 +1063,29 @@ export function startServer(port = process.env.PORT || 8080, build = 'dev') {
   const server = http.createServer(async (req, res) => {
     const path = (req.url || '/').split('?')[0].replace(/\/+$/, '') || '/';
     setSecurityHeaders(res, { denyFraming: path.startsWith('/admin') });
+
+    // Answered before the canonical-host redirect below. A health probe is asking "is this
+    // process alive", and a 301 is not an answer to that — a checker that treats 3xx as
+    // unhealthy would fail the deploy of a perfectly working app.
     if (path === '/health') {
       res.writeHead(200, { 'Content-Type': 'text/plain' });
       res.end('ok');
+      return;
+    }
+
+    // One canonical host, always. If www ever reaches this app directly, send it to the apex.
+    //
+    // This is not tidiness. A session cookie set on www.readkept.com does not exist on
+    // readkept.com — different host, no Domain attribute — so somebody who signed in on www
+    // and then followed any of our own links (every share URL, the Google redirect URI and
+    // config.appUrl are all on the apex) would arrive signed OUT, on a page that looks
+    // broken. Two hosts also split the search ranking between identical copies.
+    //
+    // 301 rather than 302: permanent is what lets a browser and a crawler stop asking.
+    const host = String(req.headers.host || '').toLowerCase();
+    if (host.startsWith('www.')) {
+      res.writeHead(301, { Location: `https://${host.slice(4)}${req.url || '/'}` });
+      res.end();
       return;
     }
     // Crawlers ask for these two before anything else, and a 404 for both is what an
@@ -1547,13 +1567,16 @@ export function startServer(port = process.env.PORT || 8080, build = 'dev') {
     if (path === '/manifest.webmanifest') {
       res.writeHead(200, { 'Content-Type': 'application/manifest+json', 'Cache-Control': 'public, max-age=3600' });
       res.end(JSON.stringify({
-        name: 'Kept — read it, prove you kept it',
+        // What the install prompt says, and what sits under the icon afterwards. Both of these
+        // still led with the exam, which is the old order — the exam is the dessert, not the
+        // meal. Keeping the thought is the promise, so the promise is what the prompt makes.
+        name: 'Kept — your thoughts, handed back later',
         short_name: 'Kept',
         start_url: '/app',
         display: 'standalone',
         background_color: '#14130F',
         theme_color: '#14130F',
-        description: 'Get examined on the books you finish. Honestly.',
+        description: 'Save a thought against the page it came from, and get it back long after you close the book. Plus an honest exam when you finish.',
         icons: [
           { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
           { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },

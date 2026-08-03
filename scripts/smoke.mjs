@@ -121,5 +121,25 @@ for (const icon of ['/icon-180.png', '/icon-192.png', '/manifest.webmanifest', '
   ok(r.status === 200, `${icon} is served`, `got ${r.status}`);
 }
 
+// ---- 8. one canonical host ----
+// Skipped until www has DNS, because a hostname that doesn't resolve can't be tested and a
+// permanently-failing check is a check everybody learns to ignore.
+console.log('\none canonical host');
+const wwwHost = new URL(BASE).host.replace(/^www\./, '');
+if (!/^localhost|^127\./.test(wwwHost)) {
+  let reachable = true;
+  let r = null;
+  try {
+    r = await fetch(`https://www.${wwwHost}/app`, { redirect: 'manual' });
+  } catch { reachable = false; }
+  if (!reachable) {
+    console.log(`  skip  www.${wwwHost} has no DNS yet — nothing to check`);
+  } else {
+    ok(r.status === 301, `www.${wwwHost} 301s to the apex`, `got ${r.status}`);
+    ok((r.headers.get('location') || '').startsWith(`https://${wwwHost}/`),
+      'and points at the apex', r.headers.get('location') || '(none)');
+  }
+}
+
 console.log(`\n${failed ? `${failed} FAILED` : 'all good'} — build ${build || '?'}\n`);
 process.exit(failed ? 1 : 0);
