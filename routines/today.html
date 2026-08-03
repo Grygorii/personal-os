@@ -114,7 +114,18 @@ let state=JSON.parse(localStorage.getItem(KEY)||"{}");
 state.defaults=state.defaults||{};
 if(state.date!==todayStr()){ state.date=todayStr(); state.ticks={}; state.priorities=["","",""]; }
 state.ticks=state.ticks||{}; state.priorities=state.priorities||["","",""];
-const save=()=>localStorage.setItem(KEY,JSON.stringify(state));
+/* Same fix as the body map: this page spoke to no server, so the uniform and the priorities
+   set on one device were invisible on every other one. Debounced because bindDefault() fires
+   save() on every keystroke. */
+let pushTimer=null;
+const push=()=>{
+  clearTimeout(pushTimer);
+  pushTimer=setTimeout(()=>{
+    fetch('/api/personal?key=routine',{method:'PUT',credentials:'same-origin',
+      headers:{'Content-Type':'application/json'},body:JSON.stringify({state})}).catch(()=>{});
+  },600);
+};
+const save=()=>{state.ts=Date.now();localStorage.setItem(KEY,JSON.stringify(state));push();};
 function toast(m){const t=$("toast");t.textContent=m;t.classList.add("show");setTimeout(()=>t.classList.remove("show"),1700);}
 
 function renderP3(){
@@ -132,6 +143,25 @@ function bindDefault(id,key){const el=$(id);el.value=state.defaults[key]||"";el.
 
 renderP3(); renderChecks();
 [["u-wake","wake"],["u-bed","bed"],["u-breakfast","breakfast"],["u-clothes","clothes"],["u-workout","workout"],["u-evening","evening"]].forEach(([id,k])=>bindDefault(id,k));
+
+/* Adopt the server's copy only if it is newer. The uniform crosses days; ticks and
+   priorities belong to the day they were made, so a copy written yesterday must never tick
+   today's boxes for work nobody did. */
+fetch('/api/personal?key=routine',{credentials:'same-origin'})
+  .then(r=>r.ok?r.json():null)
+  .then(d=>{
+    const s=d&&d.state;
+    if(!s) return;
+    if(!((s.ts||0)>(state.ts||0))) { if((state.ts||0)>(s.ts||0)) push(); return; }
+    state.defaults=s.defaults||{};
+    if(s.date===todayStr()){ state.ticks=s.ticks||{}; state.priorities=s.priorities||["","",""]; }
+    state.ts=s.ts;
+    localStorage.setItem(KEY,JSON.stringify(state));
+    renderP3(); renderChecks();
+    [["u-wake","wake"],["u-bed","bed"],["u-breakfast","breakfast"],["u-clothes","clothes"],["u-workout","workout"],["u-evening","evening"]]
+      .forEach(([id,k])=>{ const el=$(id); if(el) el.value=state.defaults[k]||""; });
+  })
+  .catch(()=>{});
 
 $("reset").onclick=()=>{if(confirm("Clear today's ticks and priorities? (Your uniform stays.)")){state.ticks={};state.priorities=["","",""];save();renderP3();renderChecks();toast("Today reset");}};
 $("theme").onclick=()=>{const cur=document.documentElement.getAttribute("data-theme");const next=cur==="dark"?"light":cur==="light"?"dark":(matchMedia("(prefers-color-scheme: dark)").matches?"light":"dark");document.documentElement.setAttribute("data-theme",next);};

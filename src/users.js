@@ -153,6 +153,67 @@ export async function ensureUser({ chatId, name = '', username = '' }) {
   return doc;
 }
 
+// ---- What is this person entitled to? ----
+//
+// Everything beyond the book product — the dashboard, the study deck, the body map, the
+// routine, the whole System of XP and ranks and quests — is the owner's for now, and may one
+// day be something people pay for.
+//
+// The lazy way to write that is `user.role === 'owner'` at each of the twenty places it
+// matters. Do that and the day it becomes a subscription is the day twenty separate checks
+// have to be found and changed, and the one that gets missed is a paying customer staring at
+// a locked door, or a stranger reading somebody else's body map.
+//
+// So the question every caller asks is "is this person entitled to X", never "is this
+// person Гриша". Today the answer happens to be the owner. When it becomes a subscription
+// the answer changes HERE, in one function, and every gate in the app follows.
+//
+// This is the same lesson as the book recommendations, which asked the model about "his
+// mission (Collections × AI)" for every tenant because owner-ness had been baked into a
+// place nobody thought of as a gate.
+// MODULES. Kept is the books module and nothing else. Add hydration one day and the mentor
+// gains hydration — and only then, and only for whoever has it.
+//
+// This is not just which menu items appear. It decides WHAT THE MENTOR IS TOLD. A reader
+// installed an app to keep book thoughts; a mentor that mentions their water, their sleep or
+// their rank is a different product talking, and it reads as a bug even when it is accurate.
+//
+// Each module owns the kinds of log it may see. The mentor's context is filtered through
+// this before it is built, so a module that is off is not merely unmentioned — its data
+// never reaches the prompt. "Stay in your lane" is a request; leaving it out is a guarantee,
+// which is the same lesson as safeName.
+export const MODULES = ['books', 'system', 'english', 'body', 'routine'];
+
+export const MODULE_LOGS = {
+  books: ['book', 'exam', 'essay', 'note', 'study', 'reflect'],
+  system: ['water', 'sleep', 'move', 'meal', 'mood', 'social', 'restraint', 'work', 'skill'],
+  english: ['english'],
+  body: ['move'],
+  routine: [],
+};
+
+/** Which kinds of log this person's mentor is allowed to see. */
+export function visibleLogTypes(user) {
+  const on = MODULES.filter((m) => can(user, m));
+  return [...new Set(on.flatMap((m) => MODULE_LOGS[m] || []))];
+}
+
+export function can(user, capability) {
+  // Books is the product itself: anyone allowed in has it, and it is never sold separately.
+  if (capability === 'books') return !!user && isAllowed(user);
+  if (!user || !MODULES.includes(capability)) return false;
+  if (!isAllowed(user)) return false;
+  // The owner has everything, always — including whatever gets added tomorrow.
+  if (user.role === 'owner') return true;
+  // The shape a subscription will arrive in. Nothing sets this yet, and that is deliberate:
+  // the plumbing is here so switching it on is a decision, not a rewrite.
+  const granted = Array.isArray(user.capabilities) ? user.capabilities : [];
+  if (granted.includes(capability)) return true;
+  const sub = user.subscription;
+  const live = sub?.status === 'active' && (!sub.until || new Date(sub.until) > new Date());
+  return live && Array.isArray(sub.capabilities) && sub.capabilities.includes(capability);
+}
+
 // May this user use the product right now?
 // MULTI_TENANT is a leftover from when this was one person's Telegram bot: it decides
 // whether the BOT answers anyone but the owner. The website is public by definition, so a

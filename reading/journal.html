@@ -1232,6 +1232,18 @@ $("menu-btn").onclick=()=>{
      going to go looking for it. Needs no account, because the most useful sentence anyone
      can send is "I couldn't sign in". */
   items.push(['✉','Message Grygorii', mailWaiting?'A reply is waiting':'Something broken, missing, or just an idea',null,()=>{ openContact(); }]);
+  /* The rest of the system, for whoever is entitled to it. Driven by ME.can, which the
+     server built from users.can() — so this list is not "is this Гриша", it is "what may
+     this person open". When one of these becomes a subscription the entitlement changes on
+     the server and this menu grows on its own.
+     Deliberately below the reading items and above the legal line: a reader must never meet
+     XP, ranks or quests, which is the whole reason the book product hid them in the first
+     place. Somebody without the capability is not sent these at all. */
+  const CAN=Array.isArray(ME.can)?ME.can:[];
+  if(CAN.includes('system')) items.push(['◇','Dashboard','Where you are across everything','/dashboard']);
+  if(CAN.includes('english')) items.push(['⌗','Study deck','The words you asked to keep','/deck']);
+  if(CAN.includes('body')) items.push(['◍','Body map','What hurts, and since when','/body']);
+  if(CAN.includes('routine')) items.push(['◈','Routine','Today, and the three that matter','/routine']);
   items.push(['⚖','What we store','The short, honest version','/privacy']);
   if(ME.owner) items.push(['⚙','Admin','Who joined and what they did','/admin']);
   if(!GUEST) items.push(['⏻','Sign out','','/auth/logout']);

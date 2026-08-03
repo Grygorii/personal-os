@@ -91,6 +91,15 @@ for (const p of ['/admin/reply', '/admin/read', '/admin/invite', '/admin/unshare
 }
 const exp = await grab('/api/export');
 ok(exp.status === 401, '/api/export refuses a guest', `got ${exp.status}`);
+// The owner's own modules. These were served to anyone who asked until the route table
+// learned the difference between "substitute APP_URL here" and "anyone may read this".
+for (const p of ['/hub', '/home', '/deck', '/body', '/routine', '/dashboard']) {
+  const r = await grab(p);
+  ok(r.status === 302 || r.status === 403, `${p} is not open to strangers`, `got ${r.status}`);
+}
+const personal = await grab('/api/personal?key=body');
+ok(personal.status === 401 || personal.status === 403,
+  '/api/personal refuses a stranger', `got ${personal.status}`);
 const reading = await grab('/reading');
 ok(reading.status === 301 && reading.loc === '/app', '/reading redirects to /app',
   `got ${reading.status} ${reading.loc}`);

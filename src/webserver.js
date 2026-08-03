@@ -69,19 +69,27 @@ const ROUTES = {
   // '/' is the public front door — what a stranger from a shared link or a search sees.
   // '/app' is the product itself and is handled separately (it needs a session gate), so
   // an installed app never opens onto marketing.
+  // `public: true` used to mean nothing but "substitute APP_URL in this file". It READ like
+  // an access-control flag, so every page without it looked gated and none of them were:
+  // /body, /routine, /deck, /dashboard and /hub were served to anyone who asked. No data
+  // leaked — every API behind them 401s and the markup holds nothing personal — but a
+  // stranger could walk through the skeleton of a private system, and the next page added
+  // here would have inherited the same false sense of safety.
+  //
+  // Now a route says what it needs, and `needs` is checked before the file is read.
   '/': { file: '../webapp/landing.html', public: true },
   '/privacy': { file: '../webapp/privacy.html', public: true },
-  '/hub': { file: '../webapp/home.html' },
-  '/home': { file: '../webapp/home.html' },
-  '/deck': { file: '../english/study.html', homeBar: true },
-  '/body': { file: '../body/map.html', homeBar: true },
+  '/hub': { file: '../webapp/home.html', needs: 'system' },
+  '/home': { file: '../webapp/home.html', needs: 'system' },
+  '/deck': { file: '../english/study.html', homeBar: true, needs: 'english' },
+  '/body': { file: '../body/map.html', homeBar: true, needs: 'body' },
   // NOT the journal any more. This route served journal.html raw, so the placeholders the
   // /app handler fills in were shipped as literal text — OWNER_LINK printed on screen and
   // IS_GUEST threw a ReferenceError that killed the whole app script. Anyone still holding
   // an old link or home-screen icon from the Telegram days landed on a dead page.
   '/reading': { redirect: '/app' },
-  '/routine': { file: '../routines/today.html', homeBar: true },
-  '/dashboard': { file: '../webapp/dashboard.html' },
+  '/routine': { file: '../routines/today.html', homeBar: true, needs: 'routine' },
+  '/dashboard': { file: '../webapp/dashboard.html', needs: 'system' },
 };
 
 // iOS ignores SVG for Add to Home Screen, so a site whose only icon is an SVG gets a
@@ -1251,6 +1259,55 @@ export function startServer(port = process.env.PORT || 8080, build = 'dev') {
       res.end(JSON.stringify(data, null, 2));
       return;
     }
+    // ---- the pages that were only ever on one device ----
+    //
+    // The body map and the routine kept everything in localStorage and spoke to no server at
+    // all. They sit in a menu next to Dashboard and Study deck, which do sync, so they look
+    // like part of the same system — and then the entries made on a phone are simply absent
+    // on a laptop, with no error and nothing to explain it. Exactly the shape of the mentor
+    // writing to `reading` while the app read `books`.
+    //
+    // One small document per person per page. Deliberately dumb: the server does not care
+    // what is inside, because these are private single-person notes, and a schema here would
+    // have to be changed in two places every time one of those pages grows a field.
+    if (path === '/api/personal') {
+      const sid = readSession(parseCookies(req.headers.cookie).kept_session);
+      const who = sid ? await rawCol('users').findOne({ _id: sid }) : null;
+      const key = new URL(req.url, `https://${req.headers.host}`).searchParams.get('key') || '';
+      // The key IS the capability, so a page can never read a store it isn't entitled to.
+      if (!users.can(who, key)) {
+        res.writeHead(who ? 403 : 401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'not_yours' }));
+        return;
+      }
+      const id = `${key}:${who._id}`;
+      if (req.method === 'GET') {
+        const doc = await rawCol('personal').findOne({ _id: id });
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+        res.end(JSON.stringify({ state: doc?.state || null, updated: doc?.updated || null }));
+        return;
+      }
+      if (req.method === 'PUT') {
+        const body = await readJson(req, 400000);
+        if (body?.state == null || typeof body.state !== 'object') {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'bad_state' }));
+          return;
+        }
+        await rawCol('personal').updateOne(
+          { _id: id },
+          { $set: { userId: who._id, kind: key, state: body.state, updated: new Date() } },
+          { upsert: true }
+        );
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true }));
+        return;
+      }
+      res.writeHead(405, { 'Content-Type': 'text/plain' });
+      res.end('GET or PUT');
+      return;
+    }
+
     // ---- writing to the person who made it ----
     // Deliberately outside the block below that demands an account. Everything else here is
     // work we do on a reader's behalf and have to bill to somebody; a message is the one
@@ -1353,6 +1410,12 @@ export function startServer(port = process.env.PORT || 8080, build = 'dev') {
             JSON.stringify({
               guest: !signedIn,
               owner: acct?.role === 'owner',
+              // What this person may open, asked as capabilities rather than as a role. The
+              // menu is built from this list, so a reader is never sent the existence of a
+              // page they cannot open — it is absent from the payload, not hidden in the
+              // markup. The day any of these is sold, users.can() changes and the menu grows
+              // for whoever bought it, with nothing here to edit.
+              can: users.MODULES.filter((m) => users.can(acct, m)),
               // Replies waiting, so the menu can show a dot without the app having to ask.
               // Never allowed to break the page: a reader whose inbox lookup fails still gets
               // their library, they just don't get the dot.
@@ -1647,6 +1710,20 @@ export function startServer(port = process.env.PORT || 8080, build = 'dev') {
       res.writeHead(301, { Location: route.redirect });
       res.end();
       return;
+    }
+    // Entitlement, asked as a capability rather than as "is this the owner" — so the day any
+    // of these becomes something people pay for, the answer changes in users.can() and every
+    // page here follows without being touched.
+    if (route.needs) {
+      const sid = readSession(parseCookies(req.headers.cookie).kept_session);
+      const who = sid ? await rawCol('users').findOne({ _id: sid }) : null;
+      if (!users.can(who, route.needs)) {
+        // Signed in but not entitled is a different fact from not signed in, and saying so
+        // costs nothing: neither answer reveals whether the page holds anything.
+        res.writeHead(sid ? 403 : 302, sid ? { 'Content-Type': 'text/plain' } : { Location: '/app' });
+        res.end(sid ? 'Not yours.' : '');
+        return;
+      }
     }
     // A page that needs the /app handler's substitutions must never be served from here —
     // the placeholders would ship as literal text and the script would die on them.

@@ -177,7 +177,20 @@ const TYPES = ['Pain','Ache','Tension / stiffness','Tingling / numbness','Fatigu
 
 const KEY='body-map-v1';
 let state=JSON.parse(localStorage.getItem(KEY)||'{}'); state.entries=state.entries||{};
-const save=()=>localStorage.setItem(KEY,JSON.stringify(state));
+/* This page used to speak to no server at all. It sits in a menu beside Dashboard and Study
+   deck, which do sync, so a check-in made on a phone was simply absent on a laptop — no
+   error, nothing to explain it.
+   localStorage stays as the instant, offline copy; the server is what makes it the same body
+   map everywhere. Writing is debounced because a slider fires save() on every drag. */
+let pushTimer=null;
+const push=()=>{
+  clearTimeout(pushTimer);
+  pushTimer=setTimeout(()=>{
+    fetch('/api/personal?key=body',{method:'PUT',credentials:'same-origin',
+      headers:{'Content-Type':'application/json'},body:JSON.stringify({state})}).catch(()=>{});
+  },600);
+};
+const save=()=>{state.ts=Date.now();localStorage.setItem(KEY,JSON.stringify(state));push();};
 const $=id=>document.getElementById(id);
 const SVGNS='http://www.w3.org/2000/svg';
 let view='front', selected=null, draft={type:null,intensity:null};
@@ -291,4 +304,22 @@ $('theme').onclick=()=>{
 
 renderSvg('svg-front',FRONT); renderSvg('svg-back',BACK);
 renderEntries(); paint();
+
+/* Draw what's on the device first — instantly, offline, exactly as before — then ask the
+   server and repaint only if its copy is NEWER.
+   Newer, not fuller. Counting entries and preferring the bigger set looks safer and quietly
+   undoes deletions: clear the map on a phone, open a laptop holding the old copy, and the
+   laptop refuses the empty version and pushes everything back. A timestamp is the only rule
+   that treats removing something as a real edit. */
+fetch('/api/personal?key=body',{credentials:'same-origin'})
+  .then(r=>r.ok?r.json():null)
+  .then(d=>{
+    if(!d||!d.state) return;
+    if(!((d.state.ts||0)>(state.ts||0))) { if((state.ts||0)>(d.state.ts||0)) push(); return; }
+    state=d.state; state.entries=state.entries||{};
+    localStorage.setItem(KEY,JSON.stringify(state));
+    selected=null; $('panel').hidden=true;
+    renderEntries(); paint();
+  })
+  .catch(()=>{});   /* offline: the device copy is already on screen */
 </script>

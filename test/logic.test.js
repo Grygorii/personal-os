@@ -9,7 +9,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { safeName } from '../src/ctx.js';
-import { isAllowed, trustLevel } from '../src/users.js';
+import { isAllowed, trustLevel, can, visibleLogTypes, MODULES } from '../src/users.js';
 import { reflow, looksWrapped } from '../src/text.js';
 
 test('safeName: a name is a name, not an instruction', () => {
@@ -100,6 +100,52 @@ test('the app\'s own copy of reflow agrees with the server\'s', async () => {
     const server = looksWrapped(c) ? reflow(c) : c || '';
     assert.equal(client.flowText(c), server, `flowText disagrees on: ${JSON.stringify(c.slice(0, 40))}`);
   }
+});
+
+// Kept is the books module and nothing else. Somebody installed an app to keep book
+// thoughts; a mentor that mentions their hydration or their rank is a different product
+// talking, and it reads as broken even when every word is true.
+const reader = { _id: 'g:1', role: 'member', status: 'active' };
+const owner = { _id: 'g:0', role: 'owner', status: 'active' };
+
+test('modules: a reader gets books and nothing else', () => {
+  assert.equal(can(reader, 'books'), true, 'the product itself is never withheld');
+  for (const m of ['system', 'english', 'body', 'routine']) {
+    assert.equal(can(reader, m), false, `a reader must not have ${m}`);
+  }
+  assert.equal(can(owner, 'system'), true, 'the owner has everything');
+});
+
+test('modules: the mentor is never HANDED what the module is off for', () => {
+  // The real defence. "Never mention water" is an instruction the model can slip on; not
+  // being given the water at all is a guarantee it cannot.
+  const seen = visibleLogTypes(reader);
+  for (const leak of ['water', 'sleep', 'mood', 'meal', 'move', 'social', 'english']) {
+    assert.ok(!seen.includes(leak), `a book reader's mentor must never see "${leak}" logs`);
+  }
+  assert.ok(seen.includes('book') && seen.includes('exam'), 'but it does see their reading');
+  // The owner, who has every module, sees the whole life.
+  assert.ok(visibleLogTypes(owner).includes('water'), 'the owner keeps the full picture');
+});
+
+test('modules: a signed-out or suspended person gets nothing at all', () => {
+  assert.equal(can(null, 'books'), false);
+  assert.equal(can(undefined, 'system'), false);
+  assert.equal(can({ _id: 'g:2', role: 'member', status: 'blocked' }, 'books'), false);
+  assert.equal(can(reader, 'nonsense'), false, 'an unknown module is refused, never allowed');
+  assert.deepEqual(visibleLogTypes(null), [], 'nobody is nobody');
+});
+
+test('modules: a subscription is the shape the gate already expects', () => {
+  // Nothing sells these yet. This proves the switch exists so turning it on is a decision,
+  // not a rewrite — the failure the book recommendations already made once by baking
+  // owner-ness into a place nobody thought of as a gate.
+  const subscriber = { ...reader, subscription: { status: 'active', capabilities: ['body'] } };
+  assert.equal(can(subscriber, 'body'), true, 'an active subscription grants its modules');
+  assert.equal(can(subscriber, 'system'), false, 'and only the ones it paid for');
+  const lapsed = { ...reader, subscription: { status: 'active', capabilities: ['body'], until: '2020-01-01' } };
+  assert.equal(can(lapsed, 'body'), false, 'an expired subscription grants nothing');
+  assert.ok(visibleLogTypes(subscriber).includes('move'), "and the mentor's context follows the sale");
 });
 
 test('isAllowed: signing in on a public website is the acceptance', () => {

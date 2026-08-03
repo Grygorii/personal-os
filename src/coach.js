@@ -5,6 +5,7 @@ import { config } from './config.js';
 import * as system from './system.js';
 import { currentUser, personName, languageRule } from './ctx.js';
 import { addBook } from './library.js';
+import * as users from './users.js';
 
 // ---------- context gathering ----------
 
@@ -78,7 +79,7 @@ function partOfDayNow() {
   return h < 5 ? 'the middle of the night' : h < 12 ? 'morning' : h < 17 ? 'afternoon' : h < 22 ? 'evening' : 'late night';
 }
 
-function buildSystem({ profile, logsSummary, behavior, reading, energy, state, pursuits, now, partOfDay }) {
+function buildSystem({ profile, logsSummary, behavior, reading, energy, state, pursuits, now, partOfDay, rawLogs }) {
   const readingLine = reading
     ? `${reading.title}${reading.author ? ' by ' + reading.author : ''} — status: ${reading.status || 'reading'}${reading.progress ? `, progress: ${reading.progress}` : ''}`
     : 'nothing right now';
@@ -92,13 +93,29 @@ function buildSystem({ profile, logsSummary, behavior, reading, energy, state, p
   // In the book product the mentor is a reading mentor and nothing else — the rest of the
   // system still exists in code, but it must never surface in the conversation.
   if (currentUser()?.product === 'books') {
+    // The mentor is scoped by MODULE, and scoped by what it is GIVEN — not by being asked
+    // nicely to stay quiet. This branch used to hand over the whole profile document and the
+    // whole activity summary, which builds lines like "water 2L" and "sleep 7h". A reader
+    // who installed an app to keep book thoughts would eventually get a remark about their
+    // hydration, and it would read as broken even though every word was true.
+    // Now: only the log kinds the books module owns, and only the profile keys that are
+    // about reading and about who they are. Add a hydration module and its logs join this
+    // list for the people who have it, and nobody else.
+    const allowed = new Set(users.visibleLogTypes(currentUser()));
+    const bookLogs = summarizeLogs(
+      (rawLogs || []).filter((l) => allowed.has(l.type))
+    );
+    const BOOK_PROFILE_KEYS = ['name', 'language', 'about', 'interests', 'goals', 'reading', 'values', 'work'];
+    const shown = Object.fromEntries(
+      Object.entries(profile || {}).filter(([k]) => BOOK_PROFILE_KEYS.includes(k))
+    );
     return `You are ${personName()}'s reading mentor. Your single purpose: make sure they actually KEEP what they read — most people forget nearly all of it.
 
 ${languageRule()}
 Call them ${personName()} — never any other name.
 
 WHO THEY ARE (what you've learned so far):
-${JSON.stringify(profile, null, 2)}
+${JSON.stringify(shown, null, 2)}
 
 WHAT YOU DO:
 - Talk with them about the book they're reading: what struck them, what they'd argue with, how it applies to their own life and work.
@@ -113,8 +130,8 @@ STAY IN YOUR LANE: books, ideas and their thinking. You are NOT a life coach her
 STYLE: short and human (1–3 sentences) — this is a chat inside their reading app. Honest over flattering. One good question at a time, and often none — a real remark beats an interrogation. Hold your reads loosely ("I might be off, but…"); you're curious, not a know-it-all.
 
 CONTEXT: it is ${now} (${partOfDay}). Currently reading: ${readingLine}
-Recent activity:
-${logsSummary}
+Recent reading activity:
+${bookLogs}
 
 OUTPUT — reply with ONLY a JSON object, no fences:
 { "reply": "your message", "actions": [] }
@@ -288,6 +305,9 @@ async function think(finalUserContent, image = null) {
 
   const systemPrompt = buildSystem({
     profile,
+    // The unsummarised logs travel too, so the books branch can filter by MODULE before it
+    // summarises. Filtering the finished sentence would mean the water was already written.
+    rawLogs: logs,
     logsSummary: summarizeLogs(logs),
     behavior: behaviorNote(logs),
     reading,
