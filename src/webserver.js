@@ -1035,6 +1035,27 @@ export function startServer(port = process.env.PORT || 8080, build = 'dev') {
       res.end();
       return;
     }
+    // Take everything and go. The privacy page has promised this from the day it was
+    // written, and until now a reader on the web had no way to do it — the only export was a
+    // Telegram command, which is useless to someone who signed in with Google.
+    if (path === '/api/export') {
+      const sid = readSession(parseCookies(req.headers.cookie).kept_session);
+      const acct = sid ? await rawCol('users').findOne({ _id: sid }) : null;
+      if (!acct || !users.isAllowed(acct)) {
+        res.writeHead(401, { 'Content-Type': 'text/plain' });
+        res.end('Sign in first');
+        return;
+      }
+      const data = await users.exportUserData(acct._id);
+      const day = new Date().toISOString().slice(0, 10);
+      res.writeHead(200, {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Content-Disposition': `attachment; filename="kept-${day}.json"`,
+        'Cache-Control': 'no-store',
+      });
+      res.end(JSON.stringify(data, null, 2));
+      return;
+    }
     if (path === '/auth/logout') {
       res.writeHead(302, { Location: '/', 'Set-Cookie': clearedCookie });
       res.end();
@@ -1079,12 +1100,13 @@ export function startServer(port = process.env.PORT || 8080, build = 'dev') {
         html = html
           .replaceAll('GOOGLE_CLIENT_ID', config.googleClientId || '')
           .replaceAll('APP_URL', config.appUrl)
-          .replaceAll('IS_GUEST', signedIn ? 'false' : 'true')
-          // The owner gets a way back to the admin page from his phone. For anybody else the
-          // markup is removed here, so it isn't a hidden control they could find and press.
+          // One injected fact instead of placeholders scattered through the markup. The menu
+          // is built from it, so an unknown viewer gets the guest list rather than a control
+          // that half-renders. Admin is absent from the payload for everyone but the owner —
+          // it isn't hidden in the page, it was never sent.
           .replaceAll(
-            'OWNER_LINK',
-            acct?.role === 'owner' ? '<a class="iconbtn wide" href="/admin">Admin</a>' : ''
+            'ME_JSON',
+            JSON.stringify({ guest: !signedIn, owner: acct?.role === 'owner' })
           );
         // Google is the only way in, so the page has to say something sensible if it isn't
         // configured — a sign-in screen with no button and no explanation reads as broken.

@@ -1,4 +1,10 @@
 <title>Reading journal</title>
+<!-- Who is looking, injected by the server. Deliberately its own <script>: if the
+     substitution ever fails, the error is trapped in these three lines, window.__me stays
+     undefined, and the app falls back to treating them as a guest. The old approach put a
+     bare OWNER_LINK placeholder in the markup, so a miss printed on screen and a second
+     placeholder killed the entire app script. A failure should cost a feature, not the page. -->
+<script>try{window.__me=ME_JSON;}catch(e){}</script>
 <style>
   :root{
     --paper:#EEEDE8; --surface:#FFFFFF; --raise:#F6F4EE;
@@ -52,6 +58,14 @@
   .guestbar b{color:var(--ink)}
   .guestbar a{color:var(--accent-strong);font-weight:700;text-decoration:none;white-space:nowrap}
   .topact{display:flex;align-items:center;gap:8px}
+  .menu{display:flex;flex-direction:column;gap:8px}
+  .mi{display:flex;align-items:center;gap:13px;width:100%;text-align:left;text-decoration:none;
+    background:var(--raise);border:1px solid var(--line);border-radius:12px;padding:13px 15px;
+    min-height:54px;cursor:pointer;font-family:var(--sans);color:var(--ink)}
+  .mi:active{background:var(--accent-tint);border-color:var(--accent)}
+  .mi-i{flex:none;width:26px;text-align:center;font-size:1.1rem;color:var(--accent)}
+  .mi-t{flex:1;min-width:0;font-size:.96rem;font-weight:600;line-height:1.3}
+  .mi-t span{display:block;font-weight:400;font-size:.8rem;color:var(--muted);margin-top:1px}
   .iconbtn{background:transparent;border:1px solid var(--line);color:var(--muted);border-radius:11px;
     width:40px;height:40px;font-size:1.05rem;cursor:pointer;font-family:var(--sans);flex:none;
     display:inline-flex;align-items:center;justify-content:center;text-decoration:none}
@@ -293,10 +307,7 @@
   <header class="topbar">
     <div class="brand">📕 Kept</div>
     <span class="topact">
-      <!-- Owner only. The server strips this entirely for everyone else, so it isn't a
-           hidden button someone can find — for another account it does not exist. -->
-      OWNER_LINK
-      <button class="iconbtn" id="theme" aria-label="Switch between light and dark">◐</button>
+      <button class="iconbtn" id="menu-btn" aria-label="Menu">☰</button>
     </span>
   </header>
 
@@ -794,7 +805,10 @@ async function startExam(id){
    the work would otherwise be lost, and when an action costs real money to run. That line
    isn't arbitrary: it's the difference between what this device can do alone and what a
    server has to pay for. */
-const GUEST = IS_GUEST;
+// Defaults to a guest. Being wrongly treated as a guest costs someone a prompt they can
+// dismiss; being wrongly treated as signed in costs them a request that 401s and looks broken.
+const ME = window.__me || { guest: true, owner: false };
+const GUEST = ME.guest;
 
 function needsAccount(what, why){
   const { close } = openSheet(`
@@ -1055,10 +1069,43 @@ $("ab-save").onclick=()=>{
   $("addbook").hidden=true; renderLibrary(); toast("Book added");
 };
 
-$("theme").onclick=()=>{
+function flipTheme(){
   const cur=document.documentElement.getAttribute("data-theme");
   const next=cur==="dark"?"light":cur==="light"?"dark":(matchMedia("(prefers-color-scheme: dark)").matches?"light":"dark");
   document.documentElement.setAttribute("data-theme",next);
+  return next;
+}
+
+/* ---- One menu instead of a row of icons ----
+   The top bar was collecting a button per feature, and each was a placeholder the server had
+   to fill in — which is how OWNER_LINK ended up printed on the page. Everything lives here
+   now, built from what the server said about who's looking, so an unknown viewer simply gets
+   the guest list rather than a broken control.
+   It also gives the export a home: the privacy page promises anyone can take their data, and
+   until now a reader on the web had no way to do it. */
+$("menu-btn").onclick=()=>{
+  const items=[];
+  if(GUEST) items.push(['⭑','Sign in','Keep your books on every device','/signin']);
+  items.push(['◐','Light or dark','Switch how it looks',null,()=>{ flipTheme(); }]);
+  if(!GUEST) items.push(['⭳','Export everything','Your books, thoughts and results, as a file','/api/export']);
+  items.push(['⚖','What we store','The short, honest version','/privacy']);
+  if(ME.owner) items.push(['⚙','Admin','Who joined and what they did','/admin']);
+  if(!GUEST) items.push(['⏻','Sign out','','/auth/logout']);
+
+  const { close } = openSheet(
+    `<div class="sheet-head">Kept</div>
+     <div class="menu">${items.map(([icon,label,note,href],i)=>
+       `<${href?'a':'button'} class="mi" ${href?`href="${href}"`:'type="button"'} data-i="${i}">
+          <span class="mi-i">${icon}</span>
+          <span class="mi-t">${esc(label)}${note?`<span>${esc(note)}</span>`:''}</span>
+        </${href?'a':'button'}>`).join('')}</div>
+     <button class="btn ghost" id="menu-x" style="margin-top:12px">Close</button>`,
+    'Menu');
+  $("menu-x").onclick=close;
+  document.querySelectorAll('.mi').forEach(el=>{
+    const act=items[+el.dataset.i][4];
+    if(act) el.onclick=()=>{ act(); close(); };
+  });
 };
 
 renderLibrary();
