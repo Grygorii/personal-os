@@ -115,3 +115,14 @@ const REF_TTL_S = 60 * 60 * 24 * 7;
 export const refCookie = (code) =>
   `kept_ref=${encodeURIComponent(code)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${REF_TTL_S}`;
 export const clearedRefCookie = 'kept_ref=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0';
+
+// Who wrote in, when they have no account. The most useful thing anyone can tell us is
+// "I couldn't sign in", and that sentence by definition comes from a stranger — so a message
+// needs no account, and this is the only thread they'd have to read the answer.
+//
+// Set ONLY when a message is actually sent, never for browsing, so "we don't track people
+// who are just reading" stays literally true. A year, because a reply might take a day and
+// they might not open the app again for a month.
+const MAIL_TTL_S = 60 * 60 * 24 * 365;
+export const mailCookie = (id) =>
+  `kept_mail=${encodeURIComponent(id)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${MAIL_TTL_S}`;

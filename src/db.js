@@ -40,6 +40,9 @@ export async function ensureIndexes() {
     for (const name of USER_COLLECTIONS) await rawCol(name).createIndex({ userId: 1 });
     await rawCol('logs').createIndex({ userId: 1, ts: -1 });
     await rawCol('conversation').createIndex({ userId: 1, ts: -1 });
+    // The inbox is read most-recent-first every time the admin page loads, and the unread
+    // count is read on every single app load — including for guests.
+    await rawCol('contacts').createIndex({ updated: -1 });
     console.log('[db] indexes ensured');
   } catch (err) {
     console.error('[db] index creation failed (continuing):', err.message);

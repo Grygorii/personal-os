@@ -5,13 +5,15 @@ import { fileURLToPath } from 'url';
 import { col, rawCol, getProfile, logEvent, dbStats } from './db.js';
 import { config } from './config.js';
 import { chat } from './llm.js';
-import { sendPings } from './telegram.js';
+import { reflow, looksWrapped } from './text.js';
+import { sendPings, send as sendTelegram } from './telegram.js';
 import * as system from './system.js';
 import * as users from './users.js';
 import * as coach from './coach.js';
 import * as moderation from './moderation.js';
 import { runAs, uid, personName, languageRule } from './ctx.js';
-import { verifyTelegramLogin, verifyGoogleToken, createSession, readSession, parseCookies, sessionCookie, clearedCookie, refCookie, clearedRefCookie } from './auth.js';
+import { verifyTelegramLogin, verifyGoogleToken, createSession, readSession, parseCookies, sessionCookie, clearedCookie, refCookie, clearedRefCookie, mailCookie } from './auth.js';
+import * as contact from './contact.js';
 import { addBook } from './library.js';
 
 // Read a small JSON request body (exam answers etc.). Hard cap, raised only for the one
@@ -29,6 +31,24 @@ function readJson(req, cap = 200000) {
     });
     req.on('error', () => resolve({}));
   });
+}
+
+// A stable handle for someone with no account, for rate limiting only.
+//
+// It is hashed, and salted with a value that dies with the process, so it cannot be turned
+// back into an address, cannot be matched against a log, and cannot survive a restart. The
+// privacy page says we don't keep IP addresses; this is how that stays true while still
+// making it impossible for one stranger to send ten thousand messages. Nothing here is ever
+// written to the database.
+//
+// Railway terminates TLS in front of us, so the socket address is the proxy's. The LAST
+// entry in x-forwarded-for is the one the closest proxy added; the leftmost is whatever the
+// client claimed, which is free to be a lie.
+const IP_SALT = crypto.randomBytes(16);
+function clientIp(req) {
+  const fwd = String(req.headers['x-forwarded-for'] || '').split(',').map((s) => s.trim()).filter(Boolean);
+  const raw = fwd.length ? fwd[fwd.length - 1] : req.socket?.remoteAddress || 'unknown';
+  return crypto.createHash('sha256').update(IP_SALT).update(raw).digest('hex').slice(0, 16);
 }
 
 // Tolerant JSON extraction from a model reply (same pattern as the coach).
@@ -252,20 +272,42 @@ Reply with ONLY JSON, no fences: {"recs":[{"title":"...","author":"...","why":".
 
 // Spelling and punctuation only. Explicitly NOT an editor: it must not improve, shorten or
 // formalise anyone's thinking, and it must stay in the language they wrote in.
+// One ceiling for a thought, named once. Transcription used to hand back up to 4000
+// characters while tidy quietly cut its input to 2000 and the app wrote that back over the
+// note — so tidying a photographed page deleted everything past the halfway mark. Two
+// limits on the same value, set months apart, and the smaller one won in silence.
+const NOTE_MAX = 4000;
+
 async function tidyText(raw) {
-  const text = String(raw || '').trim().slice(0, 2000);
-  if (text.length < 2) return { text };
+  const source = String(raw || '').trim().slice(0, NOTE_MAX);
+  if (source.length < 2) return { text: source };
+  // Undo the page's own wrapping before the model sees it, so its attention goes on spelling
+  // rather than re-flowing. Free, certain, and it means a thought already saved looking
+  // broken can be repaired with one tap — the only honest way to fix what's already stored,
+  // since silently rewriting someone's saved words server-side is not ours to do.
+  const text = looksWrapped(source) ? reflow(source) : source;
   const sys = `${languageRule()}
 You fix typing, nothing else, in a note ${personName()} jotted while reading.
 Correct spelling, grammar and punctuation. Keep their exact words, their voice, their meaning
 and their language. Never add an idea, never remove one, never summarise, never make it more
 formal, never translate. If it already reads correctly, return it exactly as it is.
 Reply with ONLY the corrected note. No preamble, no quotes, no explanation.`;
-  const out = await chat({ system: sys, messages: [{ role: 'user', content: text }], maxTokens: 700 });
+  // Sized from the note in front of it. A fixed ceiling is how a long reply comes back
+  // chopped off mid-sentence, and a chopped reply is indistinguishable from a good one.
+  const out = await chat({
+    system: sys,
+    messages: [{ role: 'user', content: text }],
+    maxTokens: Math.min(4000, Math.ceil(text.length / 2) + 400),
+  });
   const cleaned = String(out || '').trim().replace(/^["']|["']$/g, '');
-  // A model that returns nothing, or an essay, gets ignored rather than trusted.
-  if (!cleaned || cleaned.length > text.length * 3 + 80) return { text };
-  return { text: cleaned.slice(0, 2000) };
+  // Guarded in BOTH directions. An essay back means it ignored the brief; a note that lost a
+  // third of its words means it summarised or the reply was cut off. Only one of those two
+  // failures destroys the reader's writing, and it was the one with no check in front of it.
+  const words = (s) => s.split(/\s+/).filter(Boolean).length;
+  if (!cleaned || words(cleaned) < words(text) * 0.7 || cleaned.length > text.length * 3 + 80) {
+    return { text };   // still reflowed — they keep that much even when the model misbehaves
+  }
+  return { text: cleaned.slice(0, NOTE_MAX) };
 }
 
 // Read a photographed page. Returns the words on it and nothing else — no summary, no
@@ -275,9 +317,17 @@ async function readPage(dataUrl) {
   if (!m) throw new Error('not an image');
   const [, mediaType, data] = m;
   if (data.length > 1_400_000) throw new Error('image too large');
+  // "Keeping its line breaks" is what this used to ask for, and it was the wrong kind of
+  // faithfulness: a printed line break is a fact about the paper's width, not about the
+  // sentence. Reproduced in a phone-width column it reads as gibberish with half the words
+  // split in two. Faithful to the WORDS, reflowed to wherever they're being read.
   const sys = `${languageRule()}
 You transcribe photographs of book pages.
-Return ONLY the text visible in the image, as written, keeping its line breaks and punctuation.
+Return ONLY the words visible in the image, with their punctuation, and nothing else.
+Join words the printer split across two lines: "de-" then "signed" is the single word
+"designed". Run each paragraph together as continuous prose — the line breaks come from the
+width of the page, not from the writing — and put a blank line between paragraphs. Keep the
+separate lines only where the writing really has them: verse, lists, headings.
 If part is cut off or unreadable, leave it out rather than guessing. If the photo contains no
 readable text, reply with exactly: NO_TEXT
 Never summarise, never comment, never add anything of your own.`;
@@ -287,11 +337,17 @@ Never summarise, never comment, never add anything of your own.`;
       { type: 'image', source: { type: 'base64', media_type: mediaType, data } },
       { type: 'text', text: 'Transcribe this page.' },
     ] }],
-    maxTokens: 900,
+    // A ceiling costs nothing until it's reached — you pay for the tokens produced, not the
+    // ones allowed. 900 was under a dense page in Cyrillic, and a page that runs over comes
+    // back cut off mid-word with no sign that anything is missing.
+    maxTokens: 2000,
   });
   const text = String(out || '').trim();
   if (!text || text === 'NO_TEXT') return { text: '', empty: true };
-  return { text: text.slice(0, 4000) };
+  // The prompt asks for reflowed prose; this makes sure of it. A prompt is a request, a
+  // regex is a guarantee, and the reader is the one who sees the difference.
+  const flowed = looksWrapped(text) ? reflow(text) : text;
+  return { text: flowed.slice(0, NOTE_MAX) };
 }
 
 // ---- Looking a book up so nobody has to type it twice ----
@@ -379,13 +435,15 @@ async function saveBooks(books) {
 // Deliberately one page of facts, not a dashboard: who joined, how they arrived, and the
 // only number that matters — did they add a book.
 async function adminPage() {
-  const [people, shares, stats, invites, visits] = await Promise.all([
+  const [people, shares, stats, invites, visits, threads] = await Promise.all([
     rawCol('users').find().sort({ createdAt: -1 }).limit(200).toArray(),
     rawCol('shares').find().sort({ createdAt: -1 }).limit(20).toArray(),
     dbStats().catch(() => null),
     users.listInvites(),
     rawCol('meta').find({ _id: { $regex: '^visits:' } }).sort({ _id: -1 }).limit(7).toArray(),
+    contact.allThreads().catch(() => []),
   ]);
+  const waiting = threads.reduce((n, t) => n + (t.unreadOwner ? 1 : 0), 0);
   // Sign-ups per day, so the funnel finishes on the same row. "25 reached sign-in" sitting
   // in one table while "4 people" sits in another is what made these numbers look broken.
   const signupsOn = {};
@@ -427,6 +485,45 @@ async function adminPage() {
       <td class="dim">${joined(u.createdAt)}</td>
       <td class="dim">${u.strikes ? '⚠️ ' + u.strikes : ''}</td>
     </tr>`;
+    })
+    .join('');
+
+  // The inbox. Oldest message at the top of each thread, so a conversation reads downwards
+  // the way every other conversation does.
+  const when = (d) => (d ? new Date(d).toISOString().slice(0, 16).replace('T', ' ') : '');
+  const threadCards = threads
+    .map((t) => {
+      const msgs = (t.msgs || [])
+        .map(
+          (m) => `<div class="m ${m.from === 'me' ? 'mine' : 'theirs'}">
+            <div class="mt">${esc(m.text)}</div><div class="mw">${when(m.ts)}</div></div>`
+        )
+        .join('');
+      // A guest is shown as a guest. Inventing a name for somebody who never gave one is how
+      // an inbox starts lying to you about who you're talking to.
+      const who = t.name
+        ? esc(t.name)
+        : t.userId
+          ? esc(t.userId)
+          : '<span class="dim">Not signed in</span>';
+      return `<div class="thread${t.unreadOwner ? ' hot' : ''}" id="t-${esc(t._id)}">
+      <div class="thead">
+        <div><b>${who}</b>${t.email ? ` <span class="dim">${esc(t.email)}</span>` : ''}
+          ${t.unreadOwner ? `<span class="tag">${t.unreadOwner} new</span>` : ''}</div>
+        <div class="dim" style="font-size:.74rem">${t.from ? esc(t.from) + ' · ' : ''}${when(t.updated)}</div>
+      </div>
+      <div class="msgs">${msgs}</div>
+      <form method="POST" action="/admin/reply" class="reply">
+        <input type="hidden" name="id" value="${esc(t._id)}">
+        <textarea name="text" rows="2" placeholder="Write back…" required></textarea>
+        <button type="submit">Send</button>
+      </form>
+      ${t.unreadOwner
+        ? `<form method="POST" action="/admin/read" style="margin:6px 0 0">
+             <input type="hidden" name="id" value="${esc(t._id)}">
+             <button class="danger" type="submit">Mark read, no reply</button></form>`
+        : ''}
+    </div>`;
     })
     .join('');
 
@@ -482,9 +579,44 @@ async function adminPage() {
   font-weight:700;cursor:pointer;font-family:inherit}
  button.danger{background:transparent;border:1px solid #2C2A22;color:#E1685C;border-radius:8px;
   padding:5px 11px;font-size:.78rem;cursor:pointer;font-family:inherit}
+ /* Tabs. Every panel is visible until the script says otherwise, so if the script never
+    runs the page is exactly the long scroll it has always been. Doing it the other way —
+    hiding panels in CSS and revealing one with JS — means a single script error hides the
+    whole admin page, and the one page you'd use to find out something is wrong is the page
+    that broke. Safe failure over tidy markup. */
+ .tabs{display:flex;gap:6px;margin:0 0 20px;border-bottom:1px solid #2C2A22;overflow-x:auto}
+ .tabs a{color:#9C9686;text-decoration:none;padding:9px 14px;border-radius:10px 10px 0 0;
+  font-size:.86rem;white-space:nowrap;border-bottom:2px solid transparent}
+ .tabs a.on{color:#D9AE4A;border-bottom-color:#D9AE4A;background:#1D1B16}
+ .tabs .pill{background:#E1685C;color:#14130F;font-size:.66rem;font-weight:800;
+  padding:1px 6px;border-radius:20px;margin-left:6px}
+ body.tabbed .panel{display:none}
+ body.tabbed .panel.on{display:block}
+ .thread{background:#1D1B16;border:1px solid #2C2A22;border-radius:14px;padding:14px;margin-bottom:12px}
+ .thread.hot{border-color:#D9AE4A}
+ .thead{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+ .msgs{display:flex;flex-direction:column;gap:8px;margin-bottom:10px}
+ .m{max-width:88%;padding:9px 12px;border-radius:13px;font-size:.9rem}
+ .m .mt{white-space:pre-wrap;overflow-wrap:anywhere}
+ .m .mw{font-size:.68rem;color:#6E695C;margin-top:4px}
+ .m.theirs{background:#26241D;align-self:flex-start;border-bottom-left-radius:4px}
+ .m.mine{background:#2C2510;align-self:flex-end;border-bottom-right-radius:4px}
+ .reply{display:flex;gap:8px;align-items:flex-end}
+ .reply textarea{flex:1;background:#26241D;border:1px solid #2C2A22;color:#ECE8DF;border-radius:10px;
+  padding:10px 12px;font-size:.92rem;font-family:inherit;resize:vertical}
+ .reply button{background:#D9AE4A;color:#14130F;border:0;border-radius:10px;padding:11px 18px;
+  font-weight:700;cursor:pointer;font-family:inherit}
+ .empty{color:#6E695C;background:#1D1B16;border:1px dashed #2C2A22;border-radius:14px;padding:22px;text-align:center}
 </style></head><body><div class="wrap">
 <h1>📕 Kept · admin</h1>
 <p class="sub">Live from the database. <a href="/app">← back to the app</a></p>
+<nav class="tabs">
+  <a href="#overview" data-tab="overview">Overview</a>
+  <a href="#messages" data-tab="messages">Messages${waiting ? `<span class="pill">${waiting}</span>` : ''}</a>
+  <a href="#reach" data-tab="reach">Who turned up</a>
+  <a href="#access" data-tab="access">Access</a>
+</nav>
+<section class="panel" id="overview">
 <div class="cards">
   <div class="card"><div class="n">${people.length}</div><div class="l">People</div></div>
   <div class="card"><div class="n">${people.filter((u) => u.status === 'active').length}</div><div class="l">Active</div></div>
@@ -498,6 +630,23 @@ async function adminPage() {
 <tr><th>Name</th><th>Via</th><th>Lang</th><th>Books</th><th>Thoughts</th><th>Msgs</th><th>Exams</th><th>Joined</th><th></th></tr>
 ${body}
 </table></div>
+${shares.length ? `<h2>Shared results</h2><div class="scroll"><table>
+<tr><th>Book</th><th>Score</th><th>Thoughts</th><th>Views</th><th>Joins</th><th>Made</th><th></th></tr>
+${shareRows}</table></div>` : ''}
+</section>
+
+<section class="panel" id="messages">
+<h2>Messages</h2>
+<p class="dim" style="font-size:.86rem;margin:0 0 14px">
+  Anyone can write from the menu in the app — <b>including people who never signed in</b>,
+  which is the point: "I couldn't get past the Google button" can only ever be sent by
+  somebody without an account. Replying here puts your answer in their app, and they see a
+  dot on the menu until they read it.
+</p>
+${threads.length ? threadCards : '<div class="empty">Nobody has written yet.</div>'}
+</section>
+
+<section class="panel" id="access">
 <h2>Access</h2>
 <p class="dim" style="font-size:.88rem;margin:0 0 14px">
   <b>The website</b> —
@@ -532,9 +681,9 @@ ${config.inviteOnly
       : '<tr><td colspan="4" class="dim">Nobody invited yet.</td></tr>'}
     </table></div>`
   : ''}
-${shares.length ? `<h2>Shared results</h2><div class="scroll"><table>
-<tr><th>Book</th><th>Score</th><th>Thoughts</th><th>Views</th><th>Joins</th><th>Made</th><th></th></tr>
-${shareRows}</table></div>` : ''}
+</section>
+
+<section class="panel" id="reach">
 <h2>Who turned up</h2>
 <p class="dim" style="font-size:.86rem;margin:0 0 10px">
   Everything above counts people who <b>signed in</b>. This counts everyone who loaded a page,
@@ -555,7 +704,28 @@ ${visits.length
   : '<tr><td colspan="6" class="dim">Counting starts from this deploy — nothing recorded before it.</td></tr>'}
 </table></div>
 <p class="note">“Kept a thought” is the number that matters now — a book with nothing written against it is somebody who tried and got nothing back.</p>
-</div></body></html>`;
+</section>
+</div>
+<script>
+// Enhancement only. The class that hides panels is added HERE, by the script — so until the
+// script runs, and forever if it fails, every panel is on screen and nothing is lost.
+(function(){
+  var panels=[].slice.call(document.querySelectorAll('.panel'));
+  var tabs=[].slice.call(document.querySelectorAll('.tabs a'));
+  if(!panels.length||!tabs.length) return;
+  document.body.classList.add('tabbed');
+  function show(name){
+    var found=false;
+    panels.forEach(function(p){ var on=p.id===name; p.classList.toggle('on',on); if(on) found=true; });
+    tabs.forEach(function(t){ t.classList.toggle('on',t.dataset.tab===name); });
+    // An unknown hash must never leave a blank page staring back.
+    if(!found) show('overview');
+  }
+  show((location.hash||'#overview').slice(1));
+  window.addEventListener('hashchange',function(){ show((location.hash||'#overview').slice(1)); });
+})();
+</script>
+</body></html>`;
 }
 
 // ---- Sharing: a result that travels beyond Telegram ----
@@ -626,12 +796,17 @@ async function attributeReferral(code, acct) {
 
 // Links already out in the world carry a single `thought`. Read both shapes forever —
 // a shared page that 404s its own content is worse than any redesign is good.
+// Repaired as it's read, not as it was written. Shares made before the transcription was
+// fixed carry the printed page's line breaks, and a share page is the most public thing this
+// app produces — the one place a mangled thought is seen by people who have never heard of
+// Kept. The stored share is left exactly as it was made.
 const sharedThoughts = (s) =>
-  Array.isArray(s.thoughts) && s.thoughts.length
+  (Array.isArray(s.thoughts) && s.thoughts.length
     ? s.thoughts
     : s.thought
       ? [{ text: s.thought, page: null }]
-      : [];
+      : []
+  ).map((t) => ({ ...t, text: looksWrapped(t.text) ? reflow(t.text) : t.text }));
 
 const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
@@ -1056,6 +1231,49 @@ export function startServer(port = process.env.PORT || 8080, build = 'dev') {
       res.end(JSON.stringify(data, null, 2));
       return;
     }
+    // ---- writing to the person who made it ----
+    // Deliberately outside the block below that demands an account. Everything else here is
+    // work we do on a reader's behalf and have to bill to somebody; a message is the one
+    // thing where the sender having no account IS the message. Every bug found so far was
+    // found by the one person who could never be surprised by it.
+    if (path === '/api/contact') {
+      const cookies = parseCookies(req.headers.cookie);
+      const sid = readSession(cookies.kept_session);
+      const acct = sid ? await rawCol('users').findOne({ _id: sid }) : null;
+
+      if (req.method === 'GET') {
+        const id = contact.threadIdFor(acct, cookies.kept_mail);
+        const thread = await contact.myThread(id);
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+        res.end(JSON.stringify(thread));
+        return;
+      }
+      if (req.method !== 'POST') {
+        res.writeHead(405, { 'Content-Type': 'text/plain' });
+        res.end('POST or GET');
+        return;
+      }
+      // A signed-in reader is rate-limited by who they are; a stranger by where they came
+      // from, which is the only handle we have and is deliberately never stored.
+      const bucket = acct?._id || `ip:${clientIp(req)}`;
+      if (!users.rateLimit(`contact:${bucket}`, 8)) {
+        res.writeHead(429, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'slow_down' }));
+        return;
+      }
+      const body = await readJson(req, 8000);
+      // A guest who has never written gets an id now — at the moment they send, not before.
+      let anon = cookies.kept_mail;
+      const fresh = !acct && !/^a:[0-9a-f]{32}$/.test(String(anon || ''));
+      if (fresh) anon = contact.newAnonId();
+      const id = contact.threadIdFor(acct, anon);
+      const out = await contact.fromReader({ threadId: id, acct, text: body?.text, page: body?.page });
+      const headers = { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' };
+      if (fresh && out.ok) headers['Set-Cookie'] = mailCookie(anon);
+      res.writeHead(out.ok ? 200 : out.error === 'too_many' ? 429 : 400, headers);
+      res.end(JSON.stringify(out));
+      return;
+    }
     if (path === '/auth/logout') {
       res.writeHead(302, { Location: '/', 'Set-Cookie': clearedCookie });
       res.end();
@@ -1095,6 +1313,12 @@ export function startServer(port = process.env.PORT || 8080, build = 'dev') {
       }
       // /signin is the door, asked for deliberately. /app is the product, always open.
       const file = path === '/signin' ? '../webapp/signin.html' : '../reading/journal.html';
+      // Guests are included deliberately: somebody who wrote in without an account is exactly
+      // the person most likely to have given up, and the reply is the only thing that brings
+      // them back. Failure here costs the dot and nothing else.
+      const mailCount = await contact
+        .unreadFor(contact.threadIdFor(acct, parseCookies(req.headers.cookie).kept_mail))
+        .catch(() => 0);
       try {
         let html = await readFile(fileURLToPath(new URL(file, import.meta.url)), 'utf8');
         html = html
@@ -1106,7 +1330,14 @@ export function startServer(port = process.env.PORT || 8080, build = 'dev') {
           // it isn't hidden in the page, it was never sent.
           .replaceAll(
             'ME_JSON',
-            JSON.stringify({ guest: !signedIn, owner: acct?.role === 'owner' })
+            JSON.stringify({
+              guest: !signedIn,
+              owner: acct?.role === 'owner',
+              // Replies waiting, so the menu can show a dot without the app having to ask.
+              // Never allowed to break the page: a reader whose inbox lookup fails still gets
+              // their library, they just don't get the dot.
+              mail: mailCount,
+            })
           );
         // Google is the only way in, so the page has to say something sensible if it isn't
         // configured — a sign-in screen with no button and no explanation reads as broken.
@@ -1128,7 +1359,8 @@ export function startServer(port = process.env.PORT || 8080, build = 'dev') {
     // ---- owner's admin ----
     // Who joined, where they came from, and whether they actually did anything. Rendered
     // on the server so there's no API to secure separately; the session must be the owner.
-    if (path === '/admin' || path === '/admin/invite' || path === '/admin/revoke' || path === '/admin/unshare') {
+    if (path === '/admin' || path === '/admin/invite' || path === '/admin/revoke' || path === '/admin/unshare'
+      || path === '/admin/reply' || path === '/admin/read') {
       const sid = readSession(parseCookies(req.headers.cookie).kept_session);
       const me = sid ? await rawCol('users').findOne({ _id: sid }) : null;
       if (!me || me.role !== 'owner') {
@@ -1140,8 +1372,9 @@ export function startServer(port = process.env.PORT || 8080, build = 'dev') {
         );
         return;
       }
-      // Invites and share deletion — plain form posts, so the page needs no JS.
-      if (path === '/admin/invite' || path === '/admin/revoke' || path === '/admin/unshare') {
+      // Invites, share deletion and replies — plain form posts, so the page needs no JS.
+      if (path === '/admin/invite' || path === '/admin/revoke' || path === '/admin/unshare'
+        || path === '/admin/reply' || path === '/admin/read') {
         const raw = await new Promise((resolve) => {
           let d = '';
           req.on('data', (c) => { d += c; if (d.length > 4000) req.destroy(); });
@@ -1157,6 +1390,10 @@ export function startServer(port = process.env.PORT || 8080, build = 'dev') {
             if (!REF_CODE.test(code)) throw new Error('bad share code');
             await rawCol('shares').deleteOne({ _id: code });
             console.log(`[admin] share ${code} deleted`);
+          } else if (path === '/admin/reply') {
+            await contact.fromOwner(form.get('id') || '', form.get('text') || '');
+          } else if (path === '/admin/read') {
+            await contact.markRead(form.get('id') || '');
           } else if (path === '/admin/invite') await users.inviteEmail(email, me._id);
           else await users.revokeEmail(email);
         } catch (e) {
@@ -1164,7 +1401,10 @@ export function startServer(port = process.env.PORT || 8080, build = 'dev') {
           res.end();
           return;
         }
-        res.writeHead(302, { Location: '/admin' });
+        // Back to the tab they were on, not the top of the page — replying to the third
+        // message and being thrown back to the storage gauge is how an inbox goes unread.
+        const back = path === '/admin/reply' || path === '/admin/read' ? '/admin#messages' : '/admin';
+        res.writeHead(302, { Location: back });
         res.end();
         return;
       }

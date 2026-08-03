@@ -35,6 +35,8 @@
     <li><b>Your conversations</b> with the mentor, so it can remember what you've discussed.</li>
     <li><b>Your exams</b> — the questions, your answers, and the grade.</li>
     <li><b>Basic usage counts</b> — messages and exams per day, used only to enforce daily limits.</li>
+    <li><b>Messages you send us</b> — if you write from the menu, the message is kept so it can
+      be read and answered, along with which screen you were on when you wrote it.</li>
   </ul>
   <p>No passwords are stored: Google handles sign-in. No payment details are held — there is
   nothing to pay for yet.</p>
@@ -51,9 +53,12 @@
       details are sent to them to generate replies, exams and recommendations.</li>
     <li><b>MongoDB Atlas</b> (database) and <b>Railway</b> (hosting) store and run it.</li>
   </ul>
+  <p>Messages you send us are not sent to any AI model. They are read by one person.</p>
   <p>That's the whole list. There are no third-party analytics, no trackers, no advertising,
-  and no third-party cookies. The only cookies used are the one that keeps you signed in and,
-  if you arrived from a shared link, a short-lived one remembering which link it was.</p>
+  and no third-party cookies. Three cookies exist: the one that keeps you signed in; if you
+  arrived from a shared link, a short-lived one remembering which link it was; and, only if
+  you write to us without an account, one that lets you come back and read the reply. That
+  last one is set at the moment you send a message and never for simply reading.</p>
   <p>One number is kept: how many times each page was loaded on each day. It's a counter and
   nothing else — no cookie, no IP address, no identifier, no record of which pages you
   personally opened. It exists only to answer "did anyone visit today", and no visitor can be

@@ -59,6 +59,14 @@ async function anthropicChat({ system, messages, maxTokens, model, apiKey }) {
   const client = apiKey ? anthropicFor(apiKey) : anthropic;
   if (!client) throw new Error('no anthropic key available');
   const res = await client.messages.create({ model, max_tokens: maxTokens, system, messages });
+  // A reply that ran into the ceiling comes back cut off mid-sentence and is otherwise
+  // indistinguishable from a complete one. stop_reason is the only thing that says so, and
+  // discarding it here meant every caller in the app silently trusted half an answer.
+  // Behaviour is unchanged — the partial text is still returned, because a clipped sentence
+  // beats an error in a chat — but it now says so in the logs where it can be found.
+  if (res.stop_reason === 'max_tokens') {
+    console.warn(`[llm] reply hit the ${maxTokens}-token ceiling and is cut off (model ${model})`);
+  }
   return res.content
     .filter((b) => b.type === 'text')
     .map((b) => b.text)

@@ -72,6 +72,18 @@
   .iconbtn.wide{width:auto;padding:0 13px;font-size:.82rem;font-weight:600;color:var(--accent-strong);
     border-color:var(--accent)}
   .iconbtn:active{background:var(--raise)}
+  /* A reply is waiting behind the menu. A dot rather than a number: the count isn't the
+     point, and a badge that says "1" on a hamburger reads like an error. */
+  .iconbtn.dot-on{position:relative}
+  .iconbtn.dot-on::after{content:"";position:absolute;top:6px;right:6px;width:8px;height:8px;
+    border-radius:50%;background:var(--accent);box-shadow:0 0 0 2px var(--paper)}
+  /* The message thread, in the sheet and in the app's own colours. */
+  #c-msgs{display:flex;flex-direction:column;gap:8px;max-height:38vh;overflow-y:auto;margin-bottom:12px}
+  #c-msgs:empty{display:none}
+  #c-msgs .m{max-width:88%;padding:9px 12px;border-radius:14px;font-size:.9rem;line-height:1.45}
+  #c-msgs .m .mt{white-space:pre-wrap;overflow-wrap:anywhere}
+  #c-msgs .m.mine{background:var(--accent-tint);align-self:flex-end;border-bottom-right-radius:4px}
+  #c-msgs .m.theirs{background:var(--raise);align-self:flex-start;border-bottom-left-radius:4px}
   h1{font-family:var(--serif);font-weight:600;font-size:1.62rem;margin:6px 0 .1rem}
   .sub{color:var(--muted);font-size:.9rem;margin:0}
   .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:16px 0 6px}
@@ -164,9 +176,30 @@
   .cropbox{position:relative;touch-action:none;-webkit-user-select:none;user-select:none;
     background:var(--raise);border-radius:12px;overflow:hidden;display:flex;justify-content:center}
   .cropbox img{display:block;max-width:100%;max-height:46vh;width:auto;height:auto;pointer-events:none}
-  .cropsel{position:absolute;border:2px solid var(--accent);background:rgba(217,174,74,.18);
-    pointer-events:none;border-radius:3px}
-  .cropdim{position:absolute;inset:0;background:rgba(0,0,0,.45);pointer-events:none}
+  /* A camera dims everything OUTSIDE the frame and leaves the kept part bright. This used to
+     do the opposite — paint a gold wash over the chosen words — which reads as "covered",
+     not "keeping this", and made people hesitate at the one step that needs confidence.
+     The huge spread is the whole trick: one shadow darkens the entire photo except the hole
+     the selection punches in it, and .cropbox's overflow:hidden clips the rest. */
+  .cropsel{position:absolute;pointer-events:none;
+    box-shadow:0 0 0 9999px rgba(0,0,0,.62);outline:1px solid rgba(255,255,255,.85)}
+  /* The rule-of-thirds guides every camera app draws inside the frame. */
+  .cropsel::before{content:"";position:absolute;inset:0;pointer-events:none;
+    background:
+      linear-gradient(to right,transparent 33.3%,rgba(255,255,255,.28) 33.3% calc(33.3% + 1px),
+        transparent calc(33.3% + 1px) 66.6%,rgba(255,255,255,.28) 66.6% calc(66.6% + 1px),transparent calc(66.6% + 1px)),
+      linear-gradient(to bottom,transparent 33.3%,rgba(255,255,255,.28) 33.3% calc(33.3% + 1px),
+        transparent calc(33.3% + 1px) 66.6%,rgba(255,255,255,.28) 66.6% calc(66.6% + 1px),transparent calc(66.6% + 1px))}
+  /* Corner brackets, the other half of the convention. Drawn with two borders on a box that
+     is inset slightly, then mirrored — cheap, and no extra elements to move on every frame. */
+  .cropsel i{position:absolute;width:19px;height:19px;border:3px solid #fff;pointer-events:none}
+  .cropsel i.tl{top:-1px;left:-1px;border-right:0;border-bottom:0;border-radius:3px 0 0 0}
+  .cropsel i.tr{top:-1px;right:-1px;border-left:0;border-bottom:0;border-radius:0 3px 0 0}
+  .cropsel i.bl{bottom:-1px;left:-1px;border-right:0;border-top:0;border-radius:0 0 0 3px}
+  .cropsel i.br{bottom:-1px;right:-1px;border-left:0;border-top:0;border-radius:0 0 3px 0}
+  /* Before the first drag there is no selection at all, so the photo sits undimmed and
+     "read the whole page" is plainly the option already on screen. .cropsel sets no display
+     rule of its own, so the hidden attribute genuinely hides it. */
   .note .nact{display:flex;gap:16px;margin-top:6px}
   .note .nrm{background:transparent;border:0;color:var(--faint);cursor:pointer;font-size:.8rem;padding:6px 0;min-height:34px;font-family:var(--sans)}
   .note .nrm:active{color:var(--accent-strong)}
@@ -450,6 +483,31 @@ async function loadBooks(){
 }
 const $=id=>document.getElementById(id);
 const esc=s=>(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+
+/* ---- Thoughts already saved with a printed page's line breaks ----
+   The photo path used to keep the wrapping of the paper it read, so thoughts already in
+   people's libraries have hard breaks mid-sentence and words split in two ("de-" / "signed").
+   Fixing the transcription only helps the next photo.
+   So this repairs them WHEN SHOWN, and never in storage. Nobody's saved words get quietly
+   rewritten by a deploy — the stored text is untouched, editing shows exactly what was
+   saved, and tapping "Tidy it up" is what makes the repair permanent. Every already-broken
+   thought reads correctly from the next time the app opens, with nobody doing anything.
+   Same two rules as the server (src/text.js): only text that was clearly lifted off a page,
+   and never the line breaks somebody chose. */
+function looksWrapped(s){
+  if(/\p{L}-\n\p{Ll}/u.test(String(s||""))) return true;
+  const lines=String(s||"").split("\n").map(l=>l.trim()).filter(Boolean);
+  if(lines.length<3) return false;
+  const long=lines.filter(l=>l.length>40).length;
+  return long>=3 && long/lines.length>0.6;
+}
+function flowText(s){
+  if(!looksWrapped(s)) return s||"";
+  return String(s).replace(/\r\n?/g,"\n").replace(/[ \t]+\n/g,"\n")
+    .replace(/(\p{L})-\n(?=\p{Ll})/gu,"$1")
+    .replace(/(\S)\n(?!\n)(?![-*•‣–—]\s)(?!\d+[.)]\s)(?=\S)/g,"$1 ")
+    .replace(/[ \t]{2,}/g," ").replace(/\n{3,}/g,"\n\n").trim();
+}
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
 const STATUS={reading:"Reading",finished:"Finished",want:"Want to read"};
 let openId=null;
@@ -534,7 +592,7 @@ function openBook(id){
           const realIdx=b.notes.length-1-revIdx;
           return `<div class="note">
             <div class="ntop"><span>${n.page?`<span class="npage">p.${esc(String(n.page))}</span>`:`<span class="ndate">no page</span>`}</span><span class="ndate">${fmtDate(n.ts)}</span></div>
-            <div class="ntext">${esc(n.text)}</div>
+            <div class="ntext">${esc(flowText(n.text))}</div>
             <div class="nact">
               <button class="nrm" data-edit="${realIdx}">edit</button>
               <button class="nrm" data-i="${realIdx}">remove</button>
@@ -653,7 +711,8 @@ function openBook(id){
       const { bg, close }=openSheet(`
         <div class="sheet-head">Which part?</div>
         <p class="sheet-note">Drag across the words you want — or read the whole page.</p>
-        <div class="cropbox" id="cropbox"><img id="cropimg" alt=""><div class="cropsel" id="cropsel" hidden></div></div>
+        <div class="cropbox" id="cropbox"><img id="cropimg" alt=""><div class="cropsel" id="cropsel" hidden>
+          <i class="tl"></i><i class="tr"></i><i class="bl"></i><i class="br"></i></div></div>
         <button class="btn" id="crop-go" style="margin-top:12px" disabled>Drag to choose a part</button>
         <button class="btn ghost" id="crop-all" style="margin-top:8px">Read the whole page</button>`,
         "Choose the part to read");
@@ -664,24 +723,38 @@ function openBook(id){
       const imgBox=()=>{ const i=img.getBoundingClientRect(), b=box.getBoundingClientRect();
         return { left:i.left-b.left, top:i.top-b.top, w:i.width, h:i.height }; };
 
-      box.addEventListener("pointerdown",(e)=>{
-        const ib=imgBox(), b=box.getBoundingClientRect();
-        start={ x:e.clientX-b.left, y:e.clientY-b.top, ib };
-        box.setPointerCapture(e.pointerId);
-      });
-      box.addEventListener("pointermove",(e)=>{
-        if(!start) return;
-        const b=box.getBoundingClientRect();
-        const x2=e.clientX-b.left, y2=e.clientY-b.top;
-        const x=Math.min(start.x,x2), y=Math.min(start.y,y2);
-        rect={ x, y, w:Math.abs(x2-start.x), h:Math.abs(y2-start.y) };
-        Object.assign(sel.style,{left:x+"px",top:y+"px",width:rect.w+"px",height:rect.h+"px"});
+      /* Every point is pinned inside the photo itself. The box is wider than a portrait
+         photo, so without this a drag could start in the empty strip beside it and the
+         dimming mask would sit half over nothing. */
+      const clamp=(v,lo,hi)=>Math.max(lo,Math.min(hi,v));
+      const at=(e)=>{ const ib=imgBox(), b=box.getBoundingClientRect();
+        return { x:clamp(e.clientX-b.left, ib.left, ib.left+ib.w),
+                 y:clamp(e.clientY-b.top,  ib.top,  ib.top +ib.h) }; };
+      const paint=()=>{
+        Object.assign(sel.style,{left:rect.x+"px",top:rect.y+"px",width:rect.w+"px",height:rect.h+"px"});
         sel.hidden=false;
         const big=rect.w>24&&rect.h>24;
         go.disabled=!big;
         go.textContent=big?"Read the selected part":"Drag to choose a part";
+      };
+      box.addEventListener("pointerdown",(e)=>{
+        start=at(e);
+        box.setPointerCapture(e.pointerId);
       });
-      const end=()=>{ start=null; };
+      box.addEventListener("pointermove",(e)=>{
+        if(!start) return;
+        const p=at(e);
+        rect={ x:Math.min(start.x,p.x), y:Math.min(start.y,p.y),
+               w:Math.abs(p.x-start.x), h:Math.abs(p.y-start.y) };
+        paint();
+      });
+      /* A tap that never became a drag leaves a sliver of a selection behind, which dims the
+         whole photo for no reason and looks broken. Treat it as "never mind". */
+      const end=()=>{
+        start=null;
+        if(rect&&(rect.w<=24||rect.h<=24)){ rect=null; sel.hidden=true;
+          go.disabled=true; go.textContent="Drag to choose a part"; }
+      };
       box.addEventListener("pointerup",end);
       box.addEventListener("pointercancel",end);
 
@@ -1083,11 +1156,82 @@ function flipTheme(){
    the guest list rather than a broken control.
    It also gives the export a home: the privacy page promises anyone can take their data, and
    until now a reader on the web had no way to do it. */
+/* ---- Writing to the person who made it ----
+   Every bug in this app so far was found by the one person who wrote it, which is the worst
+   possible sample of one. A hundred people reached the front page and not one of them had a
+   way to say what stopped them.
+   A thread, not a form: a form ends the conversation at "thanks, we'll be in touch", and the
+   second message — the answer to "which phone?" — is the one that actually fixes anything. */
+let mailWaiting = (ME.mail|0) > 0;
+/* Which of the three tabs is showing. The bottom bar is .tb buttons with ids, so this reads
+   the DOM as it actually is rather than as a selector I remembered wrongly. */
+function whichTab(){
+  const on=document.querySelector(".tb.on");
+  return on ? String(on.id||"").replace(/^tab-/,"") : "library";
+}
+function markMailDot(){
+  const b=$("menu-btn");
+  if(b) b.classList.toggle("dot-on", mailWaiting);
+}
+markMailDot();
+
+async function openContact(){
+  const { close } = openSheet(
+    `<div class="sheet-head">Message Grygorii</div>
+     <p class="sheet-note" id="c-note">Something broken, something missing, or just an idea —
+       it comes straight to ${GUEST?'the person who built this. No account needed.':'the person who built this.'}</p>
+     <div class="msgs" id="c-msgs"></div>
+     <textarea id="c-text" rows="3" placeholder="What happened?"></textarea>
+     <button class="btn" id="c-send" style="margin-top:10px">Send</button>
+     <button class="btn ghost" id="c-x" style="margin-top:8px">Close</button>`,
+    'Message');
+  $("c-x").onclick=close;
+
+  const list=$("c-msgs");
+  const paint=(msgs)=>{
+    list.innerHTML=(msgs||[]).map(m=>
+      `<div class="m ${m.from==='me'?'theirs':'mine'}"><div class="mt">${esc(m.text)}</div></div>`).join('');
+    list.scrollTop=list.scrollHeight;
+  };
+  /* Reading the thread is what clears the dot, so it can't clear before they've seen why. */
+  try{
+    const r=await api("/api/contact");
+    if(r.ok){ const d=await r.json(); paint(d.msgs); if(d.msgs&&d.msgs.length) $("c-note").hidden=true; }
+  }catch(e){ /* offline — they can still write, it just won't show history */ }
+  mailWaiting=false; markMailDot();
+
+  $("c-send").onclick=async()=>{
+    const ta=$("c-text"), text=ta.value.trim();
+    if(text.length<2){ toast("Write something first"); return; }
+    const bt=$("c-send"); bt.disabled=true; bt.textContent="Sending…";
+    try{
+      const r=await api("/api/contact",{method:"POST",headers:{"Content-Type":"application/json"},
+        /* Which screen they were on. The single most useful line in a bug report and the one
+           nobody ever remembers to include. No book titles, nothing they wrote — just the tab. */
+        body:JSON.stringify({text, page:whichTab()})});
+      if(r.ok){
+        ta.value="";
+        $("c-note").hidden=true;
+        const d=await api("/api/contact").then(x=>x.ok?x.json():null).catch(()=>null);
+        if(d) paint(d.msgs);
+        toast("Sent — thank you");
+      } else if(r.status===429){ toast("That's plenty for today — I'll read them"); }
+      else toast("Couldn't send — try again");
+    }catch(e){ toast("Couldn't send — try again"); }
+    bt.disabled=false; bt.textContent="Send";
+  };
+}
+
 $("menu-btn").onclick=()=>{
   const items=[];
   if(GUEST) items.push(['⭑','Sign in','Keep your books on every device','/signin']);
   items.push(['◐','Light or dark','Switch how it looks',null,()=>{ flipTheme(); }]);
   if(!GUEST) items.push(['⭳','Export everything','Your books, thoughts and results, as a file','/api/export']);
+  /* Not "Support", not "Feedback" — a person. And it is above the legal line on purpose:
+     the message worth having is the one from somebody about to give up, and they are not
+     going to go looking for it. Needs no account, because the most useful sentence anyone
+     can send is "I couldn't sign in". */
+  items.push(['✉','Message Grygorii', mailWaiting?'A reply is waiting':'Something broken, missing, or just an idea',null,()=>{ openContact(); }]);
   items.push(['⚖','What we store','The short, honest version','/privacy']);
   if(ME.owner) items.push(['⚙','Admin','Who joined and what they did','/admin']);
   if(!GUEST) items.push(['⏻','Sign out','','/auth/logout']);
