@@ -150,5 +150,39 @@ if (!/^localhost|^127\./.test(wwwHost)) {
   }
 }
 
+// ---- 9. can a stranger ACTUALLY sign in? ----
+//
+// The most important question about the product, and for two days nothing asked it.
+//
+// Switching to ux_mode:'redirect' changed what Google requires: popup mode needs only an
+// authorised JavaScript ORIGIN, redirect mode needs the full redirect URI registered too.
+// The code was right, the console was never updated, and every sign-in failed with
+// redirect_uri_mismatch from 2 August onward — about a hundred and eleven people — while the
+// page itself looked perfect and the funnel got blamed instead.
+//
+// Nothing here can be checked from the served HTML: the failure lives at Google. So ask
+// Google, using the client_id and login_uri the live page is really sending.
+console.log('\nsign-in actually works');
+{
+  const cid = (signin.body.match(/client_id: '([^']+)'/) || [])[1];
+  const uri = (signin.body.match(/login_uri: '([^']+)'/) || [])[1];
+  ok(!!cid, 'the sign-in page carries a client_id');
+  ok(!!uri, 'and a login_uri', uri || '(none)');
+  if (cid && uri) {
+    ok(uri.startsWith(`https://${new URL(BASE).host}/`) || BASE.includes('localhost'),
+      'the login_uri points at this host', uri);
+    try {
+      const probe = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(cid)}`
+        + `&redirect_uri=${encodeURIComponent(uri)}&response_type=code&scope=openid%20email`;
+      const page = await (await fetch(probe, { redirect: 'follow' })).text();
+      const mismatch = /redirect_uri_mismatch/i.test(page);
+      ok(!mismatch, 'Google accepts the redirect URI (no redirect_uri_mismatch)',
+        mismatch ? `Google refuses ${uri} — add it under Authorized redirect URIs for this OAuth client` : '');
+    } catch (e) {
+      console.log(`  skip  could not reach Google to check the OAuth config (${e.message})`);
+    }
+  }
+}
+
 console.log(`\n${failed ? `${failed} FAILED` : 'all good'} — build ${build || '?'}\n`);
 process.exit(failed ? 1 : 0);
