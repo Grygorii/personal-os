@@ -70,6 +70,14 @@ if (me) {
 ok(app.body.includes('try{window.__me='), 'the injection is inside a try, so a miss is survivable');
 ok(app.body.includes('window.__me || {'), 'and there is a guest fallback if it is missing');
 
+// The landing page now promises you can find any thought again. That promise has to be
+// backed by something that actually exists in the app — the page spent weeks describing a
+// benefit the product could not deliver, which is exactly why it read as a test instead.
+console.log('\nthe promise the page makes is real');
+ok(app.body.includes('id="find"'), '/app has the thought search the landing page promises');
+ok(app.body.includes('function findThoughts'), 'and the search actually runs');
+ok(landing.body.includes('Everything worth keeping'), 'the landing page leads with the gain');
+
 // ---- 4. the hidden attribute is not defeated by a display rule ----
 // This is the guestbar bug as a rule rather than a memory. Any selector that sets a display
 // on an element the app also hides with [hidden] needs an explicit [hidden] guard.

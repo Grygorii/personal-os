@@ -6,8 +6,10 @@
 <title>Kept — keep what you take from the books you read</title>
 <meta name="description" content="Keep what you take from the books you read. Save a thought against the page it came from, and Kept hands it back weeks later — plus an honest exam when you finish.">
 <link rel="canonical" href="APP_URL/">
-<meta property="og:title" content="You finished the book. How much do you remember?">
-<meta property="og:description" content="Save the thoughts you have while reading, tagged to the page. Kept hands them back long after you close the book.">
+<!-- What a stranger meets first is usually this card, not the page. It led with the exam —
+     a question that reads as a test you are about to fail. Lead with what they get. -->
+<meta property="og:title" content="Everything worth keeping from every book you've read">
+<meta property="og:description" content="Keep the thought the moment it lands, tagged to its page. Months later, type one word you remember and it's back — with the book and the page. Plus an honest exam when you finish.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="APP_URL/">
 <meta property="og:site_name" content="Kept">
@@ -76,6 +78,8 @@
   h1{font-size:clamp(2.1rem,7.5vw,3.3rem);letter-spacing:-.01em}
   h1 em{font-style:normal;color:var(--accent)}
   .sub{color:var(--muted);font-size:1.12rem;margin:20px auto 0;max-width:30rem}
+  /* The exam, demoted on purpose: still said, but said second and said quietly. */
+  .sub-quiet{display:inline-block;margin-top:10px;font-size:.97rem;color:var(--faint)}
   .cta{display:inline-block;background:var(--accent);color:var(--accent-ink);text-decoration:none;
     font-weight:700;font-size:1.06rem;padding:16px 30px;border-radius:13px;margin-top:30px;
     transition:transform .08s ease}
@@ -107,23 +111,58 @@
   /* A phone that reads as a phone: a body, a status bar, and the app's own bottom tab bar.
      Without those it was just a card, and people had to be told it was a screenshot. */
   .demo-wrap{margin-top:24px;display:flex;justify-content:center}
-  .demo-phone{position:relative;overflow:hidden;width:100%;max-width:330px;padding:10px 10px 0;
-    border-radius:34px;border:1px solid var(--line);background:#0C0B09;
+  /* A bezel on ALL four sides. It had none at the bottom, so the tab bar ran off the edge of
+     the frame and the whole thing read as a cropped card rather than a phone. */
+  .demo-phone{position:relative;overflow:hidden;width:100%;max-width:330px;padding:10px;
+    border-radius:36px;border:1px solid var(--line);background:#0C0B09;
     box-shadow:0 26px 70px rgba(0,0,0,.55)}
-  .statusbar{display:flex;justify-content:space-between;align-items:center;
-    color:var(--faint);font-size:.62rem;padding:4px 12px 8px}
-  .statusbar .dotrow{display:flex;gap:3px;align-items:center}
-  .statusbar i{width:4px;height:4px;border-radius:50%;background:var(--faint);display:block;font-style:normal}
-  .demo-inner{background:var(--paper);border-radius:26px 26px 0 0;padding:14px 14px 0;position:relative}
-  .screen-stack{position:relative;min-height:322px}
+  .statusbar{position:relative;display:flex;justify-content:space-between;align-items:center;
+    color:var(--faint);font-size:.62rem;padding:4px 14px 8px}
+  /* Signal, wi-fi and battery. Three grey dots said "placeholder"; these say "phone", and
+     they cost nothing — drawn in CSS and inline SVG, so no request leaves the page and the
+     strict content-security-policy never comes into it. */
+  .statusbar .dotrow{display:flex;gap:5px;align-items:center;color:var(--muted)}
+  .statusbar svg{display:block;fill:currentColor}
+  .sig{width:17px;height:11px}
+  .wifi{width:15px;height:11px}
+  .batt{position:relative;display:inline-block;width:22px;height:11px;
+    border:1px solid currentColor;border-radius:3px;opacity:.95}
+  .batt::after{content:"";position:absolute;right:-3px;top:3px;width:2px;height:5px;
+    background:currentColor;border-radius:0 2px 2px 0}
+  .batt .lvl{position:absolute;left:1.5px;top:1.5px;bottom:1.5px;width:68%;
+    border-radius:1.5px;background:currentColor;display:block}
+  /* The island. One small shape, and the frame stops being a rectangle and becomes a phone. */
+  .island{position:absolute;left:50%;top:1px;transform:translateX(-50%);
+    width:62px;height:15px;border-radius:20px;background:#000}
+  .demo-inner{background:var(--paper);border-radius:26px;padding:14px 14px 0;position:relative;
+    display:flex;flex-direction:column}
+  /* A FIXED height that clips, because that is what a screen is. It was min-height with
+     absolutely positioned children and no overflow rule, so any screen taller than 322px
+     painted straight over the tab bar below it — which is exactly what the mentor screen did. */
+  .screen-stack{position:relative;height:326px;overflow:hidden}
   /* the real bottom bar from the app */
-  .demo-tabs{display:flex;border-top:1px solid var(--line);margin:0 -14px;padding:7px 10px 12px}
+  .demo-tabs{display:flex;border-top:1px solid var(--line);margin:0 -14px;padding:8px 10px 6px}
+  /* The home indicator. The last thing that makes a rectangle read as a phone. */
+  .home-bar{height:4px;width:104px;border-radius:4px;background:var(--line);
+    margin:2px auto 8px}
   .demo-tab{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;
     font-size:.62rem;font-weight:600;color:var(--faint)}
   .demo-tab .i{font-size:1.05rem;line-height:1;opacity:.5;filter:grayscale(1)}
   .demo-tab.on{color:var(--accent)} .demo-tab.on .i{opacity:1;filter:none}
-  .screen{position:absolute;inset:0;opacity:0;transform:translateY(10px);pointer-events:none;
-    transition:opacity .45s ease,transform .45s ease}
+  .screen{position:absolute;inset:0;overflow:hidden;opacity:0;transform:translateY(10px);
+    pointer-events:none;transition:opacity .45s ease,transform .45s ease}
+  /* A chat fills from the BOTTOM, like every chat anyone has ever used. Anchoring it to the
+     top is what pushed the newest message — the one worth reading — off the screen. */
+  .screen.chat{display:flex;flex-direction:column}
+  .screen.chat .chat-body{margin-top:auto;padding-bottom:2px}
+  /* Tighter than the bubbles further down the page: these live inside a fixed-height screen,
+     and at full size four of them do not fit — the newest one, with the typing dots, fell off
+     the bottom. Sized so the whole exchange is visible at once. */
+  .screen .bubble{font-size:.85rem;line-height:1.45;padding:9px 12px;margin:7px 0;max-width:86%}
+  /* Shrink-wrapped: a "typing" bubble holding three dots must not stretch the full width of
+     the screen, which reads as an empty message rather than someone about to reply. */
+  .screen .bubble.typing{display:inline-block;width:auto;padding:10px 14px}
+  .screen .typing span{width:5px;height:5px}
   .screen.on{opacity:1;transform:none;pointer-events:auto}
   .app-bar{font-weight:600;font-size:.92rem;color:var(--muted);border-bottom:1px solid var(--line);
     padding-bottom:10px;margin-bottom:14px}
@@ -245,6 +284,19 @@
     padding:16px 18px;margin-top:16px;text-align:left;font-size:.93rem;color:var(--muted)}
   .ios-help b{color:var(--ink)}
   .ios-help ol{margin:10px 0 0;padding-left:20px} .ios-help li{margin:5px 0}
+  /* finding a thought again — the demo of the thing the hero now promises */
+  .find-demo{position:relative;color:var(--ink)}
+  .find-demo .caret{display:inline-block;width:1px;height:1em;background:var(--accent);
+    margin-left:2px;vertical-align:-2px;animation:blink2 1s steps(1) infinite}
+  .fres{margin-top:10px;display:grid;gap:7px}
+  .fr{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:8px 10px;
+    display:grid;gap:4px;text-align:left}
+  .fr .frt{font-size:.76rem;line-height:1.4;color:var(--ink)}
+  .fr .frm{font-size:.66rem;color:var(--faint)}
+  /* Explicit, not var(--accent-tint): that variable belongs to the app's stylesheet, not this
+     page. Undefined, a <mark> falls back to the browser default — black on bright yellow,
+     on a near-black page. */
+  .fr mark{background:#33290F;color:var(--accent);border-radius:3px;padding:0 2px}
   /* steps */
   .steps{display:grid;gap:16px;margin-top:26px}
   .step{display:flex;gap:16px;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:18px}
@@ -309,21 +361,48 @@
       <button class="get" id="get-btn" type="button">GET</button>
     </div>
 
-    <!-- "How much is left?" read as "how many pages remain" — the opposite of the meaning.
-         His wife asked "left what?", and the words were on her side. Say the actual question. -->
-    <h1>You finished the book.<br>How much do you <em>remember</em>?</h1>
+    <!-- A friend opened this page and said he couldn't tell what he'd GET, and that if he
+         didn't know Grygorii he'd have closed it. He was right, and the reason is visible
+         once you read the page cold: every promise on it was negative. "It will not flatter
+         you." "The first score is usually humbling." "Bluff an answer and it scores you
+         under 40." The one concrete result shown was 72% and a chapter to re-read.
+         So the offer a stranger received was: you are failing at reading, here is a tool to
+         prove it and set you homework. He didn't misunderstand it — he understood it and
+         declined.
+         It came out that way because the page was written by someone who already HAD the
+         pain, and when you have the pain the benefit is self-evident. A stranger on a
+         Tuesday afternoon doesn't feel it, and needs the after, not the diagnosis.
+         So: the gain first, in plain words. The exam drops to one line at the end — it is
+         the proof, not the product. "How much do you remember?" was a good question and
+         still opens the argument further down; it just isn't an offer. -->
+    <h1>Everything worth keeping<br>from every book you've <em>read</em>.</h1>
     <!-- Several people read the old subhead as "a place that gives you books" or "somewhere
          to store your books". Kept has no books in it, and that has to be settled in the
          first sentence — before the words "library" and "add a book" pull them the wrong way. -->
-    <p class="sub">Read on paper, Kindle or audio — Kept isn't where you read.
-      It's where the thoughts you have while reading are saved, and handed back long
-      after you've closed the book.</p>
+    <p class="sub">Read on paper, Kindle or audio — Kept isn't where you read. It's where the
+      thought you had at page 91 is saved. Months later, type one word you remember and
+      it's back, with the book and the page it came from.<br>
+      <span class="sub-quiet">And when you finish a book, five honest questions — because
+      being asked is what makes it stick.</span></p>
 
     <!-- The live demo sits in the hero: a phone that plays the whole product before a
          single word of explanation. It replaced a static card, which had to be read. -->
     <div class="demo-wrap">
       <div class="demo-phone">
-        <div class="statusbar"><span>9:41</span><span class="dotrow"><i></i><i></i><i></i></span></div>
+        <div class="statusbar"><span class="island"></span><span>9:41</span><span class="dotrow">
+          <svg class="sig" viewBox="0 0 17 11" aria-hidden="true">
+            <rect x="0" y="7.5" width="3" height="3.5" rx="1"/>
+            <rect x="4.7" y="5" width="3" height="6" rx="1"/>
+            <rect x="9.4" y="2.5" width="3" height="8.5" rx="1"/>
+            <rect x="14.1" y="0" width="3" height="11" rx="1" opacity=".35"/>
+          </svg>
+          <svg class="wifi" viewBox="0 0 15 11" aria-hidden="true">
+            <g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+              <path d="M1.4 4a9 9 0 0 1 12.2 0"/><path d="M3.9 6.6a5.6 5.6 0 0 1 7.2 0"/>
+            </g><circle cx="7.5" cy="9.4" r="1.1"/>
+          </svg>
+          <span class="batt"><b class="lvl"></b></span>
+        </span></div>
         <div class="demo-inner">
           <div class="screen-stack">
 
@@ -348,12 +427,17 @@
             </div>
 
             <!-- 3. the mentor -->
-            <div class="screen" data-step="2">
+            <div class="screen chat" data-step="2">
               <div class="app-bar">💬 Mentor</div>
-              <div class="bubble me">p.94 — habit stacking is just a trigger I already have</div>
-              <div class="bubble them">Good catch. Which existing habit would you attach the new one to?</div>
-              <div class="bubble me">Coffee. Read 10 pages while it brews.</div>
-              <div class="bubble them typing"><span></span><span></span><span></span></div>
+              <!-- Anchored to the bottom of the screen, the way a real conversation sits.
+                   Stacked from the top it overflowed a fixed-height screen and painted over
+                   the tab bar — and pushed the newest reply, the one worth reading, off. -->
+              <div class="chat-body">
+                <div class="bubble me">p.94 — habit stacking is just a trigger I already have</div>
+                <div class="bubble them">Good catch. Which existing habit would you attach the new one to?</div>
+                <div class="bubble me">Coffee. Read 10 pages while it brews.</div>
+                <div class="bubble them typing"><span></span><span></span><span></span></div>
+              </div>
             </div>
 
             <!-- 4. the quiz — weeks later, your own words come back -->
@@ -368,8 +452,28 @@
               <p class="demo-note">Three weeks later. You wrote it — can you place it?</p>
             </div>
 
-            <!-- 5. the exam, and something to send a friend -->
+            <!-- 5. the payoff the whole page now leads with. Nothing on this page used to
+                 SHOW it, which is why the copy kept retreating to the exam — the exam was
+                 what actually existed. It exists now, so it gets a screen. -->
             <div class="screen" data-step="4">
+              <div class="app-bar">📚 Library</div>
+              <div class="input find-demo">habits<span class="caret"></span></div>
+              <div class="fres">
+                <div class="fr"><span class="frt">Identity comes first — you don't get
+                  <mark>habits</mark> by wanting them.</span>
+                  <span class="frm">Atomic Habits · p.128</span></div>
+                <div class="fr"><span class="frt">Small <mark>habits</mark> don't add up, they
+                  compound.</span><span class="frm">Atomic Habits · p.16</span></div>
+                <div class="fr"><span class="frt">A ritual is a <mark>habit</mark> you've given
+                  meaning to.</span><span class="frm">Deep Work · p.72</span></div>
+              </div>
+              <!-- No caption inside the phone on this screen: three results are taller than
+                   the other screens' content, and the note ran straight over the tab bar.
+                   The line under the phone already says it, so this was duplication too. -->
+            </div>
+
+            <!-- 6. the exam, and something to send a friend -->
+            <div class="screen" data-step="5">
               <div class="app-bar">🎓 Exam · Atomic Habits</div>
               <div class="big-score">72<small>%</small></div>
               <div class="verdict">Solid on habit stacking. Vague on the 2-minute rule — worth re-reading ch. 13.</div>
@@ -383,6 +487,7 @@
             <span class="demo-tab"><span class="i">🧠</span>Quiz</span>
             <span class="demo-tab"><span class="i">💬</span>Mentor</span>
           </div>
+          <div class="home-bar"></div>
         </div>
       </div>
     </div>
@@ -392,11 +497,12 @@
       <button class="dot" data-go="1" aria-label="Keep a thought"></button>
       <button class="dot" data-go="2" aria-label="Talk to the mentor"></button>
       <button class="dot" data-go="3" aria-label="The quiz"></button>
-      <button class="dot" data-go="4" aria-label="The exam"></button>
+      <button class="dot" data-go="4" aria-label="Find a thought"></button>
+      <button class="dot" data-go="5" aria-label="The exam"></button>
     </div>
     <p class="note" id="demo-caption" style="margin-top:12px">Type a few letters. It finds the book for you.</p>
 
-    <a class="cta" href="/app">Start with the book you're reading →</a>
+    <a class="cta" href="/app">Start with the book you're&nbsp;reading&nbsp;→</a>
     <div class="install-row"><button class="cta ghost" id="install-btn">📲 Add to your phone</button></div>
     <!-- Never the word "PWA". Naming the technology is jargon, and explaining a technology
          plants the very doubt it's meant to settle. Answer what they're actually asking:
@@ -711,6 +817,7 @@
       'Keep a thought the moment it lands — typed, spoken, or photographed.',
       'Talk it over. The mentor has read along with you.',
       'Weeks later your own words come back. Which book was it?',
+      "Months later, one word you remember brings the thought back — with its page.",
       'And when you finish: five questions, marked honestly.',
     ];
     var i = 0, timer = null, manual = false;

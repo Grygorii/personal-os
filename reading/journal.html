@@ -200,6 +200,24 @@
   /* Before the first drag there is no selection at all, so the photo sits undimmed and
      "read the whole page" is plainly the option already on screen. .cropsel sets no display
      rule of its own, so the hidden attribute genuinely hides it. */
+  /* Finding a thought again */
+  .findrow{position:relative;margin:0 0 12px}
+  .findrow input{width:100%;padding:12px 38px 12px 14px;border-radius:12px;border:1px solid var(--line);
+    background:var(--raise);color:var(--ink);font-family:var(--sans);font-size:.95rem;min-height:46px;
+    -webkit-appearance:none;appearance:none}
+  .findrow input::-webkit-search-cancel-button{display:none}
+  .findrow input:focus{outline:none;border-color:var(--accent)}
+  .findx{position:absolute;right:6px;top:50%;transform:translateY(-50%);background:transparent;border:0;
+    color:var(--faint);font-size:1rem;cursor:pointer;width:32px;height:32px;line-height:1;font-family:var(--sans)}
+  .found[hidden]{display:none}
+  .found{margin-bottom:14px}
+  .found .fcount{color:var(--faint);font-size:.78rem;margin:0 2px 8px}
+  .fhit{width:100%;text-align:left;background:var(--surface);border:1px solid var(--line);border-radius:13px;
+    padding:12px 14px;margin-bottom:8px;cursor:pointer;font-family:var(--sans);display:block;color:var(--ink)}
+  .fhit:active{border-color:var(--accent)}
+  .fhit .ft{font-size:.93rem;line-height:1.5;overflow-wrap:anywhere}
+  .fhit .fm{color:var(--faint);font-size:.76rem;margin-top:7px}
+  .fhit mark{background:var(--accent-tint);color:var(--accent-strong);border-radius:3px;padding:0 1px}
   .note .nact{display:flex;gap:16px;margin-top:6px}
   .note .nrm{background:transparent;border:0;color:var(--faint);cursor:pointer;font-size:.8rem;padding:6px 0;min-height:34px;font-family:var(--sans)}
   .note .nrm:active{color:var(--accent-strong)}
@@ -391,6 +409,15 @@
       </div>
       <div style="margin-top:14px"><button class="btn" id="ab-save">Add book</button></div>
     </div>
+    <!-- The whole promise, made real. Until now a kept thought came back exactly two ways:
+         the quiz showed you a random one, or you opened the book you THOUGHT it was in and
+         scrolled. Which asks you to remember the book — the one thing that's hard, and the
+         reason any of this exists. -->
+    <div class="findrow">
+      <input id="find" type="search" autocomplete="off" placeholder="Find a thought — a word you remember">
+      <button class="findx" id="find-x" hidden aria-label="Clear">✕</button>
+    </div>
+    <div class="found" id="found" hidden></div>
     <div class="list" id="book-list"></div>
 
     <!-- Recommended next: picked server-side from his profile + reading history -->
@@ -525,7 +552,7 @@ function renderStats(){
 function renderLibrary(){
   renderStats();
   const list=$("book-list");
-  if(!state.books.length){list.innerHTML='<div class="empty">No books yet. Add one above — then log the thoughts it sparks.</div>';return;}
+  if(!state.books.length){list.innerHTML='<div class="empty">No books yet. Add one above — then log the thoughts it sparks.</div>';syncFind();return;}
   const order={reading:0,want:1,finished:2};
   const books=[...state.books].sort((a,b)=>(order[a.status]-order[b.status])||(b.updated||0)-(a.updated||0));
   list.innerHTML=books.map(b=>{
@@ -551,6 +578,101 @@ function renderLibrary(){
       </div></div>`;
   }).join("");
   list.querySelectorAll(".book").forEach(el=>el.onclick=()=>openBook(el.dataset.id));
+  syncFind();
+}
+/* The shelf can change under an open search — the server sync lands, the mentor adds a book,
+   a thought is deleted. Re-run the search so the results on screen are never quietly stale. */
+function syncFind(){
+  const f=document.getElementById("find");
+  if(f && f.value.trim()) renderFind();
+}
+
+/* ---- Finding a thought again ----
+   The reason the app exists, and until now the one thing it couldn't do. "Not easy always to
+   find the book and the right book" — so requiring you to name the book before you can reach
+   the thought asked for exactly the thing that's hard.
+   Entirely local: every book and note is already in memory, so this costs nothing, runs
+   offline, and works for a guest who has never signed in. */
+function foldText(s){
+  return String(s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"");
+}
+function findThoughts(q){
+  const terms=foldText(q).split(/\s+/).filter(Boolean);
+  if(!terms.length) return [];
+  const out=[];
+  for(const b of state.books){
+    const title=b.title||"", author=b.author||"";
+    for(let i=0;i<(b.notes||[]).length;i++){
+      const n=b.notes[i];
+      const text=n.text||"";
+      /* The book's title and author count as part of a thought's haystack: searching
+         "Atomic" should surface what you kept from Atomic Habits, not nothing. */
+      const hay=foldText(text+" "+title+" "+author);
+      if(terms.every(t=>hay.includes(t))) out.push({b,n,i,text,title,author});
+    }
+  }
+  /* Newest first — the thing you kept last week is likelier to be the one you're reaching
+     for than the thing you kept a year ago. */
+  return out.sort((x,y)=>(y.n.ts||0)-(x.n.ts||0)).slice(0,60);
+}
+function markTerms(text,q){
+  /* Match on the RAW text and escape while building the output. Escaping first and
+     highlighting after corrupts entities: "Tom & Jerry" becomes "Tom &amp; Jerry", and
+     searching "amp" then lands inside the entity and prints "&amp;" on screen as text.
+     Newlines collapse to spaces — a hit is a one-glance preview, not the note itself. */
+  const raw=String(flowText(text)||"").replace(/\s+/g," ").trim();
+  const terms=[...new Set(foldText(q).split(/\s+/).filter(t=>t.length>1))];
+  if(!terms.length) return esc(raw);
+  /* Folding can change a string's LENGTH (one letter may decompose into several), so the
+     folded copy carries a map back to the real character it came from. Comparing folded
+     positions against raw ones would silently highlight the wrong letters. */
+  let folded="",map=[];
+  for(let i=0;i<raw.length;i++){
+    const f=foldText(raw[i]);
+    for(let k=0;k<f.length;k++){ folded+=f[k]; map.push(i); }
+  }
+  const hit=new Array(raw.length).fill(false);
+  for(const t of terms){
+    let at=0;
+    while((at=folded.indexOf(t,at))!==-1){
+      for(let k=at;k<at+t.length;k++) hit[map[k]]=true;
+      at+=t.length;
+    }
+  }
+  let out="",i=0;
+  while(i<raw.length){
+    const on=hit[i]; let j=i;
+    while(j<raw.length&&hit[j]===on) j++;
+    const chunk=esc(raw.slice(i,j));
+    out+=on?`<mark>${chunk}</mark>`:chunk;
+    i=j;
+  }
+  return out;
+}
+function renderFind(){
+  const q=$("find").value.trim();
+  const box=$("found"), list=$("book-list");
+  $("find-x").hidden=!q;
+  if(!q){ box.hidden=true; box.innerHTML=""; list.hidden=false; return; }
+  const hits=findThoughts(q);
+  list.hidden=true;                       // one answer on screen, not two
+  box.hidden=false;
+  if(!hits.length){
+    box.innerHTML=`<div class="empty">Nothing kept with “${esc(q)}” in it — yet.</div>`;
+    return;
+  }
+  box.innerHTML=`<p class="fcount">${hits.length} thought${hits.length===1?"":"s"}</p>`+
+    hits.map((h,k)=>`<button class="fhit" data-k="${k}">
+      <span class="ft">${markTerms(h.text,q)}</span>
+      <span class="fm">${esc(h.title)}${h.n.page?` · p.${esc(String(h.n.page))}`:""} · ${fmtDate(h.n.ts)}</span>
+    </button>`).join("");
+  box.querySelectorAll("[data-k]").forEach(el=>{
+    el.onclick=()=>{ const h=hits[+el.dataset.k]; clearFind(); openBook(h.b.id); };
+  });
+}
+function clearFind(){
+  const f=$("find"); if(f) f.value="";
+  $("find-x").hidden=true; $("found").hidden=true; $("found").innerHTML=""; $("book-list").hidden=false;
 }
 
 function openBook(id){
@@ -1263,6 +1385,13 @@ $("menu-btn").onclick=()=>{
     if(act) el.onclick=()=>{ act(); close(); };
   });
 };
+
+$("find").addEventListener("input",renderFind);
+$("find-x").onclick=()=>{ clearFind(); $("find").focus(); };
+/* Leaving the library, or the shelf changing underneath a search, must not strand a stale
+   result list on screen showing thoughts that may no longer exist. */
+$("tab-quiz").addEventListener("click",clearFind);
+$("tab-chat").addEventListener("click",clearFind);
 
 renderLibrary();
 loadBooks();
