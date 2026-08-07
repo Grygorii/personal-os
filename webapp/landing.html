@@ -80,6 +80,8 @@
   .sub{color:var(--muted);font-size:1.12rem;margin:20px auto 0;max-width:30rem}
   /* The exam, demoted on purpose: still said, but said second and said quietly. */
   .sub-quiet{display:inline-block;margin-top:10px;font-size:.97rem;color:var(--faint)}
+  .who{margin:22px auto 0;max-width:30rem;color:var(--ink);font-size:1rem;font-weight:600}
+  .who em{font-style:normal;color:var(--accent)}
   .cta{display:inline-block;background:var(--accent);color:var(--accent-ink);text-decoration:none;
     font-weight:700;font-size:1.06rem;padding:16px 30px;border-radius:13px;margin-top:30px;
     transition:transform .08s ease}
@@ -384,6 +386,12 @@
       it's back, with the book and the page it came from.<br>
       <span class="sub-quiet">And when you finish a book, five honest questions — because
       being asked is what makes it stick.</span></p>
+    <!-- Names the person and the moment. The line before it said "want it back when it
+         matters", which had two pronouns and an antecedent for neither — you would have been
+         wanting "something" back. "Use" carries the whole benefit in one verb, and "not just
+         finish it" lands on the real bruise: finishing is the thing this reader already does
+         well. They don't need help finishing thirty books. They need book seven on a Tuesday. -->
+    <p class="who">For people who <em>use</em> what they read — not just finish it.</p>
 
     <!-- The live demo sits in the hero: a phone that plays the whole product before a
          single word of explanation. It replaced a static card, which had to be read. -->
@@ -582,14 +590,19 @@
   </section>
 
   <section>
-    <div class="kicker">Three steps</div>
+    <div class="kicker">How it works</div>
     <!-- "No commands" was left over from when this was a Telegram bot. Nobody types commands
          at a web app, so the word only raises a question instead of answering one. -->
     <h2>Nothing to set up. Nothing to learn.</h2>
     <div class="steps">
       <div class="step"><div class="num">1</div><div><h3>Add the book you're reading</h3><p>One tap. Your library lives with you across every device.</p></div></div>
       <div class="step"><div class="num">2</div><div><h3>Keep a thought the moment it lands</h3><p>A line, a page number, a half-formed idea. Type it, say it, or photograph the page. Kept holds on to it and thinks with you.</p></div></div>
-      <div class="step"><div class="num">3</div><div><h3>Take the exam</h3><p>Five questions when you finish. A real score, and exactly where you're thin.</p></div></div>
+      <!-- These used to end on "Take the exam" — the last thing a reader saw was homework.
+           Under "use what they read", the third step is the whole point: the moment months
+           later when you need it. The exam stays, as the step after the payoff, not instead
+           of it. -->
+      <div class="step"><div class="num">3</div><div><h3>Find it again the day you need it</h3><p>Type one word you remember. Every thought that matches comes back, from every book, each with its page. No hunting for which book it was in.</p></div></div>
+      <div class="step"><div class="num">4</div><div><h3>And when you finish — the exam</h3><p>Five questions written for that book. A real score, and exactly where you're thin.</p></div></div>
     </div>
   </section>
 

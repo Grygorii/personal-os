@@ -474,6 +474,11 @@ async function adminPage() {
   // The number that actually matters, now that the promise is "keep what you read".
   // A book with no thoughts against it is somebody who tried and got nothing back.
   const withThoughts = rows.filter((r) => r.thoughts > 0).length;
+  // Came back on a LATER DAY than they joined. Not "opened it twice in one excited evening" —
+  // that is curiosity. Returning on another day is the first evidence of a habit, and the
+  // first thing that would make a subscription anything other than wishful.
+  const dayOf = (d) => (d ? new Date(d).toISOString().slice(0, 10) : null);
+  const cameBack = rows.filter(({ u }) => u.lastSeen && dayOf(u.lastSeen) > dayOf(u.createdAt)).length;
   const joined = (d) => (d ? new Date(d).toISOString().slice(0, 10) : '—');
   const via = (u) => (u.referredBy ? 'share' : String(u._id).startsWith('g:') ? 'google' : 'telegram');
 
@@ -491,6 +496,7 @@ async function adminPage() {
       <td class="dim">${msgs}</td>
       <td class="${exams ? 'good' : 'dim'}">${exams}</td>
       <td class="dim">${joined(u.createdAt)}</td>
+      <td class="${u.lastSeen && joined(u.lastSeen) > joined(u.createdAt) ? 'good' : 'dim'}">${joined(u.lastSeen)}</td>
       <td class="dim">${u.strikes ? '⚠️ ' + u.strikes : ''}</td>
     </tr>`;
     })
@@ -630,12 +636,13 @@ async function adminPage() {
   <div class="card"><div class="n">${people.filter((u) => u.status === 'active').length}</div><div class="l">Active</div></div>
   <div class="card"><div class="n" style="color:${withBooks ? '#43B571' : '#E1685C'}">${withBooks}</div><div class="l">Added a book</div></div>
   <div class="card"><div class="n" style="color:${withThoughts ? '#43B571' : '#E1685C'}">${withThoughts}</div><div class="l">Kept a thought</div></div>
+  <div class="card"><div class="n" style="color:${cameBack ? '#43B571' : '#E1685C'}">${cameBack}</div><div class="l">Came back</div></div>
   <div class="card"><div class="n">${rows.reduce((n, r) => n + r.exams, 0)}</div><div class="l">Exams taken</div></div>
   <div class="card"><div class="n">${stats ? stats.totalMB.toFixed(0) : '?'}<span style="font-size:.9rem">/512MB</span></div><div class="l">Storage</div></div>
 </div>
 <h2>Everyone</h2>
 <div class="scroll"><table>
-<tr><th>Name</th><th>Via</th><th>Lang</th><th>Books</th><th>Thoughts</th><th>Msgs</th><th>Exams</th><th>Joined</th><th></th></tr>
+<tr><th>Name</th><th>Via</th><th>Lang</th><th>Books</th><th>Thoughts</th><th>Msgs</th><th>Exams</th><th>Joined</th><th>Last seen</th><th></th></tr>
 ${body}
 </table></div>
 ${shares.length ? `<h2>Shared results</h2><div class="scroll"><table>
@@ -701,7 +708,7 @@ ${config.inviteOnly
   posted: they prove the link was shared, not that anyone clicked it.
 </p>
 <div class="scroll"><table>
-<tr><th>Day</th><th>Front page</th><th>Reached sign-in</th><th>Signed up</th><th>Couldn't — social app</th><th>Link previews</th></tr>
+<tr><th>Day</th><th>Front page</th><th>Opened the app</th><th>Signed up</th><th>Couldn't — social app</th><th>Link previews</th></tr>
 ${visits.length
   ? visits.map((v) => `<tr><td>${esc(String(v._id).slice(7))}</td>
       <td class="${v.landing?.people ? 'good' : 'dim'}">${v.landing?.people || 0}</td>
@@ -1541,6 +1548,15 @@ export function startServer(port = process.env.PORT || 8080, build = 'dev') {
         : sid
           ? await rawCol('users').findOne({ _id: sid })
           : null;
+      // Whether anyone COMES BACK is the number that decides everything — whether the pitch
+      // is true, whether the product is worth anything, whether a price could ever work.
+      // lastSeen was only written at sign-in, and a session cookie means a daily reader signs
+      // in once and never again, so a devoted user and a one-time visitor looked identical.
+      // Written at most hourly: this is a retention signal, not a request log.
+      if (acct && (!acct.lastSeen || Date.now() - new Date(acct.lastSeen).getTime() > 3600e3)) {
+        rawCol('users').updateOne({ _id: acct._id }, { $set: { lastSeen: new Date() } })
+          .catch(() => {});   // never let a metric break a reader's request
+      }
       if (!acct || !users.isAllowed(acct)) {
         res.writeHead(401, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'unauthorized' }));
