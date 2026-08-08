@@ -363,6 +363,20 @@
   .pick .dim{color:var(--muted);font-size:.83rem}
   .sheet-empty{color:var(--faint);font-size:.9rem;padding:14px 2px;text-align:center}
   .sheet-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-bottom:14px}
+  /* Both of these hide with the hidden attribute, so neither may carry a display rule of its
+     own without an explicit guard — the mistake that once showed "Not signed in" to the
+     owner. */
+  .sheet-grid[hidden]{display:none}
+  .pastestep{margin-bottom:14px}
+  .pastestep[hidden]{display:none}
+  /* Direct child only. As `.pastestep b` it also hit the <b> INSIDE the paragraph, which
+     turned "Open LinkedIn, then long-press and choose Paste" into four lines with the commas
+     stranded on their own. */
+  .pastestep > b{display:block;font-size:1rem;margin-bottom:6px}
+  .pastestep p{margin:0 0 14px;color:var(--muted);font-size:.9rem;line-height:1.5}
+  .pastestep p b{color:var(--ink)}
+  /* .btn sets width:100%, which an inline <a> quietly ignores. */
+  .pastestep a.btn{display:block;text-align:center;text-decoration:none}
   .sh{display:flex;flex-direction:column;align-items:center;gap:5px;background:var(--raise);
     border:1px solid var(--line);border-radius:13px;padding:12px 4px;font-size:.72rem;
     color:var(--muted);text-decoration:none;cursor:pointer;font-family:var(--sans)}
@@ -1362,8 +1376,18 @@ function openShareSheet({title,text,url,quote,attribution}){
     ${navigator.share?`<button class="btn sheet-native" id="sh-native">Share to any app →</button>
     <p class="sheet-note" style="margin:8px 0 12px;text-align:center">Carries the words with it. The list below is for a nudge in one place.</p>`:""}
     <div class="sheet-grid">
-      ${targets.map(([n,i,u,paste],k)=>`<a class="sh" href="${u}" target="_blank" rel="noopener"${paste?` data-paste="${k}"`:""}><span class="sh-i">${i}</span>${n}</a>`).join("")}
+      ${targets.map(([n,i,u,paste],k)=>paste
+        ? `<button class="sh" data-paste="${k}" data-url="${esc(u)}" data-name="${esc(n)}"><span class="sh-i">${i}</span>${n}</button>`
+        : `<a class="sh" href="${u}" target="_blank" rel="noopener"><span class="sh-i">${i}</span>${n}</a>`).join("")}
       <button class="sh" id="sh-copy"><span class="sh-i">🔗</span>Copy link</button>
+    </div>
+    <!-- The step that only appears for the two platforms that refuse prefilled text. -->
+    <div class="pastestep" id="sh-paste" hidden>
+      <b>✓ Copied</b>
+      <p>Your words are on the clipboard. Open <span id="sh-paste-name">LinkedIn</span>, then
+      long-press in the box and choose <b>Paste</b>.</p>
+      <a class="btn" id="sh-paste-go" target="_blank" rel="noopener">Open <span id="sh-paste-name2">LinkedIn</span> →</a>
+      <button class="btn ghost" id="sh-paste-back" style="margin-top:8px">Back</button>
     </div>
     <button class="btn ghost" id="sh-close">Close</button>`, "Share");
   $("sh-close").onclick=close;
@@ -1371,12 +1395,27 @@ function openShareSheet({title,text,url,quote,attribution}){
     try{ await navigator.clipboard.writeText(full); toast("Link copied"); }
     catch(e){ toast("Long-press the link to copy"); }
   };
-  /* The platforms that cannot take text get it on the clipboard instead, put there by the
-     same tap that opens them — so it is one paste away rather than retyped. */
-  bg.querySelectorAll("[data-paste]").forEach(a=>a.addEventListener("click",()=>{
-    try{ navigator.clipboard.writeText(text); toast("Words copied — paste them into the post"); }
-    catch(e){}
+  /* LinkedIn and Facebook will not accept prefilled text, so the words go to the clipboard —
+     but the first version copied and navigated away in the same tap, which meant the toast
+     saying so was destroyed by the navigation before anyone could read it. You arrived at
+     LinkedIn with a full clipboard and no idea.
+     So the copy now happens on screen, and STOPS. You see it worked, you press Open, you
+     paste. Two taps instead of one, and nothing invisible in between. */
+  const step=$("sh-paste"), grid=bg.querySelector(".sheet-grid");
+  bg.querySelectorAll("[data-paste]").forEach(b=>b.addEventListener("click",async()=>{
+    let copied=false;
+    try{ await navigator.clipboard.writeText(text); copied=true; }catch(e){}
+    $("sh-paste-go").href=b.dataset.url;
+    $("sh-paste-name").textContent=b.dataset.name;
+    $("sh-paste-name2").textContent=b.dataset.name;
+    /* A refused clipboard must not promise a paste that will not come. */
+    step.querySelector("b").textContent=copied?"✓ Copied":"Couldn't copy automatically";
+    step.querySelector("p").innerHTML=copied
+      ? `Your words are on the clipboard. Open <b>${esc(b.dataset.name)}</b>, then long-press in the box and choose <b>Paste</b>.`
+      : `Copy your words from the preview above, then open <b>${esc(b.dataset.name)}</b> and paste them in.`;
+    grid.hidden=true; step.hidden=false;
   }));
+  $("sh-paste-back").onclick=()=>{ step.hidden=true; grid.hidden=false; };
   const nat=$("sh-native");
   if(nat) nat.onclick=async()=>{
     try{ await navigator.share({title,text,url}); close(); }catch(e){}
