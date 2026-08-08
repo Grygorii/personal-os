@@ -184,6 +184,14 @@
   .foot-links a:hover{color:var(--ink);border-bottom-color:var(--line)}
   .foot-made{color:var(--faint);margin-left:auto}
   .cta-sub{color:var(--faint);font-size:.84rem;margin:10px 0 0}
+  /* A link, not a button. The install is the SECOND thing anyone does here, and giving it a
+     box of its own made two calls to action argue with each other. */
+  .install-row{margin:18px 0 0;font-size:.9rem;color:var(--faint)}
+  .linkish{background:none;border:0;font:inherit;color:var(--accent-tx);
+    font-weight:600;cursor:pointer;text-decoration:underline;text-underline-offset:3px;
+    /* padding, not size: it reads as a line of text and is still a thumb-sized target */
+    padding:10px 0;min-height:44px}
+  .dim-sep{color:var(--faint)}
   /* the problem */
   .stat{font-family:var(--serif);font-size:clamp(3rem,13vw,5rem);color:var(--accent-tx);line-height:1;font-weight:700}
   .stat-label{color:var(--muted);margin-top:6px}
@@ -377,7 +385,6 @@
   @media(max-width:420px){.maker{flex-direction:column;align-items:center;text-align:center}}
 
   /* install */
-  .install-row{margin-top:14px}
   .ios-help{display:none;background:var(--surface);border:1px solid var(--line);border-radius:14px;
     padding:16px 18px;margin-top:16px;text-align:left;font-size:.93rem;color:var(--muted)}
   .ios-help b{color:var(--ink)}
@@ -609,28 +616,12 @@
     <a class="cta" href="/app">Get started — it's&nbsp;free</a>
     <p class="cta-sub">No account needed to look around.</p>
     </div><!-- /.hero-demo -->
-    <div class="appbar install-card">
-      <!-- Every other image on the site degrades to something clean if it fails; this one
-           didn't, and a broken-image glyph sitting in the App Store row is the worst place
-           on the page to have one. -->
-      <img class="ico" src="/icon.svg" alt="" width="52" height="52"
-           onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'ico ico-fb',textContent:'📕'}))">
-      <div class="meta">
-        <div class="nm">Kept</div>
-        <!-- The App Store puts "Category · Subtitle" on exactly this line, so this is where a
-             slogan earns its keep. "Your reading companion" was the alternative and it was
-             weaker: companion says we're nearby, not what you get — the same fault his wife
-             found in "How much left?". This names the thing (your thoughts), the action
-             (handed back) and the moment it matters (later, when the book is closed). -->
-        <div class="st">Reading · your thoughts, handed back later</div>
-      </div>
-      <button class="get" id="get-btn" type="button">GET</button>
-    </div>
-    <div class="install-row"><button class="cta ghost" id="install-btn">📲 Add to your phone</button></div>
+    <p class="install-row"><button class="linkish" id="install-btn" type="button">Add it to your phone</button>
+      <span class="dim-sep">— no App Store, nothing to download</span></p>
     <!-- Never the word "PWA". Naming the technology is jargon, and explaining a technology
          plants the very doubt it's meant to settle. Answer what they're actually asking:
          will this end up on my home screen, and do I need the App Store for it. -->
-    <p class="note" style="margin-top:10px">No App Store, nothing to download — it becomes an icon on your home screen.</p>
+
     <div class="ios-help" id="ios-help">
       <div id="ios-safari">
         <b>Add Kept to your iPhone</b>
@@ -659,7 +650,7 @@
         <button class="cta solid" id="copy-link-desk" style="margin-top:12px;width:100%">Copy readkept.com</button>
       </div>
     </div>
-    <p class="note">Free to start · works on any phone</p>
+
     <!-- The text is one <span> on purpose: in a flex row every bare text node becomes its
          own flex item, so the gap would push the comma away from the name. -->
     <div><a class="byline" href="#maker">
@@ -843,14 +834,12 @@
      Both the GET chip at the top and the button below it do the same thing. */
   (function () {
     var btn = document.getElementById('install-btn');
-    var get = document.getElementById('get-btn');
     var help = document.getElementById('ios-help');
     var deferred = null;
     var standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
     var isIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
     if (standalone) {                             // they already have it
       btn.style.display = 'none';
-      if (get) { get.textContent = 'OPEN'; get.onclick = function () { location.href = '/app'; }; }
       return;
     }
 
@@ -904,7 +893,6 @@
       }
       explain();
     }
-    if (get) get.addEventListener('click', install);
     btn.addEventListener('click', async function () {
       await install();
     });
