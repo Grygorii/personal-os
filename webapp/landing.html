@@ -135,12 +135,14 @@
     header > .appbar,header > .install-row,header > .note,header > .ios-help,header > .byline{
       grid-column:1;justify-self:start;text-align:left;max-width:520px;margin-left:0;margin-right:0}
     header > .install-row{margin-top:14px}
-    .hero-cta{display:inline-block}
-    p.hero-cta{display:block}
+    .cta.hero-cta{display:inline-block}
+    p.cta-sub.hero-cta{display:block}
     .hero-demo > .cta,.hero-demo > .cta-sub{display:none}
   }
-  /* Below 940px the button lives after the demo, exactly where it always did. */
-  .hero-cta{display:none}
+  /* Below 940px the button lives after the demo, exactly where it always did.
+     Written as .cta.hero-cta on purpose: a single-class rule ties with .cta and loses on
+     source order, which is how a phone ended up showing three identical buttons. */
+  .cta.hero-cta,p.cta-sub.hero-cta{display:none}
   .brand{display:inline-flex;align-items:center;gap:9px;font-family:var(--serif);font-size:1.05rem;
     letter-spacing:.02em;color:var(--accent-tx);margin-bottom:34px}
   h1{font-size:clamp(2.1rem,7.5vw,3.3rem);letter-spacing:-.01em}
@@ -309,14 +311,19 @@
   .chips{display:flex;gap:7px;justify-content:center;flex-wrap:wrap;margin-bottom:16px}
   .chips span{font-size:.76rem;background:var(--raise);border-radius:20px;padding:4px 10px;color:var(--muted)}
   .chips .low{color:var(--bad)}
-  .dots{display:flex;gap:2px;justify-content:center;margin-top:2px}
+  .dots{display:flex;gap:0;justify-content:center;margin-top:4px}
   /* An 8px target is not tappable — Apple asks for 44, Android for 48, and these steer the
      one element on the page people actually touch. background-clip:content-box paints only
      the 8px dot while the padding stays invisible and catches the thumb. */
-  .dot{width:8px;height:8px;border-radius:50%;border:0;background:var(--line);cursor:pointer;
-    padding:16px 8px;background-clip:content-box;box-sizing:content-box;
-    transition:background .3s,width .3s}
-  .dot.on{background:var(--accent);width:22px;border-radius:5px}
+  /* The BUTTON is the target; the dot is drawn inside it. Padding plus background-clip was
+     the wrong tool: border-radius rounds the padding box while the background is clipped to
+     the content box, so the corners came back square and the active dot rendered as a gold
+     block. A pseudo-element separates the two jobs — 28x40 to tap, 8px to look at. */
+  .dot{width:28px;height:40px;border:0;background:none;padding:0;cursor:pointer;
+    display:flex;align-items:center;justify-content:center}
+  .dot::before{content:"";display:block;width:8px;height:8px;border-radius:50%;
+    background:var(--line);transition:background .3s,width .3s,border-radius .3s}
+  .dot.on::before{width:20px;border-radius:20px;background:var(--accent)}
   /* ---- App Store idiom ----
      Borrowed on purpose. Not the look of it — the STRUCTURE: icon, name, one-line
      subtitle, install button. It is the single most recognisable "this is a real app you
@@ -616,40 +623,10 @@
     <a class="cta" href="/app">Get started — it's&nbsp;free</a>
     <p class="cta-sub">No account needed to look around.</p>
     </div><!-- /.hero-demo -->
-    <p class="install-row"><button class="linkish" id="install-btn" type="button">Add it to your phone</button>
-      <span class="dim-sep">— no App Store, nothing to download</span></p>
     <!-- Never the word "PWA". Naming the technology is jargon, and explaining a technology
          plants the very doubt it's meant to settle. Answer what they're actually asking:
          will this end up on my home screen, and do I need the App Store for it. -->
 
-    <div class="ios-help" id="ios-help">
-      <div id="ios-safari">
-        <b>Add Kept to your iPhone</b>
-        <ol>
-          <li>Tap <b class="ic">&#xFE0E;⬆️</b> <b>Share</b> at the bottom of Safari</li>
-          <li>Scroll down and tap <b>Add to Home Screen</b></li>
-          <li>Tap <b>Add</b> — Kept opens like any other app</li>
-        </ol>
-      </div>
-      <div id="ios-other" hidden>
-        <b>Almost — one step first</b>
-        <p style="margin:8px 0 0">iPhone only allows this from <b>Safari</b>. Copy the link below,
-        open it in Safari, then tap <b>Add to your phone</b> again.</p>
-        <button class="cta solid" id="copy-link" style="margin-top:12px;width:100%">Copy readkept.com</button>
-      </div>
-      <div id="android-help" hidden>
-        <b>One more tap</b>
-        <p style="margin:8px 0 0">Open the <b>⋮</b> menu in your browser and choose
-        <b>Install app</b> (or <b>Add to Home screen</b>).</p>
-      </div>
-      <div id="desk-help" hidden>
-        <b>Kept lives on your phone</b>
-        <p style="margin:8px 0 0">That's where you read, and where the mentor should be able to
-        reach you. Open <b>readkept.com</b> on your phone and tap <b>Add to your phone</b>.
-        It works fine in this browser too.</p>
-        <button class="cta solid" id="copy-link-desk" style="margin-top:12px;width:100%">Copy readkept.com</button>
-      </div>
-    </div>
 
     <!-- The text is one <span> on purpose: in a flex row every bare text node becomes its
          own flex item, so the gap would push the comma away from the name. -->
@@ -743,6 +720,36 @@
       <div class="foot-act">
         <a class="cta" href="/app">Get started — it's&nbsp;free</a>
         <p class="note" style="margin-top:10px">No account needed to look around.</p>
+    <p class="install-row"><button class="linkish" id="install-btn" type="button">Add it to your phone</button>
+      <span class="dim-sep">— no App Store, nothing to download</span></p>
+    <div class="ios-help" id="ios-help">
+      <div id="ios-safari">
+        <b>Add Kept to your iPhone</b>
+        <ol>
+          <li>Tap <b class="ic">&#xFE0E;⬆️</b> <b>Share</b> at the bottom of Safari</li>
+          <li>Scroll down and tap <b>Add to Home Screen</b></li>
+          <li>Tap <b>Add</b> — Kept opens like any other app</li>
+        </ol>
+      </div>
+      <div id="ios-other" hidden>
+        <b>Almost — one step first</b>
+        <p style="margin:8px 0 0">iPhone only allows this from <b>Safari</b>. Copy the link below,
+        open it in Safari, then tap <b>Add to your phone</b> again.</p>
+        <button class="cta solid" id="copy-link" style="margin-top:12px;width:100%">Copy readkept.com</button>
+      </div>
+      <div id="android-help" hidden>
+        <b>One more tap</b>
+        <p style="margin:8px 0 0">Open the <b>⋮</b> menu in your browser and choose
+        <b>Install app</b> (or <b>Add to Home screen</b>).</p>
+      </div>
+      <div id="desk-help" hidden>
+        <b>Kept lives on your phone</b>
+        <p style="margin:8px 0 0">That's where you read, and where the mentor should be able to
+        reach you. Open <b>readkept.com</b> on your phone and tap <b>Add to your phone</b>.
+        It works fine in this browser too.</p>
+        <button class="cta solid" id="copy-link-desk" style="margin-top:12px;width:100%">Copy readkept.com</button>
+      </div>
+    </div>
       </div>
     </div>
     <div class="foot-links">
