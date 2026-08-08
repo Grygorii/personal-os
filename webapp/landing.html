@@ -100,7 +100,10 @@
     justify-content:space-between}
   /* The hero breaks out to ~1000px on desktop, so a 680px nav sat visibly inset from it —
      the logo floating to the right of the headline it belongs above. */
-  @media (min-width:940px){.topnav{max-width:1024px}}
+  @media (min-width:940px){
+    .topnav{max-width:none;width:100vw;margin-left:calc(50% - 50vw);
+      padding:16px calc(50vw - 500px)}
+  }
   .topnav .logo{display:inline-flex;align-items:center;gap:8px;font-family:var(--serif);
     font-size:1.12rem;font-weight:600;color:var(--ink);text-decoration:none;
     padding:6px 2px;min-height:44px}
@@ -126,9 +129,12 @@
     .hero-demo .demo-wrap{margin-top:0}
     .hero-copy h1{font-size:clamp(2.3rem,3.2vw,3.2rem)}
     .hero-copy .sub,.hero-copy .who{margin-left:0;margin-right:0;max-width:100%}
-    /* everything after the two columns spans them both and re-centres */
-    header > .appbar,header > .install-row,header > .note,header > .ios-help{
-      grid-column:1 / -1;justify-self:center;text-align:center;max-width:520px}
+    /* Everything under the hero used to centre itself across BOTH columns while the words
+       above it started at the left edge — a ragged seam straight down the middle of the page.
+       It belongs under the words, in the words' column, aligned with them. */
+    header > .appbar,header > .install-row,header > .note,header > .ios-help,header > .byline{
+      grid-column:1;justify-self:start;text-align:left;max-width:520px;margin-left:0;margin-right:0}
+    header > .install-row{margin-top:14px}
     .hero-cta{display:inline-block}
     p.hero-cta{display:block}
     .hero-demo > .cta,.hero-demo > .cta-sub{display:none}
@@ -309,6 +315,7 @@
      can put on your phone" signal there is, and it's the exact screen where people decide
      to install things. The skin stays ours: paper, ink and a serif. */
   .appbar.install-card{margin:26px auto 4px}
+  @media (min-width:940px){.appbar.install-card{margin:26px 0 4px}}
   .appbar{display:flex;align-items:center;gap:13px;text-align:left;
     background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:13px 15px;
     max-width:420px;margin:0 auto 30px}
@@ -672,19 +679,14 @@
     <p class="lede">Highlighting doesn't help; notes don't either. They record the book — they don't
       put it in you. <b>Being asked</b> is what makes it stick: retrieving an idea fixes it in memory
       far more firmly than reading it again ever will. Psychologists call it the testing effect.</p>
-    <div class="does">
-      <div class="do"><b>Keep it in one tap</b><span>Type it, say it out loud, or photograph the page and let it read the words.</span></div>
-      <div class="do"><b>Talk it over</b><span>A mentor that has read along with you, and only ever talks about your books.</span></div>
-      <div class="do"><b>Get asked</b><span>Five questions when you finish, and a daily quiz that hands your own thoughts back.</span></div>
-    </div>
   </section>
 
   <section>
-    <div class="kicker">The check</div>
-    <h2>It will not flatter you.</h2>
+    <div class="kicker">When you finish</div>
+    <h2>You'll know exactly what stayed.</h2>
     <p class="lede">When you turn the last page it asks five questions written for that book —
       two on its ideas, two on using them in your own life, and one where you argue with the
-      author. Bluff an answer and it scores you under 40, then names the chapter to go back to.</p>
+      author. It marks you honestly — and then tells you which chapter is worth ten more minutes.</p>
     <div class="hero-shot" style="margin:26px auto 0" aria-hidden="true">
       <div class="inner">
         <div class="bar"><span>📕 Kept</span><span>Exam result</span></div>
@@ -695,14 +697,14 @@
         <div class="thmeta">Solid on habit stacking. Vague on the 2-minute rule — worth re-reading ch. 13.</div>
       </div>
     </div>
-    <p class="note" style="text-align:center">The first score is usually humbling. That is rather the point.</p>
+    <p class="note" style="text-align:center">Most people score lower than they expect. That is the useful part — it shows you exactly where to look.</p>
   </section>
 
   <section>
-    <div class="kicker">How it works</div>
-    <!-- "No commands" was left over from when this was a Telegram bot. Nobody types commands
-         at a web app, so the word only raises a question instead of answering one. -->
-    <h2>Nothing to set up. Nothing to learn.</h2>
+    <div class="kicker">Three steps</div>
+    <!-- "Nothing to set up. Nothing to learn." answered an objection nobody had raised, and
+         answered it with two negatives. The kicker was already the honest heading. -->
+    <h2>How it works.</h2>
     <div class="steps">
       <div class="step"><div class="head"><div class="num">1</div><h3>Keep</h3></div><div><p>A line, a page number, a half-formed idea — the moment it lands. Type it, say it, or photograph the page.</p></div></div>
       <div class="step"><div class="head"><div class="num">2</div><h3>Find</h3></div><div><p>One word you remember brings it back months later, from any book, with its page.</p></div></div>

@@ -9,7 +9,7 @@ import { runAs } from './ctx.js';
 import { config } from './config.js';
 
 // Bump on each deploy so we can confirm which build is actually live (read meta.boot).
-const VERSION = 'crop-2';
+const VERSION = 'firm-1';
 
 // A rejected promise nobody caught kills the process on modern Node, and Railway restarts
 // it — so the only trace of a whole class of bug was a silent restart. Log it, keep serving.
