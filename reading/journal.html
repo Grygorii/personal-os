@@ -1029,9 +1029,7 @@ function openBook(id){
       title:bk.title+(bk.author?` — ${bk.author}`:""),
       /* Their thought first, the book second, nothing about us. That is what a person is
          willing to post under their own name. */
-      text:`“${flowText(n.text)}”
-
-— ${bk.title}${bk.author?`, ${bk.author}`:""}${n.page?`, p.${n.page}`:""}`,
+      text:teaser(flowText(n.text), bk, n.page),
       url});
   });
   $("notes-list").querySelectorAll("[data-i]").forEach(bt=>bt.onclick=()=>{
@@ -1303,13 +1301,33 @@ function shareBook(id){
   };
 }
 
+/* A share is a teaser, not a transcript. Pasting a whole paragraph into a message and then
+   letting the link preview repeat it underneath gives two walls of the same text — which is
+   what a real share to Telegram looked like. Enough to make someone want to read it, and the
+   page carries the rest. Cut on a word, never mid-word. */
+function teaser(txt,bk,page){
+  const LIMIT=170;
+  let t=String(txt||"").trim();
+  if(t.length>LIMIT){
+    const cut=t.slice(0,LIMIT);
+    const stop=Math.max(cut.lastIndexOf(" "),cut.lastIndexOf(","),cut.lastIndexOf("."));
+    t=cut.slice(0,stop>80?stop:LIMIT).replace(/[,.;:—–-]+$/,"")+"…";
+  }
+  return `“${t}”
+
+— ${bk.title}${bk.author?`, ${bk.author}`:""}${page?`, p.${page}`:""}`;
+}
+
 function openShareSheet({title,text,url}){
   const full=`${text}\n\n${url}`;
   const e=encodeURIComponent;
   const targets=[
     ["WhatsApp","🟢",`https://wa.me/?text=${e(full)}`],
     ["X","✖️",`https://twitter.com/intent/tweet?text=${e(text)}&url=${e(url)}`],
-    ["LinkedIn","in",`https://www.linkedin.com/sharing/share-offsite/?url=${e(url)}`],
+    /* share-offsite takes a URL and nothing else — it silently drops any text, so the
+       composer opened empty with a bare link in it and the sharer had to write the post
+       themselves. This one prefills. */
+    ["LinkedIn","in",`https://www.linkedin.com/feed/?shareActive=true&text=${e(full)}`],
     ["Facebook","f",`https://www.facebook.com/sharer/sharer.php?u=${e(url)}`],
     ["Reddit","🟠",`https://www.reddit.com/submit?url=${e(url)}&title=${e(title)}`],
     ["Telegram","✈️",`https://t.me/share/url?url=${e(url)}&text=${e(text)}`],

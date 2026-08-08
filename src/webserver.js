@@ -932,12 +932,18 @@ function sharePage(s) {
 <meta name="theme-color" content="#14130F">
 <meta property="og:title" content="${esc(headline)}">
 <meta property="og:description" content="${esc(lead)}">
-<meta property="og:image" content="${config.appUrl}/r/${s._id}/card.svg">
+<!-- A PNG, not the SVG card. Every platform that renders link previews — Telegram,
+     WhatsApp, LinkedIn, Facebook, X — ignores SVG, so the generated card was invisible
+     in exactly the places a share goes. The card is still served for anyone who wants
+     it; this is the one the previews will actually draw. -->
+<meta property="og:image" content="${config.appUrl}/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
 <meta property="og:url" content="${config.appUrl}/r/${s._id}"><meta property="og:type" content="article">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="${esc(headline)}">
 <meta name="twitter:description" content="${esc(lead)}">
-<meta name="twitter:image" content="${config.appUrl}/r/${s._id}/card.svg">
+<meta name="twitter:image" content="${config.appUrl}/og.png">
 <!-- Shareable, but not searchable. Someone sending a friend their reading notes has not
      agreed to those notes turning up in Google. Link previews still work — noindex stops
      search engines keeping it, not messaging apps unfurling it. -->
