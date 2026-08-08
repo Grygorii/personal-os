@@ -1704,13 +1704,13 @@ export function startServer(port = process.env.PORT || 8080, build = 'dev') {
         // What the install prompt says, and what sits under the icon afterwards. Both of these
         // still led with the exam, which is the old order — the exam is the dessert, not the
         // meal. Keeping the thought is the promise, so the promise is what the prompt makes.
-        name: 'Kept — your thoughts, handed back later',
+        name: 'Kept — use what you read',
         short_name: 'Kept',
         start_url: '/app?home=1',
         display: 'standalone',
         background_color: '#14130F',
         theme_color: '#14130F',
-        description: 'Save a thought against the page it came from, and get it back long after you close the book. Plus an honest exam when you finish.',
+        description: 'For people who use what they read — not just finish it. Keep a thought in seconds while you read, and find it again months later, with its page.',
         icons: [
           { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
           { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
