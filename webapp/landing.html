@@ -96,14 +96,11 @@
   section{padding:56px 0}
   h1,h2,h3{font-family:var(--serif);font-weight:600;line-height:1.15;margin:0}
   /* hero */
-  .topnav{max-width:680px;margin:0 auto;padding:16px 20px;display:flex;align-items:center;
-    justify-content:space-between}
+  /* .wrap already supplies the horizontal padding — adding 20px more here pushed the logo
+     20px right of the headline it sits above. */
+  .topnav{padding:16px 0;display:flex;align-items:center;justify-content:space-between}
   /* The hero breaks out to ~1000px on desktop, so a 680px nav sat visibly inset from it —
      the logo floating to the right of the headline it belongs above. */
-  @media (min-width:940px){
-    .topnav{max-width:none;width:100vw;margin-left:calc(50% - 50vw);
-      padding:16px calc(50vw - 500px)}
-  }
   .topnav .logo{display:inline-flex;align-items:center;gap:8px;font-family:var(--serif);
     font-size:1.12rem;font-weight:600;color:var(--ink);text-decoration:none;
     padding:6px 2px;min-height:44px}
@@ -118,12 +115,15 @@
      full-viewport width; justify-content then re-centres the two columns at a readable size. */
   header{padding:30px 0 20px;text-align:center}
   @media (min-width:940px){
+    /* The whole column is wider up here; prose is narrowed again below, where a 1000px line
+       of text would be unreadable. */
+    .wrap{max-width:1024px}
     header{
-      width:100vw;margin-left:calc(50% - 50vw);
-      padding:46px 24px 26px;text-align:left;
-      display:grid;grid-template-columns:minmax(0,540px) minmax(0,400px);
-      justify-content:center;column-gap:60px;align-items:center;
+      padding:46px 0 26px;text-align:left;
+      display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,.9fr);
+      column-gap:60px;align-items:center;
     }
+    section{max-width:680px;margin-left:auto;margin-right:auto}
     .hero-copy{grid-column:1}
     .hero-demo{grid-column:2;margin-top:0}
     .hero-demo .demo-wrap{margin-top:0}
@@ -132,17 +132,21 @@
     /* Everything under the hero used to centre itself across BOTH columns while the words
        above it started at the left edge — a ragged seam straight down the middle of the page.
        It belongs under the words, in the words' column, aligned with them. */
-    header > .appbar,header > .install-row,header > .note,header > .ios-help,header > .byline{
+    header > .appbar,header > .note,header > .byline{
       grid-column:1;justify-self:start;text-align:left;max-width:520px;margin-left:0;margin-right:0}
-    header > .install-row{margin-top:14px}
-    .cta.hero-cta{display:inline-block}
+    .cta-row.hero-cta{display:flex}
     p.cta-sub.hero-cta{display:block}
-    .hero-demo > .cta,.hero-demo > .cta-sub{display:none}
+    /* the pair lives beside the words on a wide screen, not under the phone */
+    .hero-demo .cta-row,.hero-demo .cta-sub{display:none}
   }
-  /* Below 940px the button lives after the demo, exactly where it always did.
-     Written as .cta.hero-cta on purpose: a single-class rule ties with .cta and loses on
-     source order, which is how a phone ended up showing three identical buttons. */
-  .cta.hero-cta,p.cta-sub.hero-cta{display:none}
+  /* Below 940px the buttons live after the demo, exactly where they always did.
+     Bounded by its own media query rather than left to compete with the desktop rule: two
+     rules of equal specificity are decided by which is written last, and this one is written
+     last, so as a bare rule it was hiding the desktop pair as well. Non-overlapping ranges
+     cannot argue about order. */
+  @media (max-width:939.98px){
+    .cta-row.hero-cta,p.cta-sub.hero-cta{display:none}
+  }
   .brand{display:inline-flex;align-items:center;gap:9px;font-family:var(--serif);font-size:1.05rem;
     letter-spacing:.02em;color:var(--accent-tx);margin-bottom:34px}
   h1{font-size:clamp(2.1rem,7.5vw,3.3rem);letter-spacing:-.01em}
@@ -157,7 +161,16 @@
     letter-spacing:.005em;transition:transform .08s ease,opacity .15s ease}
   .cta:hover{opacity:.88}
   .cta:active{transform:scale(.98)}
-  .cta.ghost{background:transparent;color:var(--ink);border:1px solid var(--line);font-weight:600;margin-left:8px}
+  /* The second step of the same journey, so it matches the first in size and shape and
+     differs only in weight. A pale outline once read as a card rather than a control (his
+     wife tried to swipe it), so the border is drawn from the ink, not from the hairline
+     used for dividers. */
+  .cta.ghost{background:transparent;color:var(--ink);border:1.5px solid var(--ink);
+    font-weight:600;margin-top:0}
+  .cta.ghost:hover{background:var(--ink);color:var(--paper);opacity:1}
+  .cta-row{display:flex;flex-wrap:wrap;gap:10px;margin-top:28px;justify-content:center}
+  .cta-row .cta{margin-top:0}
+  @media (min-width:940px){.hero-copy .cta-row{justify-content:flex-start}}
   /* His wife tried to SWIPE this one. A pale outline inside a bordered panel reads as another
      card, not a control — so the thing you're meant to press is now filled, like every other
      button that does something, and it presses visibly. */
@@ -186,14 +199,6 @@
   .foot-links a:hover{color:var(--ink);border-bottom-color:var(--line)}
   .foot-made{color:var(--faint);margin-left:auto}
   .cta-sub{color:var(--faint);font-size:.84rem;margin:10px 0 0}
-  /* A link, not a button. The install is the SECOND thing anyone does here, and giving it a
-     box of its own made two calls to action argue with each other. */
-  .install-row{margin:18px 0 0;font-size:.9rem;color:var(--faint)}
-  .linkish{background:none;border:0;font:inherit;color:var(--accent-tx);
-    font-weight:600;cursor:pointer;text-decoration:underline;text-underline-offset:3px;
-    /* padding, not size: it reads as a line of text and is still a thumb-sized target */
-    padding:10px 0;min-height:44px}
-  .dim-sep{color:var(--faint)}
   /* the problem */
   .stat{font-family:var(--serif);font-size:clamp(3rem,13vw,5rem);color:var(--accent-tx);line-height:1;font-weight:700}
   .stat-label{color:var(--muted);margin-top:6px}
@@ -392,10 +397,6 @@
   @media(max-width:420px){.maker{flex-direction:column;align-items:center;text-align:center}}
 
   /* install */
-  .ios-help{display:none;background:var(--surface);border:1px solid var(--line);border-radius:14px;
-    padding:16px 18px;margin-top:16px;text-align:left;font-size:.93rem;color:var(--muted)}
-  .ios-help b{color:var(--ink)}
-  .ios-help ol{margin:10px 0 0;padding-left:20px} .ios-help li{margin:5px 0}
   /* finding a thought again — the demo of the thing the hero now promises */
   .find-demo{position:relative;color:var(--ink)}
   .find-demo .caret{display:inline-block;width:1px;height:1em;background:var(--accent);
@@ -497,8 +498,10 @@
          well. They don't need help finishing thirty books. They need book seven on a Tuesday. -->
     <p class="who">For people who <em>use</em> what they read — not just finish it.</p>
 
-    <a class="cta hero-cta" href="/app">Get started — it's&nbsp;free</a>
-    <p class="cta-sub hero-cta">No account needed to look around.</p>
+    <div class="cta-row hero-cta">
+      <a class="cta" href="/app">Get started — it's&nbsp;free</a>
+    </div>
+    <p class="cta-sub hero-cta">No account needed. Nothing to download.</p>
 
     </div><!-- /.hero-copy -->
 
@@ -620,14 +623,11 @@
     </div>
     <p class="note" id="demo-caption" style="margin-top:12px">Type a few letters. It finds the book for you.</p>
 
-    <a class="cta" href="/app">Get started — it's&nbsp;free</a>
-    <p class="cta-sub">No account needed to look around.</p>
-    <!-- Back under the hero, quietly. It was moved to the footer on the reasoning that the app
-         would ask for the home screen itself once someone had used it — and the app had never
-         done that. It does now, but somebody who wants it on their phone today should not have
-         to reach the bottom of the page to find out how. A link, not a second button. -->
-    <p class="install-row"><button class="linkish" id="install-btn-top" type="button">Add it to your phone</button>
-      <span class="dim-sep">— no App&nbsp;Store, nothing to&nbsp;download</span></p>
+    <div class="cta-row">
+      <a class="cta" href="/app">Get started — it's&nbsp;free</a>
+    </div>
+    <p class="cta-sub">No account needed. Nothing to download.</p>
+
     </div><!-- /.hero-demo -->
     <!-- Never the word "PWA". Naming the technology is jargon, and explaining a technology
          plants the very doubt it's meant to settle. Answer what they're actually asking:
@@ -706,7 +706,7 @@
     <div class="kicker">Questions</div>
     <details><summary>Is it free?</summary><p>Free to start, with a daily allowance that grows as you use it. Later you can support it from €3 a month — or connect your own free AI key and keep it free for good.</p></details>
     <details><summary>Do I read the books in Kept?</summary><p>No — there are no books in Kept, and it doesn't sell or lend them. You read however you already do: paper, Kindle, a library copy, an audiobook. Kept is where you jot what struck you while you're reading, and where you get tested once you've finished. It never asks you to change how you read.</p></details>
-    <details><summary>Do I need to install anything?</summary><p>Not unless you want to. Sign in with Google and it runs in your browser straight away. Adding it to your home screen gives it an icon and opens it like any other app — which is where you'll actually use it, since that's where you read.</p></details>
+    <details><summary>Do I need to install anything?</summary><p>No. It opens in your browser and works straight away — no account needed to look around. Once you've kept your first thought, Kept offers to put itself on your home screen, where it opens like any other app. You can say no and it won't ask again.</p></details>
     <details><summary>Why isn't it in the App Store?</summary><p>Because it doesn't need to be. Tap <b>Add to your phone</b> and Kept installs from this page in one step — an icon on your home screen, opening full screen, no download and no updates to sit through. It also means when you tell me something's wrong I can fix it that day, instead of waiting a week for a review. If enough people ask for a store listing, I'll make one.</p></details>
     <details><summary>What does it actually ask me?</summary><p>Five questions written for the book you just read — two on its core ideas, two on applying them to your own life, and one where you argue with the author. Nothing you could answer from the blurb.</p></details>
     <details><summary>Who can see my books and notes?</summary><p>Only you. Nothing leaves your library unless you share a result, and even then only the book, the score and a thought you pick. You can export or delete everything at any time.</p></details>
@@ -724,38 +724,10 @@
         For people who use what they read — not just finish it.</p>
       </div>
       <div class="foot-act">
-        <a class="cta" href="/app">Get started — it's&nbsp;free</a>
-        <p class="note" style="margin-top:10px">No account needed to look around.</p>
-    <p class="install-row"><button class="linkish" id="install-btn" type="button">Add it to your phone</button>
-      <span class="dim-sep">— no App&nbsp;Store, nothing to&nbsp;download</span></p>
-    <div class="ios-help" id="ios-help">
-      <div id="ios-safari">
-        <b>Add Kept to your iPhone</b>
-        <ol>
-          <li>Tap <b class="ic">&#xFE0E;⬆️</b> <b>Share</b> at the bottom of Safari</li>
-          <li>Scroll down and tap <b>Add to Home Screen</b></li>
-          <li>Tap <b>Add</b> — Kept opens like any other app</li>
-        </ol>
-      </div>
-      <div id="ios-other" hidden>
-        <b>Almost — one step first</b>
-        <p style="margin:8px 0 0">iPhone only allows this from <b>Safari</b>. Copy the link below,
-        open it in Safari, then tap <b>Add to your phone</b> again.</p>
-        <button class="cta solid" id="copy-link" style="margin-top:12px;width:100%">Copy readkept.com</button>
-      </div>
-      <div id="android-help" hidden>
-        <b>One more tap</b>
-        <p style="margin:8px 0 0">Open the <b>⋮</b> menu in your browser and choose
-        <b>Install app</b> (or <b>Add to Home screen</b>).</p>
-      </div>
-      <div id="desk-help" hidden>
-        <b>Kept lives on your phone</b>
-        <p style="margin:8px 0 0">That's where you read, and where the mentor should be able to
-        reach you. Open <b>readkept.com</b> on your phone and tap <b>Add to your phone</b>.
-        It works fine in this browser too.</p>
-        <button class="cta solid" id="copy-link-desk" style="margin-top:12px;width:100%">Copy readkept.com</button>
-      </div>
-    </div>
+        <div class="cta-row" style="margin-top:0">
+          <a class="cta" href="/app">Get started — it's&nbsp;free</a>
+        </div>
+        <p class="note" style="margin-top:10px">No account needed. Nothing to download.</p>
       </div>
     </div>
     <div class="foot-links">
@@ -845,75 +817,6 @@
      it matters most. Every platform gets an answer: a real prompt where one exists, the
      exact Safari taps on iPhone, and "open it on your phone" on a desktop.
      Both the GET chip at the top and the button below it do the same thing. */
-  (function () {
-    /* Two links, one job. Collected rather than named, so adding a third somewhere else on
-       the page needs no change here. */
-    var btns = [].slice.call(document.querySelectorAll('#install-btn, #install-btn-top'));
-    var hideAll = function () { btns.forEach(function (b) { b.closest('.install-row').style.display = 'none'; }); };
-    var help = document.getElementById('ios-help');
-    var deferred = null;
-    var standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
-    var isIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
-    if (standalone) {                             // they already have it
-      hideAll();
-      return;
-    }
-
-    window.addEventListener('beforeinstallprompt', function (e) {
-      e.preventDefault();
-      deferred = e;
-    });
-
-    var ua = navigator.userAgent;
-    var isAndroid = /android/i.test(ua);
-    var isPhone = isIos || isAndroid || /Mobile/i.test(ua);
-    // Add to Home Screen exists ONLY in Safari on iOS — Chrome and Firefox on iPhone don't
-    // have the option at all, so those people need sending to Safari rather than hunting.
-    var isSafari = /Safari/.test(ua) && !/CriOS|FxiOS|EdgiOS|OPiOS|Instagram|FBAN|FBAV|Line/.test(ua);
-
-    // Nothing is decided up front any more. The old code treated "not an iPhone" as "a
-    // desktop", so an Android phone was handed the desktop panel telling it to open the site
-    // on a phone — which is where it already was.
-    function explain() {
-      ['ios-safari', 'ios-other', 'android-help', 'desk-help'].forEach(function (id) {
-        document.getElementById(id).hidden = true;
-      });
-      var id = isIos ? (isSafari ? 'ios-safari' : 'ios-other')
-             : !isPhone ? 'desk-help'
-             : 'android-help';
-      document.getElementById(id).hidden = false;
-      help.style.display = 'block';
-      help.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }
-
-    [['copy-link', 'Copied — now open Safari'], ['copy-link-desk', 'Copied — open it on your phone']]
-      .forEach(function (pair) {
-        var el = document.getElementById(pair[0]);
-        if (!el) return;
-        el.addEventListener('click', function () {
-          navigator.clipboard && navigator.clipboard.writeText('https://readkept.com');
-          el.textContent = pair[1];
-        });
-      });
-
-    // Add to your phone should ADD. An explanation is a last resort for the two cases where
-    // the browser genuinely gives us no way to do it: a desktop, and an iPhone (where only
-    // Safari can, and only by hand).
-    async function install() {
-      if (deferred) {
-        deferred.prompt();
-        await deferred.userChoice;
-        deferred = null;
-        hideAll();
-        return;
-      }
-      explain();
-    }
-    btns.forEach(function (b) {
-      b.addEventListener('click', async function () { await install(); });
-    });
-    window.addEventListener('appinstalled', hideAll);
-  })();
 
   /* ---- The demo plays itself ----
      Five screens on a timer with captions, so "how do I add a book?" is answered by
