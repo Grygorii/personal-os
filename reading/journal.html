@@ -171,6 +171,7 @@
     font-size:.83rem;font-weight:600;cursor:pointer}
   .cap:active{background:var(--accent-tint);border-color:var(--accent);color:var(--accent-strong)}
   .cap:disabled{opacity:.55}
+  .cap[hidden]{display:none}
   .caphint{color:var(--faint);font-size:.76rem;margin:7px 2px 0}
   /* choosing the part of the page to read */
   .cropbox{position:relative;touch-action:none;-webkit-user-select:none;user-select:none;
@@ -181,7 +182,7 @@
      not "keeping this", and made people hesitate at the one step that needs confidence.
      The huge spread is the whole trick: one shadow darkens the entire photo except the hole
      the selection punches in it, and .cropbox's overflow:hidden clips the rest. */
-  .cropsel{position:absolute;pointer-events:none;
+  .cropsel{position:absolute;pointer-events:none;cursor:move;
     box-shadow:0 0 0 9999px rgba(0,0,0,.62);outline:1px solid rgba(255,255,255,.85)}
   /* The rule-of-thirds guides every camera app draws inside the frame. */
   .cropsel::before{content:"";position:absolute;inset:0;pointer-events:none;
@@ -192,7 +193,10 @@
         transparent calc(33.3% + 1px) 66.6%,rgba(255,255,255,.28) 66.6% calc(66.6% + 1px),transparent calc(66.6% + 1px))}
   /* Corner brackets, the other half of the convention. Drawn with two borders on a box that
      is inset slightly, then mirrored — cheap, and no extra elements to move on every frame. */
-  .cropsel i{position:absolute;width:19px;height:19px;border:3px solid #fff;pointer-events:none}
+  /* The brackets are the grab targets now, so they are drawn a little larger and each one
+     carries an invisible pad well past its own size — a 19px corner is not a thumb. */
+  .cropsel i{position:absolute;width:22px;height:22px;border:3px solid #fff;pointer-events:none}
+  .cropsel i::after{content:"";position:absolute;top:-14px;left:-14px;right:-14px;bottom:-14px}
   .cropsel i.tl{top:-1px;left:-1px;border-right:0;border-bottom:0;border-radius:3px 0 0 0}
   .cropsel i.tr{top:-1px;right:-1px;border-left:0;border-bottom:0;border-radius:0 3px 0 0}
   .cropsel i.bl{bottom:-1px;left:-1px;border-right:0;border-top:0;border-radius:0 0 0 3px}
@@ -751,6 +755,11 @@ function openBook(id){
   /* ---- Getting a thought in without typing it ----
      Both of these END in the same editable box rather than saving anything: a model guessing
      at an accent or a blurry page must never be the last word on someone's own note. */
+  /* Tidy is for what YOU said — dictation with no punctuation, thumbs on a phone. It is
+     not for text lifted off a printed page. */
+  function setTidy(on){ const b=$("n-tidy"); if(b) b.hidden=!on; }
+  $("n-text").addEventListener("input",()=>setTidy(true));
+
   $("n-tidy").onclick=async()=>{
     if(guestBlocked("Tidying up","It runs on a model on the server, so it needs to know whose it is.")) return;
     const ta=$("n-text"), before=ta.value.trim();
@@ -765,7 +774,8 @@ function openBook(id){
         // One undo, because the only person who knows what they meant is them.
         $("n-caphint").innerHTML='Tidied. <button class="nrm" id="n-undo" style="padding:0">undo</button>';
         $("n-undo").onclick=()=>{ ta.value=before; $("n-caphint").textContent="Back to your words."; };
-      } else toast(d?"Already reads fine":"Couldn't reach it — try again");
+      } else if(d){ $("n-caphint").textContent="Checked — nothing to fix."; }
+      else toast("Couldn't reach it — try again");
     }catch(e){ toast("Couldn't reach it — try again"); }
     bt.disabled=false; bt.textContent="✨ Tidy it up";
   };
@@ -795,7 +805,13 @@ function openBook(id){
         const ta=$("n-text");
         ta.value=(ta.value.trim()?ta.value.trim()+"\n\n":"")+d.text;
         ta.focus();
-        $("n-caphint").textContent="Trim it down to the part you wanted, then add it.";
+        /* These are the AUTHOR'S words, already set by a professional typesetter.
+           Offering to fix their spelling and grammar is offering to rewrite a
+           quotation, which is the one thing a kept quote must never do. It also had
+           nothing left to do once the transcription started reflowing, so it answered
+           "Already reads fine" and looked broken. Hidden until they write their own. */
+        setTidy(false);
+        $("n-caphint").textContent="The words are the author's. Trim to the part you wanted, then add it.";
       }
     }catch(e){ toast("Couldn't read that — try again"); }
     bt.disabled=false; bt.textContent="📷 Photograph the page";
@@ -832,58 +848,87 @@ function openBook(id){
       const finish=(v)=>{ if(done)return; done=true; URL.revokeObjectURL(url); close(); resolve(v); };
       const { bg, close }=openSheet(`
         <div class="sheet-head">Which part?</div>
-        <p class="sheet-note">Drag across the words you want — or read the whole page.</p>
+        <p class="sheet-note">Drag the corners to fit the words you want — or read the whole page.</p>
         <div class="cropbox" id="cropbox"><img id="cropimg" alt=""><div class="cropsel" id="cropsel" hidden>
           <i class="tl"></i><i class="tr"></i><i class="bl"></i><i class="br"></i></div></div>
-        <button class="btn" id="crop-go" style="margin-top:12px" disabled>Drag to choose a part</button>
+        <button class="btn" id="crop-go" style="margin-top:12px">Read the selected part</button>
         <button class="btn ghost" id="crop-all" style="margin-top:8px">Read the whole page</button>`,
         "Choose the part to read");
       $("cropimg").src=url;
 
       const box=$("cropbox"), sel=$("cropsel"), img=$("cropimg"), go=$("crop-go");
-      let start=null, rect=null;
+      /* A frame is ALREADY THERE when the sheet opens, and you make it bigger or smaller —
+         which is what every camera does, and what people reach for without being told.
+         Dragging one out of nothing was the old way: it asks you to know the gesture before
+         you can start, and a tap that didn't travel far enough left you with nothing. */
+      let rect=null, drag=null;
       const imgBox=()=>{ const i=img.getBoundingClientRect(), b=box.getBoundingClientRect();
         return { left:i.left-b.left, top:i.top-b.top, w:i.width, h:i.height }; };
-
-      /* Every point is pinned inside the photo itself. The box is wider than a portrait
-         photo, so without this a drag could start in the empty strip beside it and the
-         dimming mask would sit half over nothing. */
       const clamp=(v,lo,hi)=>Math.max(lo,Math.min(hi,v));
-      const at=(e)=>{ const ib=imgBox(), b=box.getBoundingClientRect();
-        return { x:clamp(e.clientX-b.left, ib.left, ib.left+ib.w),
-                 y:clamp(e.clientY-b.top,  ib.top,  ib.top +ib.h) }; };
+      const at=(e)=>{ const b=box.getBoundingClientRect();
+        return { x:e.clientX-b.left, y:e.clientY-b.top }; };
+      const MIN=44;                       // never smaller than a fingertip
+
       const paint=()=>{
+        if(!rect) return;
         Object.assign(sel.style,{left:rect.x+"px",top:rect.y+"px",width:rect.w+"px",height:rect.h+"px"});
         sel.hidden=false;
-        const big=rect.w>24&&rect.h>24;
-        go.disabled=!big;
-        go.textContent=big?"Read the selected part":"Drag to choose a part";
+      };
+      /* Most of a page is text you don't want. Opening on the middle band is the likeliest
+         answer and the shortest distance to a correct one. */
+      const reset=()=>{
+        const ib=imgBox();
+        if(!ib.w||!ib.h) return;
+        rect={ x:ib.left+ib.w*0.06, y:ib.top+ib.h*0.28, w:ib.w*0.88, h:ib.h*0.44 };
+        paint();
+      };
+      img.addEventListener("load",reset);
+      if(img.complete&&img.naturalWidth) reset();
+
+      const HANDLE=30;
+      const corner=(p)=>{
+        if(!rect) return null;
+        const near=(cx,cy)=>Math.abs(p.x-cx)<HANDLE&&Math.abs(p.y-cy)<HANDLE;
+        if(near(rect.x,rect.y)) return "tl";
+        if(near(rect.x+rect.w,rect.y)) return "tr";
+        if(near(rect.x,rect.y+rect.h)) return "bl";
+        if(near(rect.x+rect.w,rect.y+rect.h)) return "br";
+        return null;
       };
       box.addEventListener("pointerdown",(e)=>{
-        start=at(e);
+        if(!rect) return;
+        const p=at(e), c=corner(p);
+        if(c) drag={ mode:"size", c };
+        else if(p.x>rect.x&&p.x<rect.x+rect.w&&p.y>rect.y&&p.y<rect.y+rect.h)
+          drag={ mode:"move", dx:p.x-rect.x, dy:p.y-rect.y };
+        else return;                       // a tap outside the frame is not a gesture
         box.setPointerCapture(e.pointerId);
+        e.preventDefault();
       });
       box.addEventListener("pointermove",(e)=>{
-        if(!start) return;
-        const p=at(e);
-        rect={ x:Math.min(start.x,p.x), y:Math.min(start.y,p.y),
-               w:Math.abs(p.x-start.x), h:Math.abs(p.y-start.y) };
+        if(!drag||!rect) return;
+        const ib=imgBox(), p=at(e);
+        const px=clamp(p.x, ib.left, ib.left+ib.w), py=clamp(p.y, ib.top, ib.top+ib.h);
+        if(drag.mode==="move"){
+          rect.x=clamp(px-drag.dx, ib.left, ib.left+ib.w-rect.w);
+          rect.y=clamp(py-drag.dy, ib.top,  ib.top +ib.h-rect.h);
+        } else {
+          /* Resize from the corner you grabbed, with the opposite one pinned — drag past it
+             and the frame stops at the minimum instead of turning inside out. */
+          const r={ l:rect.x, t:rect.y, r:rect.x+rect.w, b:rect.y+rect.h };
+          if(drag.c[0]==="t") r.t=Math.min(py, r.b-MIN); else r.b=Math.max(py, r.t+MIN);
+          if(drag.c[1]==="l") r.l=Math.min(px, r.r-MIN); else r.r=Math.max(px, r.l+MIN);
+          rect={ x:r.l, y:r.t, w:r.r-r.l, h:r.b-r.t };
+        }
         paint();
       });
-      /* A tap that never became a drag leaves a sliver of a selection behind, which dims the
-         whole photo for no reason and looks broken. Treat it as "never mind". */
-      const end=()=>{
-        start=null;
-        if(rect&&(rect.w<=24||rect.h<=24)){ rect=null; sel.hidden=true;
-          go.disabled=true; go.textContent="Drag to choose a part"; }
-      };
+      const end=()=>{ drag=null; };
       box.addEventListener("pointerup",end);
       box.addEventListener("pointercancel",end);
 
       go.onclick=()=>{
         const ib=imgBox();
         if(!rect||!ib.w||!ib.h) return finish({x:0,y:0,w:1,h:1});
-        // Clamp to the image: a drag that ran off the edge shouldn't crop outside it.
         const x=Math.max(0,Math.min(1,(rect.x-ib.left)/ib.w));
         const y=Math.max(0,Math.min(1,(rect.y-ib.top)/ib.h));
         finish({ x, y, w:Math.min(1-x,rect.w/ib.w), h:Math.min(1-y,rect.h/ib.h) });
