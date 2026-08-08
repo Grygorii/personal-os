@@ -98,13 +98,43 @@
   /* hero */
   .topnav{max-width:680px;margin:0 auto;padding:16px 20px;display:flex;align-items:center;
     justify-content:space-between}
+  /* The hero breaks out to ~1000px on desktop, so a 680px nav sat visibly inset from it —
+     the logo floating to the right of the headline it belongs above. */
+  @media (min-width:940px){.topnav{max-width:1024px}}
   .topnav .logo{display:inline-flex;align-items:center;gap:8px;font-family:var(--serif);
-    font-size:1.12rem;font-weight:600;color:var(--ink);text-decoration:none}
+    font-size:1.12rem;font-weight:600;color:var(--ink);text-decoration:none;
+    padding:6px 2px;min-height:44px}
   .topnav .logo .lg{font-size:1.15rem}
   .topnav .signin{color:var(--muted);text-decoration:none;font-size:.92rem;font-weight:600;
     border:1px solid var(--line);border-radius:10px;padding:8px 15px}
   .topnav .signin:active{border-color:var(--accent)}
+  /* On a wide screen a 680px column stranded the page between two empty margins — it read as
+     a phone layout stretched onto a desktop. Above 940px the words and the phone sit side by
+     side and the space is used. Below that nothing changes: one column, same order.
+     The header has to break OUT of the 680px column the rest of the page lives in, hence the
+     full-viewport width; justify-content then re-centres the two columns at a readable size. */
   header{padding:30px 0 20px;text-align:center}
+  @media (min-width:940px){
+    header{
+      width:100vw;margin-left:calc(50% - 50vw);
+      padding:46px 24px 26px;text-align:left;
+      display:grid;grid-template-columns:minmax(0,540px) minmax(0,400px);
+      justify-content:center;column-gap:60px;align-items:center;
+    }
+    .hero-copy{grid-column:1}
+    .hero-demo{grid-column:2;margin-top:0}
+    .hero-demo .demo-wrap{margin-top:0}
+    .hero-copy h1{font-size:clamp(2.3rem,3.2vw,3.2rem)}
+    .hero-copy .sub,.hero-copy .who{margin-left:0;margin-right:0;max-width:100%}
+    /* everything after the two columns spans them both and re-centres */
+    header > .appbar,header > .install-row,header > .note,header > .ios-help{
+      grid-column:1 / -1;justify-self:center;text-align:center;max-width:520px}
+    .hero-cta{display:inline-block}
+    p.hero-cta{display:block}
+    .hero-demo > .cta,.hero-demo > .cta-sub{display:none}
+  }
+  /* Below 940px the button lives after the demo, exactly where it always did. */
+  .hero-cta{display:none}
   .brand{display:inline-flex;align-items:center;gap:9px;font-family:var(--serif);font-size:1.05rem;
     letter-spacing:.02em;color:var(--accent-tx);margin-bottom:34px}
   h1{font-size:clamp(2.1rem,7.5vw,3.3rem);letter-spacing:-.01em}
@@ -126,6 +156,27 @@
     box-shadow:0 6px 18px rgba(217,174,74,.22)}
   .cta.solid:active{transform:scale(.98);box-shadow:none}
   .note{color:var(--faint);font-size:.86rem;margin-top:14px}
+  /* what the app actually does, right after the problem it solves */
+  .does{display:grid;gap:14px;margin-top:26px}
+  @media (min-width:620px){.does{grid-template-columns:repeat(3,1fr);gap:18px}}
+  .do{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px 17px}
+  .do b{display:block;font-family:var(--serif);font-size:1.04rem;margin-bottom:5px}
+  .do span{color:var(--muted);font-size:.9rem;line-height:1.5}
+  /* footer */
+  footer.site{border-top:1px solid var(--line);margin-top:20px;padding:38px 0 50px;
+    color:var(--muted);font-size:.9rem;text-align:left}
+  .foot-top{display:grid;gap:24px;align-items:center}
+  @media (min-width:700px){.foot-top{grid-template-columns:1.4fr 1fr;gap:40px}
+    .foot-act{text-align:right}}
+  .foot-brand .fb-name{font-family:var(--serif);font-size:1.15rem;color:var(--ink);font-weight:600}
+  .foot-brand p{margin:8px 0 0;color:var(--muted)}
+  .foot-act .cta{margin-top:0}
+  .foot-links{display:flex;flex-wrap:wrap;gap:8px 20px;align-items:center;
+    border-top:1px solid var(--line);margin-top:28px;padding-top:20px;font-size:.86rem}
+  .foot-links a{color:var(--muted);text-decoration:none;border-bottom:1px solid transparent;
+    display:inline-flex;align-items:center;min-height:44px}
+  .foot-links a:hover{color:var(--ink);border-bottom-color:var(--line)}
+  .foot-made{color:var(--faint);margin-left:auto}
   .cta-sub{color:var(--faint);font-size:.84rem;margin:10px 0 0}
   /* the problem */
   .stat{font-family:var(--serif);font-size:clamp(3rem,13vw,5rem);color:var(--accent-tx);line-height:1;font-weight:700}
@@ -244,8 +295,12 @@
   .chips{display:flex;gap:7px;justify-content:center;flex-wrap:wrap;margin-bottom:16px}
   .chips span{font-size:.76rem;background:var(--raise);border-radius:20px;padding:4px 10px;color:var(--muted)}
   .chips .low{color:var(--bad)}
-  .dots{display:flex;gap:8px;justify-content:center;margin-top:18px}
-  .dot{width:8px;height:8px;border-radius:50%;border:0;background:var(--line);padding:0;cursor:pointer;
+  .dots{display:flex;gap:2px;justify-content:center;margin-top:2px}
+  /* An 8px target is not tappable — Apple asks for 44, Android for 48, and these steer the
+     one element on the page people actually touch. background-clip:content-box paints only
+     the 8px dot while the padding stays invisible and catches the thumb. */
+  .dot{width:8px;height:8px;border-radius:50%;border:0;background:var(--line);cursor:pointer;
+    padding:16px 8px;background-clip:content-box;box-sizing:content-box;
     transition:background .3s,width .3s}
   .dot.on{background:var(--accent);width:22px;border-radius:5px}
   /* ---- App Store idiom ----
@@ -265,7 +320,7 @@
   .appbar .st{color:var(--muted);font-size:.8rem;line-height:1.35;margin-top:1px}
   .appbar .get{flex:none;background:var(--accent);color:var(--accent-ink);border:0;border-radius:20px;
     font-family:var(--sans);font-weight:700;font-size:.82rem;letter-spacing:.03em;
-    padding:8px 18px;min-height:34px;cursor:pointer}
+    padding:8px 18px;min-height:40px;cursor:pointer}
   .appbar .get:active{transform:scale(.96)}
 
   /* the product, in a phone, above the fold */
@@ -286,7 +341,7 @@
 
   /* The author's name on the cover; the story stays at the back of the book. */
   .byline{display:inline-flex;align-items:center;gap:9px;margin-top:20px;text-decoration:none;
-    color:var(--faint);font-size:.84rem}
+    color:var(--faint);font-size:.84rem;min-height:44px}
   .byline img{width:26px;height:26px;border-radius:50%;object-fit:cover;object-position:50% 20%;
     border:1px solid var(--line)}
   .byline u{text-decoration:none;border-bottom:1px solid var(--line)}
@@ -358,7 +413,6 @@
   summary::after{content:"+";float:right;color:var(--accent-tx);font-size:1.3rem;line-height:1}
   details[open] summary::after{content:"–"}
   details p{color:var(--muted);margin:10px 0 2px;font-size:.95rem}
-  footer.site{text-align:center;color:var(--faint);font-size:.82rem;padding:40px 0 60px;border-top:1px solid var(--line)}
   .final{text-align:center;background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:40px 24px}
   /* ---- movement, kept on a short leash ----
      A page about reading shouldn't fidget. Two things only: sections rise a little as you
@@ -390,6 +444,7 @@
   </nav>
 
   <header>
+    <div class="hero-copy">
 
     <!-- A friend opened this page and said he couldn't tell what he'd GET, and that if he
          didn't know Grygorii he'd have closed it. He was right, and the reason is visible
@@ -421,6 +476,12 @@
          well. They don't need help finishing thirty books. They need book seven on a Tuesday. -->
     <p class="who">For people who <em>use</em> what they read — not just finish it.</p>
 
+    <a class="cta hero-cta" href="/app">Get started — it's&nbsp;free</a>
+    <p class="cta-sub hero-cta">No account needed to look around.</p>
+
+    </div><!-- /.hero-copy -->
+
+    <div class="hero-demo">
     <!-- The live demo sits in the hero: a phone that plays the whole product before a
          single word of explanation. It replaced a static card, which had to be read. -->
     <div class="demo-wrap">
@@ -540,6 +601,7 @@
 
     <a class="cta" href="/app">Get started — it's&nbsp;free</a>
     <p class="cta-sub">No account needed to look around.</p>
+    </div><!-- /.hero-demo -->
     <div class="appbar install-card">
       <!-- Every other image on the site degrades to something clean if it fails; this one
            didn't, and a broken-image glyph sitting in the App Store row is the worst place
@@ -602,18 +664,19 @@
   <section>
     <div class="kicker">The real reason</div>
     <h2>It was never about time.</h2>
+    <!-- This was four paragraphs of prose. Good prose, and nobody was reading it: on a page
+         that gets scanned, a beautiful essay is a wall. Keep the two lines that actually
+         bruise, then say what the app DOES about it, which is the part a stranger came for. -->
     <p class="lede">There's a book on your table you haven't opened in a month. Not because you're busy —
       you found the hours for worse things. It's quieter than that: <em>you already know it won't stay.</em></p>
-    <p class="lede">Nine hours, and by Christmas you'll have the cover and nothing else. Put like that, reading
-      stops feeling like building and starts feeling like pouring water into sand.</p>
-    <p class="lede">You keep the cover, the mood, one good line — and never notice the rest go. Feeling like
-      you've read a book is indistinguishable from having kept it. Highlighting doesn't help; notes don't
-      either. They record the book, they don't put it in you.</p>
-    <blockquote style="margin-top:22px">
-      Being <em>asked</em> is what makes it stick. Psychologists call it the testing effect: retrieving an idea
-      fixes it in memory far more firmly than reading it again ever will.
-      <footer>Kept is that test — for the books you actually read.</footer>
-    </blockquote>
+    <p class="lede">Highlighting doesn't help; notes don't either. They record the book — they don't
+      put it in you. <b>Being asked</b> is what makes it stick: retrieving an idea fixes it in memory
+      far more firmly than reading it again ever will. Psychologists call it the testing effect.</p>
+    <div class="does">
+      <div class="do"><b>Keep it in one tap</b><span>Type it, say it out loud, or photograph the page and let it read the words.</span></div>
+      <div class="do"><b>Talk it over</b><span>A mentor that has read along with you, and only ever talks about your books.</span></div>
+      <div class="do"><b>Get asked</b><span>Five questions when you finish, and a daily quiz that hands your own thoughts back.</span></div>
+    </div>
   </section>
 
   <section>
@@ -664,30 +727,6 @@
   </section>
 
   <section>
-    <div class="kicker">Where this is going</div>
-    <h2>Built, building, and after that.</h2>
-    <div class="road">
-      <div class="rd on">
-        <span class="rdl now">Working now</span>
-        <p>Your library, with thoughts tagged to the page they came from. A mentor that reads
-        along with you. The exam when you turn the last page. A quiz that hands your own
-        thoughts back weeks later and asks which book they came from. Dictate a thought, or
-        photograph the page and let it read the words.</p>
-      </div>
-      <div class="rd on">
-        <span class="rdl next">Being built</span>
-        <p>Comparing what you kept with someone who read the same book — the part I most want
-        to exist. And a quiet nudge when a book has sat untouched too long.</p>
-      </div>
-      <div class="rd">
-        <span class="rdl later">After that</span>
-        <p>A way to pay for it, so it can keep running. A store listing, if enough people ask
-        for one.</p>
-      </div>
-    </div>
-  </section>
-
-  <section>
     <div class="kicker">Questions</div>
     <details><summary>Is it free?</summary><p>Free to start, with a daily allowance that grows as you use it. Later you can support it from €3 a month — or connect your own free AI key and keep it free for good.</p></details>
     <details><summary>Do I read the books in Kept?</summary><p>No — there are no books in Kept, and it doesn't sell or lend them. You read however you already do: paper, Kindle, a library copy, an audiobook. Kept is where you jot what struck you while you're reading, and where you get tested once you've finished. It never asks you to change how you read.</p></details>
@@ -698,16 +737,28 @@
     <details><summary>Does it work with any book?</summary><p>Any book, in any language. The exam is written for the specific book you read — fiction, history, business, anything.</p></details>
   </section>
 
-  <section>
-    <div class="final">
-      <h2>What was the last book you finished?</h2>
-      <p class="sub" style="margin-top:12px">Find out how much of it you still have.</p>
-      <a class="cta" href="/app">Test me on it →</a>
+  <!-- A real footer. The page used to end on a one-line sign-off with a single link, and
+       before that on a second call to action that repeated the first. A home page's last
+       screen should tell you what this is, let you start, and let you find your way. -->
+  <footer class="site">
+    <div class="foot-top">
+      <div class="foot-brand">
+        <span class="fb-name">📕 Kept</span>
+        <p>Everything worth keeping from every book you've read.<br>
+        For people who use what they read — not just finish it.</p>
+      </div>
+      <div class="foot-act">
+        <a class="cta" href="/app">Get started — it's&nbsp;free</a>
+        <p class="note" style="margin-top:10px">No account needed to look around.</p>
+      </div>
     </div>
-  </section>
-
-  <footer class="site">📕 Kept — read it, prove you kept it.<br>
-    <a href="/privacy" style="color:var(--muted)">Privacy</a></footer>
+    <div class="foot-links">
+      <a href="/app">Open Kept</a>
+      <a href="/signin">Sign in</a>
+      <a href="/privacy">What we store</a>
+      <span class="foot-made">Built by one person, in the open.</span>
+    </div>
+  </footer>
 </div>
 
 <script>
