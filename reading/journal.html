@@ -240,6 +240,8 @@
   .note .nact{display:flex;gap:16px;margin-top:6px}
   .note .nrm{background:transparent;border:0;color:var(--faint);cursor:pointer;font-size:.8rem;padding:6px 0;min-height:34px;font-family:var(--sans)}
   .note .nrm:active{color:var(--accent-strong)}
+  /* The one worth noticing of the three. */
+  .note .nshare{color:var(--accent-strong);font-weight:700}
   .nedit{display:flex;gap:8px;margin-top:8px}
   .nedit .btn{width:auto;flex:1;min-height:42px;padding:9px 14px;font-size:.88rem}
   /* quiz */
@@ -744,6 +746,7 @@ function openBook(id){
             <div class="ntop"><span>${n.page?`<span class="npage">p.${esc(String(n.page))}</span>`:`<span class="ndate">no page</span>`}</span><span class="ndate">${fmtDate(n.ts)}</span></div>
             <div class="ntext">${esc(flowText(n.text))}</div>
             <div class="nact">
+              <button class="nrm nshare" data-share="${realIdx}">share</button>
               <button class="nrm" data-edit="${realIdx}">edit</button>
               <button class="nrm" data-i="${realIdx}">remove</button>
             </div>
@@ -995,6 +998,38 @@ function openBook(id){
     bk.notes.push({text,page:isNaN(page)?null:page,ts:Date.now()}); bk.updated=Date.now(); save();
     openBook(id); toast("Thought added"); maybeOfferInstall();
   };
+  /* ---- Share one thought, the moment it lands ----
+     The book-level share asks you to pick from a list, which is the right shape when you have
+     finished a book and are looking back. It is the wrong shape for the actual moment: you
+     have just written something you are pleased with and you want it out NOW. One tap, from
+     the thought itself.
+     What goes public is that one thought, its page and the book — no score, nothing else from
+     the shelf. The page it lands on puts the words first and Kept in one quiet line at the
+     bottom: somebody sharing a good thought is not trying to advertise us, and a page that
+     pushes will make them stop sharing. */
+  $("notes-list").querySelectorAll("[data-share]").forEach(bt=>bt.onclick=async()=>{
+    if(guestBlocked("Sharing","A shared page lives on the server, so it needs somewhere to live.")) return;
+    const bk=state.books.find(x=>x.id===id), n=bk.notes[+bt.dataset.share];
+    if(!n||!n.text) return;
+    bt.disabled=true; bt.textContent="…";
+    let url=null;
+    try{
+      const r=await api("/api/share",{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({title:bk.title,author:bk.author||"",
+          thoughts:[{text:flowText(n.text),page:n.page}],score:null,verdict:""})});
+      if(r.ok){ const d=await r.json(); url=d.url; }
+    }catch(e){}
+    bt.disabled=false; bt.textContent="share";
+    if(!url){ toast("Couldn't create the link — try again"); return; }
+    openShareSheet({
+      title:bk.title+(bk.author?` — ${bk.author}`:""),
+      /* Their thought first, the book second, nothing about us. That is what a person is
+         willing to post under their own name. */
+      text:`“${flowText(n.text)}”
+
+— ${bk.title}${bk.author?`, ${bk.author}`:""}${n.page?`, p.${n.page}`:""}`,
+      url});
+  });
   $("notes-list").querySelectorAll("[data-i]").forEach(bt=>bt.onclick=()=>{
     const bk=state.books.find(x=>x.id===id); bk.notes.splice(+bt.dataset.i,1); bk.updated=Date.now(); save(); openBook(id);
   });
