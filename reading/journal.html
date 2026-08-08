@@ -120,6 +120,10 @@
   input,textarea,select{width:100%;font-family:var(--sans);font-size:16px;padding:11px 12px;min-height:46px;border:1px solid var(--line);border-radius:10px;background:var(--raise);color:var(--ink)}
   input:focus-visible,textarea:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
   textarea{min-height:64px;resize:vertical;line-height:1.5}
+  /* The thought box is where the actual work happens — a page of transcribed text in a
+     four-line window means scrolling a postage stamp to find the sentence you wanted. */
+  #n-text{min-height:190px}
+  .ed-t{min-height:150px;width:100%}
   .two{display:flex;gap:8px} .two>div{flex:1}
   .list{display:flex;flex-direction:column;gap:10px;margin-top:14px}
   .book{display:flex;gap:13px;align-items:flex-start;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px 15px;cursor:pointer;transition:transform .08s ease}
@@ -176,6 +180,7 @@
   /* choosing the part of the page to read */
   .cropbox{position:relative;touch-action:none;-webkit-user-select:none;user-select:none;
     background:var(--raise);border-radius:12px;overflow:hidden;display:flex;justify-content:center}
+  .cropstage{position:relative;transition:transform .32s cubic-bezier(.22,.61,.36,1);will-change:transform}
   .cropbox img{display:block;max-width:100%;max-height:46vh;width:auto;height:auto;pointer-events:none}
   /* A camera dims everything OUTSIDE the frame and leaves the kept part bright. This used to
      do the opposite — paint a gold wash over the chosen words — which reads as "covered",
@@ -820,7 +825,7 @@ function openBook(id){
   /* A phone camera photo is several megabytes; the page only needs to be legible. Resizing
      here keeps the upload small, the request fast, and the model's bill down. `region` is
      the fraction of the photo they selected, so a cropped strip is cheaper again. */
-  function shrink(file, region, max=1400, quality=0.72){
+  function shrink(file, region, max=1700, quality=0.76){
     return new Promise((resolve,reject)=>{
       const img=new Image(), url=URL.createObjectURL(file);
       img.onload=()=>{
@@ -849,24 +854,30 @@ function openBook(id){
       const { bg, close }=openSheet(`
         <div class="sheet-head">Which part?</div>
         <p class="sheet-note">Drag the corners to fit the words you want — or read the whole page.</p>
-        <div class="cropbox" id="cropbox"><img id="cropimg" alt=""><div class="cropsel" id="cropsel" hidden>
-          <i class="tl"></i><i class="tr"></i><i class="bl"></i><i class="br"></i></div></div>
+        <div class="cropbox" id="cropbox" data-nodismiss><div class="cropstage" id="cropstage">
+          <img id="cropimg" alt=""><div class="cropsel" id="cropsel" hidden>
+          <i class="tl"></i><i class="tr"></i><i class="bl"></i><i class="br"></i></div></div></div>
         <button class="btn" id="crop-go" style="margin-top:12px">Read the selected part</button>
         <button class="btn ghost" id="crop-all" style="margin-top:8px">Read the whole page</button>`,
         "Choose the part to read");
       $("cropimg").src=url;
 
-      const box=$("cropbox"), sel=$("cropsel"), img=$("cropimg"), go=$("crop-go");
+      const box=$("cropbox"), stage=$("cropstage"), sel=$("cropsel"), img=$("cropimg"), go=$("crop-go");
       /* A frame is ALREADY THERE when the sheet opens, and you make it bigger or smaller —
          which is what every camera does, and what people reach for without being told.
          Dragging one out of nothing was the old way: it asks you to know the gesture before
          you can start, and a tap that didn't travel far enough left you with nothing. */
       let rect=null, drag=null;
-      const imgBox=()=>{ const i=img.getBoundingClientRect(), b=box.getBoundingClientRect();
-        return { left:i.left-b.left, top:i.top-b.top, w:i.width, h:i.height }; };
+      /* Everything below works in the stage's own unscaled pixels. offsetLeft/offsetWidth
+         ignore transforms; getBoundingClientRect does not — and once the stage is zoomed,
+         measuring through the zoom feeds the scale back into the maths and the frame drifts
+         away from the finger. Pointer positions are divided back out by the live scale. */
+      const imgBox=()=>({ left:img.offsetLeft, top:img.offsetTop, w:img.offsetWidth, h:img.offsetHeight });
       const clamp=(v,lo,hi)=>Math.max(lo,Math.min(hi,v));
-      const at=(e)=>{ const b=box.getBoundingClientRect();
-        return { x:e.clientX-b.left, y:e.clientY-b.top }; };
+      const zoomNow=()=>{ const r=stage.getBoundingClientRect();
+        return stage.offsetWidth ? r.width/stage.offsetWidth : 1; };
+      const at=(e)=>{ const r=stage.getBoundingClientRect(), z=zoomNow()||1;
+        return { x:(e.clientX-r.left)/z, y:(e.clientY-r.top)/z }; };
       const MIN=44;                       // never smaller than a fingertip
 
       const paint=()=>{
@@ -922,16 +933,36 @@ function openBook(id){
         }
         paint();
       });
-      const end=()=>{ drag=null; };
+      /* Lean in on what they framed, so they can read it before spending a model call on it.
+         Only after the finger lifts: changing the scale mid-drag moves the image under the
+         thumb that is holding it. */
+      const zoomToSelection=()=>{
+        if(!rect) return;
+        const bw=box.clientWidth, bh=box.clientHeight;
+        if(!bw||!bh) return;
+        const z=Math.max(1,Math.min(1.9, Math.min(bw/rect.w, bh/rect.h)*0.82));
+        const cx=rect.x+rect.w/2, cy=rect.y+rect.h/2;
+        stage.style.transformOrigin="0 0";
+        stage.style.transform=`translate(${bw/2-cx*z}px, ${bh/2-cy*z}px) scale(${z})`;
+      };
+      const end=()=>{ if(drag){ drag=null; zoomToSelection(); } };
       box.addEventListener("pointerup",end);
       box.addEventListener("pointercancel",end);
 
       go.onclick=()=>{
         const ib=imgBox();
         if(!rect||!ib.w||!ib.h) return finish({x:0,y:0,w:1,h:1});
-        const x=Math.max(0,Math.min(1,(rect.x-ib.left)/ib.w));
-        const y=Math.max(0,Math.min(1,(rect.y-ib.top)/ib.h));
-        finish({ x, y, w:Math.min(1-x,rect.w/ib.w), h:Math.min(1-y,rect.h/ib.h) });
+        let x=(rect.x-ib.left)/ib.w, y=(rect.y-ib.top)/ib.h;
+        let w=rect.w/ib.w, h=rect.h/ib.h;
+        /* A little more than was framed. The frame's edge lands mid-line almost every time,
+           and a half-line is "cut off", which the transcription is told to leave out rather
+           than guess at — correctly. So the words at the very top and bottom of a selection
+           were quietly going missing. More vertical padding than horizontal, because lines
+           run across and it is the top and bottom edges that slice them. */
+        const padX=0.02, padY=0.045;
+        x-=padX; y-=padY; w+=padX*2; h+=padY*2;
+        x=Math.max(0,Math.min(1,x)); y=Math.max(0,Math.min(1,y));
+        finish({ x, y, w:Math.min(1-x,w), h:Math.min(1-y,h) });
       };
       $("crop-all").onclick=()=>finish({x:0,y:0,w:1,h:1});
       bg.addEventListener("click",(e)=>{ if(e.target===bg) finish(null); }); // tapped away
@@ -1084,7 +1115,9 @@ function sheetDismiss(bg, close){
   let y0=null,t0=0,dy=0,dragging=false;
 
   sheet.addEventListener("touchstart",e=>{
-    if(e.touches.length!==1||e.target.closest("button,a,input,textarea,select")){ y0=null; return; }
+    /* [data-nodismiss] marks a region that owns its own gestures — the crop frame, where
+       dragging the box downward was also dragging the sheet away underneath it. */
+    if(e.touches.length!==1||e.target.closest("button,a,input,textarea,select,[data-nodismiss]")){ y0=null; return; }
     y0=e.touches[0].clientY; t0=Date.now(); dy=0; dragging=false;
   },{passive:true});
 
