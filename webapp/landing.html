@@ -152,16 +152,16 @@
   .sub-quiet{display:inline-block;margin-top:10px;font-size:.97rem;color:var(--faint)}
   .who{margin:22px auto 0;max-width:30rem;color:var(--ink);font-size:1rem;font-weight:600}
   .who em{font-style:normal;color:var(--accent-tx)}
-  .cta{display:inline-block;background:var(--accent);color:var(--accent-ink);text-decoration:none;
-    font-weight:700;font-size:1.06rem;padding:16px 30px;border-radius:13px;margin-top:30px;
-    transition:transform .08s ease}
+  .cta{display:inline-block;background:var(--ink);color:var(--paper);text-decoration:none;
+    font-weight:600;font-size:1.02rem;padding:15px 28px;border-radius:11px;margin-top:28px;
+    letter-spacing:.005em;transition:transform .08s ease,opacity .15s ease}
+  .cta:hover{opacity:.88}
   .cta:active{transform:scale(.98)}
   .cta.ghost{background:transparent;color:var(--ink);border:1px solid var(--line);font-weight:600;margin-left:8px}
   /* His wife tried to SWIPE this one. A pale outline inside a bordered panel reads as another
      card, not a control — so the thing you're meant to press is now filled, like every other
      button that does something, and it presses visibly. */
-  .cta.solid{background:var(--accent);color:var(--accent-ink);border:0;font-weight:700;
-    box-shadow:0 6px 18px rgba(217,174,74,.22)}
+  .cta.solid{background:var(--ink);color:var(--paper);border:0;font-weight:600;box-shadow:none}
   .cta.solid:active{transform:scale(.98);box-shadow:none}
   .note{color:var(--faint);font-size:.86rem;margin-top:14px}
   /* what the app actually does, right after the problem it solves */
@@ -622,6 +622,12 @@
 
     <a class="cta" href="/app">Get started — it's&nbsp;free</a>
     <p class="cta-sub">No account needed to look around.</p>
+    <!-- Back under the hero, quietly. It was moved to the footer on the reasoning that the app
+         would ask for the home screen itself once someone had used it — and the app had never
+         done that. It does now, but somebody who wants it on their phone today should not have
+         to reach the bottom of the page to find out how. A link, not a second button. -->
+    <p class="install-row"><button class="linkish" id="install-btn-top" type="button">Add it to your phone</button>
+      <span class="dim-sep">— no App&nbsp;Store, nothing to&nbsp;download</span></p>
     </div><!-- /.hero-demo -->
     <!-- Never the word "PWA". Naming the technology is jargon, and explaining a technology
          plants the very doubt it's meant to settle. Answer what they're actually asking:
@@ -721,7 +727,7 @@
         <a class="cta" href="/app">Get started — it's&nbsp;free</a>
         <p class="note" style="margin-top:10px">No account needed to look around.</p>
     <p class="install-row"><button class="linkish" id="install-btn" type="button">Add it to your phone</button>
-      <span class="dim-sep">— no App Store, nothing to download</span></p>
+      <span class="dim-sep">— no App&nbsp;Store, nothing to&nbsp;download</span></p>
     <div class="ios-help" id="ios-help">
       <div id="ios-safari">
         <b>Add Kept to your iPhone</b>
@@ -840,13 +846,16 @@
      exact Safari taps on iPhone, and "open it on your phone" on a desktop.
      Both the GET chip at the top and the button below it do the same thing. */
   (function () {
-    var btn = document.getElementById('install-btn');
+    /* Two links, one job. Collected rather than named, so adding a third somewhere else on
+       the page needs no change here. */
+    var btns = [].slice.call(document.querySelectorAll('#install-btn, #install-btn-top'));
+    var hideAll = function () { btns.forEach(function (b) { b.closest('.install-row').style.display = 'none'; }); };
     var help = document.getElementById('ios-help');
     var deferred = null;
     var standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
     var isIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
     if (standalone) {                             // they already have it
-      btn.style.display = 'none';
+      hideAll();
       return;
     }
 
@@ -895,15 +904,15 @@
         deferred.prompt();
         await deferred.userChoice;
         deferred = null;
-        btn.style.display = 'none';
+        hideAll();
         return;
       }
       explain();
     }
-    btn.addEventListener('click', async function () {
-      await install();
+    btns.forEach(function (b) {
+      b.addEventListener('click', async function () { await install(); });
     });
-    window.addEventListener('appinstalled', function () { btn.style.display = 'none'; });
+    window.addEventListener('appinstalled', hideAll);
   })();
 
   /* ---- The demo plays itself ----

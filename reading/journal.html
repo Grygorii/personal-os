@@ -56,6 +56,16 @@
     background:var(--accent-tint);border:1px solid var(--accent);border-radius:12px;
     padding:10px 14px;margin-bottom:14px;font-size:.84rem;color:var(--muted)}
   .guestbar b{color:var(--ink)}
+  .installbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+    background:var(--raise);border:1px solid var(--line);border-radius:12px;
+    padding:10px 12px;margin-bottom:14px;font-size:.84rem;color:var(--muted)}
+  .installbar[hidden]{display:none}
+  .installbar b{color:var(--ink)}
+  .installbar span{flex:1;min-width:160px}
+  .installbar button{border-radius:9px;font-family:var(--sans);font-weight:700;cursor:pointer;
+    min-height:36px;padding:0 14px;font-size:.82rem}
+  #install-yes{background:var(--accent);color:var(--accent-ink);border:0}
+  #install-no{background:transparent;border:0;color:var(--faint);padding:0 8px;font-size:.9rem}
   .guestbar a{color:var(--accent-strong);font-weight:700;text-decoration:none;white-space:nowrap}
   .topact{display:flex;align-items:center;gap:8px}
   .menu{display:flex;flex-direction:column;gap:8px}
@@ -386,6 +396,15 @@
 
   <!-- Shown to guests only. Honest about the one real cost of not signing in — this device
        and nothing else — without nagging on every screen. -->
+  <!-- Offered only AFTER a thought has been kept. Asking a stranger to put an icon on their
+       home screen before they have used the thing is asking too early, and the answer is no.
+       Asking the moment they have actually kept something is asking at the one moment the
+       answer might be yes. Dismissable, and it never asks twice. -->
+  <div class="installbar" id="installbar" hidden>
+    <span><b>Keep it on your home screen.</b> Opens like an app — no App Store.</span>
+    <button id="install-yes" type="button">Add</button>
+    <button id="install-no" type="button" aria-label="Not now">✕</button>
+  </div>
   <div class="guestbar" id="guestbar" hidden>
     <span><b>Not signed in.</b> Your books live on this device only.</span>
     <a id="guest-signin" href="/signin">Keep them →</a>
@@ -974,7 +993,7 @@ function openBook(id){
     const page=parseInt($("n-page").value,10);
     const bk=state.books.find(x=>x.id===id); bk.notes=bk.notes||[];
     bk.notes.push({text,page:isNaN(page)?null:page,ts:Date.now()}); bk.updated=Date.now(); save();
-    openBook(id); toast("Thought added");
+    openBook(id); toast("Thought added"); maybeOfferInstall();
   };
   $("notes-list").querySelectorAll("[data-i]").forEach(bt=>bt.onclick=()=>{
     const bk=state.books.find(x=>x.id===id); bk.notes.splice(+bt.dataset.i,1); bk.updated=Date.now(); save(); openBook(id);
@@ -1470,6 +1489,52 @@ $("find-x").onclick=()=>{ clearFind(); $("find").focus(); };
    result list on screen showing thoughts that may no longer exist. */
 $("tab-quiz").addEventListener("click",clearFind);
 $("tab-chat").addEventListener("click",clearFind);
+
+/* ---- The app asking for a place on the home screen ----
+   The landing page used to be the only thing that ever asked, which meant asking a stranger
+   before they had used it — when the answer is no. This asks once, after a thought has
+   actually been kept, and never again if they say no.
+   iPhone has no programmatic install: only Safari can, and only by hand, so those people get
+   the three taps rather than a button that cannot do anything. */
+let installEvent=null;
+window.addEventListener("beforeinstallprompt",e=>{ e.preventDefault(); installEvent=e; });
+function installed(){
+  try{ return matchMedia("(display-mode: standalone)").matches || navigator.standalone===true; }
+  catch(e){ return false; }
+}
+function maybeOfferInstall(){
+  if(installed()) return;
+  try{ if(localStorage.getItem("install-asked")) return; }catch(e){}
+  const ua=navigator.userAgent, isIos=/iphone|ipad|ipod/i.test(ua);
+  const isSafari=/Safari/.test(ua)&&!/CriOS|FxiOS|EdgiOS|OPiOS|Instagram|FBAN|FBAV|Line/.test(ua);
+  /* Nothing to offer: no prompt available, and not an iPhone where hand instructions work. */
+  if(!installEvent && !(isIos&&isSafari)) return;
+  const bar=$("installbar"); if(!bar) return;
+  if(isIos) $("install-yes").textContent="How";
+  bar.hidden=false;
+}
+function stopAsking(){
+  try{ localStorage.setItem("install-asked","1"); }catch(e){}
+  const b=$("installbar"); if(b) b.hidden=true;
+}
+$("install-no").onclick=stopAsking;
+$("install-yes").onclick=async()=>{
+  if(installEvent){
+    installEvent.prompt();
+    try{ await installEvent.userChoice; }catch(e){}
+    installEvent=null; stopAsking(); return;
+  }
+  stopAsking();
+  openSheet(`<div class="sheet-head">Add Kept to your iPhone</div>
+    <ol style="color:var(--muted);font-size:.9rem;line-height:1.7;padding-left:20px;margin:0">
+      <li>Tap the <b>Share</b> button at the bottom of Safari</li>
+      <li>Scroll down and tap <b>Add to Home Screen</b></li>
+      <li>Tap <b>Add</b> — Kept opens like any other app</li>
+    </ol>
+    <button class="btn ghost" id="ios-x" style="margin-top:14px">Got it</button>`,"Add to your phone");
+  $("ios-x").onclick=()=>document.querySelector(".sheet-bg").remove()||document.documentElement.classList.remove("sheeting");
+};
+window.addEventListener("appinstalled",stopAsking);
 
 renderLibrary();
 loadBooks();
