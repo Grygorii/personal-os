@@ -198,6 +198,15 @@
     display:inline-flex;align-items:center;min-height:44px}
   .foot-links a:hover{color:var(--ink);border-bottom-color:var(--line)}
   .foot-made{color:var(--faint);margin-left:auto}
+  /* On a phone the links wrap, and margin-left:auto then strands this line alone against the
+     right edge while everything above it is left-aligned. Narrow enough to wrap = wide enough
+     to just sit on its own line, at the same edge as the rest. Same for the button: centred
+     inside a left-aligned block reads as a mistake, because it is one. */
+  @media (max-width:699.98px){
+    .foot-made{margin-left:0;width:100%}
+    .foot-act .cta-row{justify-content:flex-start}
+    .foot-links{gap:6px 18px}
+  }
   .cta-sub{color:var(--faint);font-size:.84rem;margin:10px 0 0}
   /* the problem */
   .stat{font-family:var(--serif);font-size:clamp(3rem,13vw,5rem);color:var(--accent-tx);line-height:1;font-weight:700}
