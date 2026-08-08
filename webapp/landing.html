@@ -67,27 +67,31 @@
      reading should not contradict that in the first two seconds. The gold stays — one warm
      accent on cream reads as a well-made book; the same gold on black reads as a dashboard. */
   :root{
-    --paper:#FCFAF5; --surface:#FFFFFF; --raise:#F4F0E7; --ink:#1B1915; --muted:#57534A;
-    --faint:#6E6959; --line:#E5DFD2;
-    --accent:#D9AE4A;      /* fills only — dark text sits on it */
-    --accent-tx:#8A6A12;   /* the same idea as text, dark enough to read on cream */
-    --accent-ink:#241B04; --good:#2F7D4F; --bad:#B4372B;
-    --device:#1A1815;      /* the phone's body: a physical object, dark in both themes */
-    --mark:#F6E7BE;
-    --shadow:rgba(70,58,34,.10); --shadow-strong:rgba(70,58,34,.16);
+    --paper:#FCFAF5;       /* the page */
+    --surface:#FFFFFF;     /* white, where something sits on the page */
+    --raise:#F4F0E7;
+    --ink:#191713;         /* the text */
+    --muted:#55514A; --faint:#6C6759; --line:#E6E0D3;
+    --mark:#FFF176;        /* THE highlighter — the only place yellow appears */
+    --mark-ink:#191713;
+    --good:#2C7A4B; --bad:#B4372B;
+    --device:#1A1815;      /* the phone's body: an object, dark in both themes */
+    --shadow:rgba(70,58,34,.09); --shadow-strong:rgba(70,58,34,.15);
     --serif:"Iowan Old Style",Georgia,"Palatino Linotype",Palatino,serif;
     --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
   }
   @media (prefers-color-scheme: dark){
     :root{
-      --paper:#14130F; --surface:#1D1B16; --raise:#26241D; --ink:#ECE8DF; --muted:#9C9686;
-      --faint:#8A8478; --line:#2C2A22;
-      --accent:#D9AE4A; --accent-tx:#D9AE4A; --accent-ink:#14130F;
+      --paper:#14130F; --surface:#1D1B16; --raise:#26241D;
+      --ink:#ECE8DF; --muted:#9C9686; --faint:#8A8478; --line:#2C2A22;
+      --mark:#E8CB48; --mark-ink:#14130F;
       --good:#43B571; --bad:#E1685C;
-      --device:#0C0B09; --mark:#33290F;
+      --device:#0C0B09;
       --shadow:rgba(0,0,0,.45); --shadow-strong:rgba(0,0,0,.55);
     }
   }
+  /* A word marked the way you would mark it in a book. */
+  .hl{background:var(--mark);color:var(--mark-ink);border-radius:2px;font-style:normal;padding:0 .06em}
   *{box-sizing:border-box}
   html{scroll-behavior:smooth}
   body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);line-height:1.65;
@@ -107,7 +111,7 @@
   .topnav .logo .lg{font-size:1.15rem}
   .topnav .signin{color:var(--muted);text-decoration:none;font-size:.92rem;font-weight:600;
     border:1px solid var(--line);border-radius:10px;padding:8px 15px}
-  .topnav .signin:active{border-color:var(--accent)}
+  .topnav .signin:active{border-color:var(--ink)}
   /* On a wide screen a 680px column stranded the page between two empty margins — it read as
      a phone layout stretched onto a desktop. Above 940px the words and the phone sit side by
      side and the space is used. Below that nothing changes: one column, same order.
@@ -148,14 +152,14 @@
     .cta-row.hero-cta,p.cta-sub.hero-cta{display:none}
   }
   .brand{display:inline-flex;align-items:center;gap:9px;font-family:var(--serif);font-size:1.05rem;
-    letter-spacing:.02em;color:var(--accent-tx);margin-bottom:34px}
+    letter-spacing:.02em;color:var(--ink);margin-bottom:34px}
   h1{font-size:clamp(2.1rem,7.5vw,3.3rem);letter-spacing:-.01em}
-  h1 em{font-style:normal;color:var(--accent-tx)}
+  h1 em{font-style:normal;background:var(--mark);color:var(--mark-ink);border-radius:3px;padding:0 .08em}
   .sub{color:var(--muted);font-size:1.12rem;margin:20px auto 0;max-width:30rem}
   /* The exam, demoted on purpose: still said, but said second and said quietly. */
   .sub-quiet{display:inline-block;margin-top:10px;font-size:.97rem;color:var(--faint)}
   .who{margin:22px auto 0;max-width:30rem;color:var(--ink);font-size:1rem;font-weight:600}
-  .who em{font-style:normal;color:var(--accent-tx)}
+  .who em{font-style:normal;background:var(--mark);color:var(--mark-ink);border-radius:3px;padding:0 .1em}
   .cta{display:inline-block;background:var(--ink);color:var(--paper);text-decoration:none;
     font-weight:600;font-size:1.02rem;padding:15px 28px;border-radius:11px;margin-top:28px;
     letter-spacing:.005em;transition:transform .08s ease,opacity .15s ease}
@@ -209,14 +213,14 @@
   }
   .cta-sub{color:var(--faint);font-size:.84rem;margin:10px 0 0}
   /* the problem */
-  .stat{font-family:var(--serif);font-size:clamp(3rem,13vw,5rem);color:var(--accent-tx);line-height:1;font-weight:700}
+  .stat{font-family:var(--serif);font-size:clamp(3rem,13vw,5rem);color:var(--ink);line-height:1;font-weight:700}
   .stat-label{color:var(--muted);margin-top:6px}
   /* demo */
   .phone{background:var(--surface);border:1px solid var(--line);border-radius:22px;padding:18px;
     box-shadow:0 24px 60px var(--shadow)}
   .bubble{border-radius:15px;padding:12px 15px;margin:9px 0;font-size:.95rem;max-width:88%}
   .them{background:var(--raise);border-bottom-left-radius:5px}
-  .me{background:var(--accent);color:var(--accent-ink);margin-left:auto;border-bottom-right-radius:5px;font-weight:500}
+  .me{background:var(--ink);color:var(--paper);margin-left:auto;border-bottom-right-radius:5px;font-weight:500}
   .score-line{display:flex;align-items:baseline;gap:12px;margin:14px 2px 4px}
   .score-line b{font-family:var(--serif);font-size:2.6rem;color:var(--good)}
   .typing span{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--faint);margin-right:3px;
@@ -264,7 +268,7 @@
   .demo-tab{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;
     font-size:.62rem;font-weight:600;color:var(--faint)}
   .demo-tab .i{font-size:1.05rem;line-height:1;opacity:.5;filter:grayscale(1)}
-  .demo-tab.on{color:var(--accent-tx)} .demo-tab.on .i{opacity:1;filter:none}
+  .demo-tab.on{color:var(--ink)} .demo-tab.on .i{opacity:1;filter:none}
   .screen{position:absolute;inset:0;overflow:hidden;opacity:0;transform:translateY(10px);
     pointer-events:none;transition:opacity .45s ease,transform .45s ease}
   /* A chat fills from the BOTTOM, like every chat anyone has ever used. Anchoring it to the
@@ -284,38 +288,38 @@
     padding-bottom:10px;margin-bottom:14px}
   .empty-shelf{text-align:center;color:var(--faint);padding:38px 10px;font-size:.95rem}
   .empty-shelf span{color:var(--muted)}
-  .app-btn{width:100%;background:var(--accent);color:var(--accent-ink);border:0;border-radius:12px;
+  .app-btn{width:100%;background:var(--ink);color:var(--paper);border:0;border-radius:12px;
     padding:13px;font-weight:700;font-size:.98rem;font-family:var(--sans);cursor:default}
-  .app-btn.ghost-btn{background:transparent;color:var(--accent-tx);border:1px solid var(--line);font-weight:600}
+  .app-btn.ghost-btn{background:transparent;color:var(--ink);border:1px solid var(--line);font-weight:600}
   .pulse{animation:tap 2s ease-in-out infinite}
   @keyframes tap{0%,100%{transform:scale(1);box-shadow:0 0 0 0 rgba(217,174,74,.45)}
     50%{transform:scale(1.02);box-shadow:0 0 0 12px rgba(217,174,74,0)}}
   .fld{display:block;font-size:.78rem;color:var(--faint);
     font-weight:700;margin:12px 0 5px}
   /* pieces of the real app, reproduced for the demo screens */
-  .hits-demo{border:1px solid var(--accent);border-radius:11px;overflow:hidden;margin-top:6px}
+  .hits-demo{border:1px solid var(--line);border-radius:11px;overflow:hidden;margin-top:6px}
   .hit-demo{display:flex;gap:9px;align-items:center;padding:8px 10px;border-bottom:1px solid var(--line);font-size:.78rem}
   .hit-demo:last-child{border-bottom:0}
   .hit-demo.on{background:var(--raise)}
-  .hit-demo .hc{width:24px;height:34px;border-radius:3px;background:var(--accent);flex:none;opacity:.85}
+  .hit-demo .hc{width:24px;height:34px;border-radius:3px;background:var(--raise);flex:none;opacity:.85}
   .hit-demo b{display:block;color:var(--ink);font-weight:600}
   .hit-demo span span{color:var(--muted);font-size:.72rem}
   .caps-demo{display:flex;gap:7px;margin-top:8px}
   .caps-demo span{flex:1;text-align:center;background:var(--raise);border:1px solid var(--line);
     border-radius:9px;padding:8px 4px;font-size:.72rem;font-weight:600;color:var(--muted)}
   .qdemo{background:var(--surface);border:1px solid var(--line);border-radius:13px;padding:14px}
-  .qp{display:inline-block;font-size:.6rem;font-weight:700;color:var(--accent-tx);
-    background:var(--accent-tint,#2C2510);border-radius:20px;padding:2px 8px;margin-bottom:7px}
+  .qp{display:inline-block;font-size:.6rem;font-weight:700;color:var(--ink);
+    background:var(--mark);color:var(--mark-ink);border-radius:20px;padding:2px 8px;margin-bottom:7px}
   .qt{font-family:var(--serif);font-size:.92rem;line-height:1.45;color:var(--ink)}
   .demo-note{color:var(--faint);font-size:.72rem;margin:10px 0 0}
   .input{background:var(--raise);border:1px solid var(--line);border-radius:10px;padding:11px 13px;
     font-size:.95rem;min-height:42px}
   .input.dim{color:var(--muted)}
-  .caret{display:inline-block;width:2px;height:1.05em;background:var(--accent);vertical-align:-2px;
+  .caret{display:inline-block;width:2px;height:1.05em;background:var(--ink);vertical-align:-2px;
     animation:blink2 1s steps(1) infinite}
   @keyframes blink2{0%,50%{opacity:1}51%,100%{opacity:0}}
   .q{background:var(--raise);border-radius:12px;padding:13px 15px;font-size:.93rem;margin-bottom:12px}
-  .q b{color:var(--accent-tx)}
+  .q b{color:var(--ink)}
   .answer{border-left:3px solid var(--line);padding:4px 0 4px 12px;color:var(--muted);font-size:.92rem;
     margin-bottom:14px;font-style:italic}
   .big-score{font-family:var(--serif);font-size:4.4rem;font-weight:700;color:var(--good);text-align:center;
@@ -337,7 +341,7 @@
     display:flex;align-items:center;justify-content:center}
   .dot::before{content:"";display:block;width:8px;height:8px;border-radius:50%;
     background:var(--line);transition:background .3s,width .3s,border-radius .3s}
-  .dot.on::before{width:20px;border-radius:20px;background:var(--accent)}
+  .dot.on::before{width:20px;border-radius:20px;background:var(--ink)}
   /* ---- App Store idiom ----
      Borrowed on purpose. Not the look of it — the STRUCTURE: icon, name, one-line
      subtitle, install button. It is the single most recognisable "this is a real app you
@@ -354,7 +358,7 @@
   .appbar .meta{flex:1;min-width:0}
   .appbar .nm{font-family:var(--serif);font-weight:600;font-size:1.06rem;line-height:1.2}
   .appbar .st{color:var(--muted);font-size:.8rem;line-height:1.35;margin-top:1px}
-  .appbar .get{flex:none;background:var(--accent);color:var(--accent-ink);border:0;border-radius:20px;
+  .appbar .get{flex:none;background:var(--ink);color:var(--paper);border:0;border-radius:20px;
     font-family:var(--sans);font-weight:700;font-size:.82rem;letter-spacing:.03em;
     padding:8px 18px;min-height:40px;cursor:pointer}
   .appbar .get:active{transform:scale(.96)}
@@ -369,9 +373,9 @@
   .hero-shot .au{color:var(--muted);font-size:.76rem;margin-bottom:12px}
   .hero-shot .sc{font-family:var(--serif);font-size:3.1rem;font-weight:700;color:var(--good);line-height:1}
   .hero-shot .sl{color:var(--muted);font-size:.72rem;margin-bottom:12px}
-  .hero-shot .th{border-left:2px solid var(--accent);padding-left:10px;font-size:.76rem;
+  .hero-shot .th{border-left:2px solid var(--line);padding-left:10px;font-size:.76rem;
     color:var(--ink);line-height:1.45}
-  .hero-shot .th b{display:block;color:var(--accent-tx);font-size:.62rem;margin-bottom:4px}
+  .hero-shot .th b{display:block;color:var(--ink);font-size:.62rem;margin-bottom:4px}
   .hero-shot .thmeta{color:var(--faint);font-size:.72rem;line-height:1.5;margin-top:14px;
     border-top:1px solid var(--line);padding-top:11px}
 
@@ -381,15 +385,15 @@
   .byline img{width:26px;height:26px;border-radius:50%;object-fit:cover;object-position:50% 20%;
     border:1px solid var(--line)}
   .byline u{text-decoration:none;border-bottom:1px solid var(--line)}
-  .byline:hover u{border-color:var(--accent-tx)}
+  .byline:hover u{border-color:var(--ink)}
 
   /* where this is going — his roadmap idea, without the numbers.
      No counter to expose while it reads 4, and no milestone to break later. */
   .road{display:flex;flex-direction:column;gap:20px;margin-top:24px}
   .rd{border-left:2px solid var(--line);padding-left:16px}
-  .rd.on{border-color:var(--accent-tx)}
+  .rd.on{border-color:var(--ink)}
   .rdl{display:block;font-size:.8rem;font-weight:700;margin-bottom:5px}
-  .rdl.now{color:var(--good)} .rdl.next{color:var(--accent-tx)} .rdl.later{color:var(--faint)}
+  .rdl.now{color:var(--good)} .rdl.next{color:var(--ink)} .rdl.later{color:var(--faint)}
   .rd p{margin:0;color:var(--muted);font-size:.95rem}
 
   /* who made this */
@@ -399,7 +403,7 @@
   .maker img,.maker .ph{width:76px;height:76px;border-radius:50%;flex:none;object-fit:cover;object-position:50% 20%;
     border:2px solid var(--line);background:var(--raise);
     display:flex;align-items:center;justify-content:center;font-family:var(--serif);
-    font-size:1.6rem;color:var(--accent-tx)}
+    font-size:1.6rem;color:var(--ink)}
   .maker p{margin:0 0 9px;font-size:.95rem;color:var(--muted)}
   .maker p:last-child{margin-bottom:0}
   .maker b{color:var(--ink)}
@@ -408,7 +412,7 @@
   /* install */
   /* finding a thought again — the demo of the thing the hero now promises */
   .find-demo{position:relative;color:var(--ink)}
-  .find-demo .caret{display:inline-block;width:1px;height:1em;background:var(--accent);
+  .find-demo .caret{display:inline-block;width:1px;height:1em;background:var(--ink);
     margin-left:2px;vertical-align:-2px;animation:blink2 1s steps(1) infinite}
   .fres{margin-top:10px;display:grid;gap:7px}
   .fr{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:8px 10px;
@@ -418,30 +422,30 @@
   /* Explicit, not var(--accent-tint): that variable belongs to the app's stylesheet, not this
      page. Undefined, a <mark> falls back to the browser default — black on bright yellow,
      on a near-black page. */
-  .fr mark{background:var(--mark);color:var(--accent-tx);border-radius:3px;padding:0 2px}
+  .fr mark{background:var(--mark);color:var(--mark-ink);border-radius:3px;padding:0 2px}
   /* steps */
   .steps{display:grid;gap:26px;margin-top:30px;grid-template-columns:1fr}
   @media (min-width:620px){.steps{grid-template-columns:repeat(3,1fr);gap:30px}}
   .step{display:block}
   .step .head{display:flex;align-items:center;gap:11px;padding-bottom:11px;
     border-bottom:1px solid var(--line);margin-bottom:11px}
-  .num{width:34px;height:34px;flex:none;border-radius:50%;background:var(--accent);color:var(--accent-ink);
+  .num{width:34px;height:34px;flex:none;border-radius:50%;background:var(--ink);color:var(--paper);
     display:flex;align-items:center;justify-content:center;font-weight:700;font-family:var(--serif)}
   .step h3{font-size:1.22rem;margin:0}
   .step p{margin:0;color:var(--muted);font-size:.94rem}
   /* honesty */
-  blockquote{margin:0;padding:22px 24px;background:var(--surface);border-left:3px solid var(--accent);
+  blockquote{margin:0;padding:22px 24px;background:var(--surface);border-left:3px solid var(--line);
     border-radius:0 14px 14px 0;font-size:1.05rem}
   blockquote footer{color:var(--faint);font-size:.86rem;margin-top:10px;font-style:normal}
   .lede{font-size:1.1rem;color:var(--muted);margin-top:14px}
   h2{font-size:clamp(1.6rem,5vw,2.1rem)}
-  .kicker{color:var(--accent-tx);font-size:.75rem;letter-spacing:.16em;text-transform:uppercase;font-weight:700;
+  .kicker{color:var(--faint);font-size:.75rem;letter-spacing:.16em;text-transform:uppercase;font-weight:700;
     margin-bottom:10px}
   /* faq */
   details{border-bottom:1px solid var(--line);padding:15px 2px}
   summary{cursor:pointer;font-weight:600;list-style:none}
   summary::-webkit-details-marker{display:none}
-  summary::after{content:"+";float:right;color:var(--accent-tx);font-size:1.3rem;line-height:1}
+  summary::after{content:"+";float:right;color:var(--ink);font-size:1.3rem;line-height:1}
   details[open] summary::after{content:"–"}
   details p{color:var(--muted);margin:10px 0 2px;font-size:.95rem}
   .final{text-align:center;background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:40px 24px}

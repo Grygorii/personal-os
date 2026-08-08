@@ -479,6 +479,39 @@ async function adminPage() {
   // first thing that would make a subscription anything other than wishful.
   const dayOf = (d) => (d ? new Date(d).toISOString().slice(0, 10) : null);
   const cameBack = rows.filter(({ u }) => u.lastSeen && dayOf(u.lastSeen) > dayOf(u.createdAt)).length;
+
+  // ---- THE PIPELINE, and where it breaks ----
+  // The journey is press it -> use it -> keep it, and until now its three steps lived in
+  // three different tables with different time bases, so the one question worth asking —
+  // WHERE do people fall out — could not be read off the page at all.
+  // Seven days, every step on the same basis, and the drop stated between each pair. The
+  // biggest drop is the only thing worth working on next.
+  const since = new Date(Date.now() - 7 * 864e5);
+  const sinceDay = since.toISOString().slice(0, 10);
+  const week = visits.filter((v) => String(v._id).slice(7) >= sinceDay);
+  const sum = (sel) => week.reduce((n, v) => n + sel(v), 0);
+  const shelves = await rawCol('books').find({}, { projection: { userId: 1, 'books.notes.ts': 1 } }).toArray();
+  const keptThisWeek = new Set(
+    shelves.filter((sh) => (sh.books || []).some((b) => (b.notes || []).some((n) => n.ts && new Date(n.ts) >= since)))
+      .map((sh) => sh.userId)
+  ).size;
+  const funnel = [
+    ['Saw the front page', sum((v) => v.landing?.people || 0), 'anyone who loaded readkept.com'],
+    ['Opened the app', sum((v) => v.app?.people || 0), 'pressed the one button'],
+    ['Signed up', people.filter((u) => u.createdAt && new Date(u.createdAt) >= since).length, 'made an account'],
+    ['Kept a thought', keptThisWeek, 'actually used it — the first real signal'],
+    ['Came back another day', rows.filter(({ u }) => u.lastSeen && new Date(u.lastSeen) >= since && dayOf(u.lastSeen) > dayOf(u.createdAt)).length, 'a habit starting'],
+    ['On a home screen', people.filter((u) => u.installedAt && new Date(u.installedAt) >= since).length, 'reached the end of the pipeline'],
+  ];
+  const drops = funnel.map(([, n], i) => (i === 0 || !funnel[i - 1][1] ? null : Math.round((1 - n / funnel[i - 1][1]) * 100)));
+  const worst = drops.reduce((best, d, i) => (d != null && (best < 0 || d > drops[best]) ? i : best), -1);
+  const funnelRows = funnel
+    .map(([label, n, why], i) => `<tr${i === worst ? ' class="leak"' : ''}>
+      <td><b>${i + 1}</b> ${esc(label)}</td>
+      <td class="${n ? 'good' : 'bad'}" style="font-weight:700">${n}</td>
+      <td class="dim">${drops[i] == null ? '' : `−${drops[i]}%`}${i === worst ? ' <span class="tag">biggest drop</span>' : ''}</td>
+      <td class="dim">${esc(why)}</td></tr>`)
+    .join('');
   const joined = (d) => (d ? new Date(d).toISOString().slice(0, 10) : '—');
   const via = (u) => (u.referredBy ? 'share' : String(u._id).startsWith('g:') ? 'google' : 'telegram');
 
@@ -584,6 +617,8 @@ async function adminPage() {
  .dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:7px;vertical-align:middle}
  .tag{background:#2C2510;color:#D9AE4A;font-size:.64rem;padding:2px 6px;border-radius:20px;margin-left:6px}
  .scroll{overflow-x:auto}
+ tr.leak td{background:#2A1A16}
+ .bad{color:#E1685C;font-weight:600}
  .note{color:#6E695C;font-size:.82rem;margin-top:18px}
  a{color:#D9AE4A}
  .invite{display:flex;gap:8px;margin-bottom:4px}
@@ -631,7 +666,15 @@ async function adminPage() {
   <a href="#access" data-tab="access">Access</a>
 </nav>
 <section class="panel" id="overview">
-<div class="cards">
+<h2>The pipeline · last 7 days</h2>
+<p class="dim" style="font-size:.86rem;margin:0 0 10px">Press it, use it, keep it — every step on the
+  same seven days, so the drop between them is a real number. The row marked below is where
+  most people are lost, and it is the only one worth working on next.</p>
+<div class="scroll"><table>
+<tr><th>Step</th><th>People</th><th>Drop</th><th>What it means</th></tr>
+${funnelRows}
+</table></div>
+<div class="cards" style="margin-top:24px">
   <div class="card"><div class="n">${people.length}</div><div class="l">People</div></div>
   <div class="card"><div class="n">${people.filter((u) => u.status === 'active').length}</div><div class="l">Active</div></div>
   <div class="card"><div class="n" style="color:${withBooks ? '#43B571' : '#E1685C'}">${withBooks}</div><div class="l">Added a book</div></div>
@@ -1375,12 +1418,24 @@ export function startServer(port = process.env.PORT || 8080, build = 'dev') {
     // otherwise be lost, or when an action costs real money.
     if (path === '/app' || path === '/signin') {
       countVisit('app', req.headers['user-agent']);
+      // Launched from a home-screen icon: the manifest's start_url carries ?home=1, and that
+      // url is frozen into the icon when it is installed. No script, no cookie, and it cannot
+      // be faked by anything except deliberately typing it.
+      const fromHome = String(req.url || '').includes('home=1');
+      if (fromHome) countVisit('home', req.headers['user-agent']);
       const sid = readSession(parseCookies(req.headers.cookie).kept_session);
       // A signature alone isn't enough — the account must still exist and be allowed.
       // Otherwise a stale cookie loads the app shell and then every API call 401s, which
       // looks like the product is broken rather than "please sign in again".
       const acct = sid ? await rawCol('users').findOne({ _id: sid }) : null;
       const signedIn = !!acct && users.isAllowed(acct);
+      // Reaching step three is a fact about a PERSON, not a day, so it is stamped on the
+      // account the first time they arrive from their own home screen. Written once and
+      // never again, so the date means "when they installed it", not "when they last opened
+      // it". Never allowed to break the page load.
+      if (fromHome && acct && !acct.installedAt) {
+        rawCol('users').updateOne({ _id: acct._id }, { $set: { installedAt: new Date() } }).catch(() => {});
+      }
 
       // Arrived from a shared page (/app?r=<code>). If they're already signed in, credit it
       // now; if not, remember it across the sign-in they're about to do.
@@ -1651,7 +1706,7 @@ export function startServer(port = process.env.PORT || 8080, build = 'dev') {
         // meal. Keeping the thought is the promise, so the promise is what the prompt makes.
         name: 'Kept — your thoughts, handed back later',
         short_name: 'Kept',
-        start_url: '/app',
+        start_url: '/app?home=1',
         display: 'standalone',
         background_color: '#14130F',
         theme_color: '#14130F',
