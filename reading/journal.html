@@ -1030,6 +1030,10 @@ function openBook(id){
       /* Their thought first, the book second, nothing about us. That is what a person is
          willing to post under their own name. */
       text:teaser(flowText(n.text), bk, n.page),
+      /* The whole thought and its source, for the places that can use them properly —
+         Reddit leads with the thought as the title, not with the book. */
+      quote:flowText(n.text),
+      attribution:`— ${bk.title}${bk.author?`, ${bk.author}`:""}${n.page?`, p.${n.page}`:""}`,
       url});
   });
   $("notes-list").querySelectorAll("[data-i]").forEach(bt=>bt.onclick=()=>{
@@ -1297,7 +1301,12 @@ function shareBook(id){
     const text=(first
         ? `“${first.text}”${first.page?` — my note from p.${first.page}`:""}\n\nWhat I kept from "${b.title}"${withScore&&b.exam?`. I scored ${b.exam.score}% on an honest test of it.`:"."}`
         : `I scored ${b.exam.score}% on an honest test of what I actually remember from "${b.title}".`);
-    openShareSheet({title,text,url});
+    /* The book share can carry several thoughts, so Reddit leads with the first one — the
+       part somebody might actually want to read — and falls back to the book if there is
+       nothing but a score. */
+    openShareSheet({title,text,url,
+      quote:first?first.text:"",
+      attribution:`— ${b.title}${b.author?`, ${b.author}`:""}${first&&first.page?`, p.${first.page}`:""}`});
   };
 }
 
@@ -1318,27 +1327,42 @@ function teaser(txt,bk,page){
 — ${bk.title}${bk.author?`, ${bk.author}`:""}${page?`, p.${page}`:""}`;
 }
 
-function openShareSheet({title,text,url}){
+function openShareSheet({title,text,url,quote,attribution}){
   const full=`${text}\n\n${url}`;
   const e=encodeURIComponent;
+  /* Reddit is not a link-sharing site, it is a posting site. A LINK post titled with the book
+     name, from a domain nobody knows, is the one shape that gets ignored — and several book
+     subreddits remove bare links outright. A TEXT post is native: the thought is the title,
+     because the thought is the interesting part, and the quote and link sit in the body where
+     they read as a contribution instead of an advert.
+     Titles cap at 300 characters, and one that runs to the cap reads as a wall even when it
+     fits — so the quote when there is room, the book when there is not. */
+  const q=String(quote||"").trim();
+  const redditTitle=(q && q.length<=260 ? q
+    : q ? q.slice(0,255).replace(/\s+\S*$/,"")+"…"
+    : title).slice(0,300);
+  const redditBody=(q && q!==redditTitle ? `> ${q}\n\n` : "")
+    + (attribution ? `${attribution}\n\n` : "") + url;
   const targets=[
     ["WhatsApp","🟢",`https://wa.me/?text=${e(full)}`],
     ["X","✖️",`https://twitter.com/intent/tweet?text=${e(text)}&url=${e(url)}`],
-    /* share-offsite takes a URL and nothing else — it silently drops any text, so the
-       composer opened empty with a bare link in it and the sharer had to write the post
-       themselves. This one prefills. */
-    ["LinkedIn","in",`https://www.linkedin.com/feed/?shareActive=true&text=${e(full)}`],
-    ["Facebook","f",`https://www.facebook.com/sharer/sharer.php?u=${e(url)}`],
-    ["Reddit","🟠",`https://www.reddit.com/submit?url=${e(url)}&title=${e(title)}`],
+    /* No LinkedIn URL reliably prefills text. share-offsite silently drops it;
+       feed?shareActive=true is undocumented and the app opens the composer then closes it
+       again — both tried on a real phone. So the words go to the clipboard as it opens (see
+       the handler below) and the sheet says to paste. Honest beats clever. */
+    ["LinkedIn","in",`https://www.linkedin.com/sharing/share-offsite/?url=${e(url)}`,"paste"],
+    ["Facebook","f",`https://www.facebook.com/sharer/sharer.php?u=${e(url)}`,"paste"],
+    ["Reddit","🟠",`https://www.reddit.com/submit?title=${e(redditTitle)}&text=${e(redditBody)}`],
     ["Telegram","✈️",`https://t.me/share/url?url=${e(url)}&text=${e(text)}`],
     ["Email","✉️",`mailto:?subject=${e(title)}&body=${e(full)}`],
   ];
-  const { close } = openSheet(`
+  const { bg, close } = openSheet(`
     <div class="sheet-head">Send it to</div>
     <div class="sheet-preview">${esc(text)}<br><span class="sheet-url">${esc(url)}</span></div>
-    ${navigator.share?`<button class="btn sheet-native" id="sh-native">Share…</button>`:""}
+    ${navigator.share?`<button class="btn sheet-native" id="sh-native">Share to any app →</button>
+    <p class="sheet-note" style="margin:8px 0 12px;text-align:center">Carries the words with it. The list below is for a nudge in one place.</p>`:""}
     <div class="sheet-grid">
-      ${targets.map(([n,i,u])=>`<a class="sh" href="${u}" target="_blank" rel="noopener"><span class="sh-i">${i}</span>${n}</a>`).join("")}
+      ${targets.map(([n,i,u,paste],k)=>`<a class="sh" href="${u}" target="_blank" rel="noopener"${paste?` data-paste="${k}"`:""}><span class="sh-i">${i}</span>${n}</a>`).join("")}
       <button class="sh" id="sh-copy"><span class="sh-i">🔗</span>Copy link</button>
     </div>
     <button class="btn ghost" id="sh-close">Close</button>`, "Share");
@@ -1347,6 +1371,12 @@ function openShareSheet({title,text,url}){
     try{ await navigator.clipboard.writeText(full); toast("Link copied"); }
     catch(e){ toast("Long-press the link to copy"); }
   };
+  /* The platforms that cannot take text get it on the clipboard instead, put there by the
+     same tap that opens them — so it is one paste away rather than retyped. */
+  bg.querySelectorAll("[data-paste]").forEach(a=>a.addEventListener("click",()=>{
+    try{ navigator.clipboard.writeText(text); toast("Words copied — paste them into the post"); }
+    catch(e){}
+  }));
   const nat=$("sh-native");
   if(nat) nat.onclick=async()=>{
     try{ await navigator.share({title,text,url}); close(); }catch(e){}
