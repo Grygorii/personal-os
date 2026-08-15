@@ -949,28 +949,39 @@ function sharePage(s) {
      search engines keeping it, not messaging apps unfurling it. -->
 <meta name="robots" content="noindex, nofollow">
 <style>
- :root{color-scheme:dark}
- *{box-sizing:border-box} body{margin:0;background:#14130F;color:#ECE8DF;
+ /* The page a stranger meets. It was dark with gold — the palette the whole product moved
+    off — so a thought shared from a cream app opened as a black card. Same rule as everywhere
+    else now: cream page, white card, black text, and yellow only where a highlighter goes. */
+ :root{color-scheme:light dark;
+   --paper:#FCFAF5;--surface:#FFFFFF;--ink:#191713;--muted:#55514A;--faint:#6C6759;
+   --line:#E6E0D3;--mark:#FFF176;--mark-ink:#191713;--shadow:rgba(70,58,34,.10)}
+ @media (prefers-color-scheme:dark){:root{
+   --paper:#14130F;--surface:#1D1B16;--ink:#ECE8DF;--muted:#9C9686;--faint:#8A8478;
+   --line:#2C2A22;--mark:#E8CB48;--mark-ink:#14130F;--shadow:rgba(0,0,0,.45)}}
+ *{box-sizing:border-box} body{margin:0;background:var(--paper);color:var(--ink);
    font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;line-height:1.6;
    display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px}
- .card{max-width:560px;width:100%;background:#1D1B16;border:1px solid #2C2A22;border-radius:20px;padding:32px 28px}
- .kicker{color:#D9AE4A;font-size:.76rem;letter-spacing:.16em;text-transform:uppercase;font-weight:600}
+ .card{max-width:560px;width:100%;background:var(--surface);border:1px solid var(--line);
+   border-radius:20px;padding:32px 28px;box-shadow:0 18px 50px var(--shadow)}
+ .kicker{color:var(--faint);font-size:.76rem;letter-spacing:.16em;text-transform:uppercase;font-weight:600}
  h1{font-family:Georgia,serif;font-size:1.75rem;margin:.5rem 0 .2rem;line-height:1.22}
- .author{color:#9C9686;margin:0 0 4px}
+ .author{color:var(--muted);margin:0 0 4px}
  .trail{margin:26px 0 8px;display:flex;flex-direction:column;gap:20px}
- .t{border-left:3px solid #D9AE4A;padding-left:15px}
- .t .p{display:inline-block;font-size:.7rem;font-weight:700;letter-spacing:.04em;color:#D9AE4A;
-   background:#2C2510;border-radius:20px;padding:3px 9px;margin-bottom:7px}
- .t .q{font-family:Georgia,serif;font-size:1.08rem;line-height:1.55;color:#ECE8DF;white-space:pre-wrap}
- .cred{display:flex;align-items:center;gap:12px;background:#26241D;border-radius:13px;
-   padding:13px 16px;margin-top:26px}
- .cred .n{font-family:Georgia,serif;font-size:1.9rem;font-weight:700;color:#D9AE4A;line-height:1}
- .cred .l{color:#9C9686;font-size:.86rem;line-height:1.35}
- .verdict{color:#C9C3B6;font-size:.93rem;margin-top:12px;font-style:italic}
- .pitch{margin:28px 0 14px;font-size:1.02rem;text-align:center}
- a.cta{display:block;background:#D9AE4A;color:#14130F;text-decoration:none;font-weight:700;
+ .t{border-left:3px solid var(--line);padding-left:15px}
+ /* The page number, marked the way you would mark it in the book itself. */
+ .t .p{display:inline-block;font-size:.7rem;font-weight:700;letter-spacing:.04em;
+   color:var(--mark-ink);background:var(--mark);border-radius:20px;padding:3px 9px;margin-bottom:7px}
+ .t .q{font-family:Georgia,serif;font-size:1.14rem;line-height:1.6;color:var(--ink);white-space:pre-wrap}
+ .cred{display:flex;align-items:center;gap:12px;background:var(--paper);border:1px solid var(--line);
+   border-radius:13px;padding:13px 16px;margin-top:26px}
+ .cred .n{font-family:Georgia,serif;font-size:1.9rem;font-weight:700;color:var(--ink);line-height:1}
+ .cred .l{color:var(--muted);font-size:.86rem;line-height:1.35}
+ .verdict{color:var(--muted);font-size:.93rem;margin-top:12px;font-style:italic}
+ .pitch{margin:28px 0 14px;font-size:1.02rem;text-align:center;color:var(--muted)}
+ .pitch b{color:var(--ink)}
+ a.cta{display:block;background:var(--ink);color:var(--paper);text-decoration:none;font-weight:600;
    padding:15px;border-radius:12px;font-size:1.05rem;text-align:center}
- .foot{color:#8A8478;font-size:.78rem;margin-top:16px;text-align:center}
+ .foot{color:var(--faint);font-size:.78rem;margin-top:16px;text-align:center}
 </style></head><body>
 <div class="card">
   <div class="kicker">${thoughts.length ? `What ${esc(who)} kept` : 'Honest comprehension test'}</div>
@@ -993,10 +1004,10 @@ function sharePage(s) {
     : ''}
 
   <p class="pitch">${thoughts.length
-    ? 'Read it too?<br><b>See how much of it you kept.</b>'
-    : 'You forget most of what you read.<br><b>Find out how much you kept.</b>'}</p>
-  <a class="cta" href="${cta}">📕 ${thoughts.length ? 'Add this book and test me' : 'Test me on a book'} →</a>
-  <div class="foot">Read it. Prove you kept it.</div>
+    ? `This is what ${esc(who)} kept while reading.<br><b>Keep your own the same way — free.</b>`
+    : 'Keep what you take from the books you read.<br><b>Free, and it starts with one thought.</b>'}</p>
+  <a class="cta" href="${cta}">Start your own library →</a>
+  <div class="foot">For people who use what they read — not just finish it.</div>
 </div></body></html>`;
 }
 

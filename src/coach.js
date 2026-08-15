@@ -263,7 +263,7 @@ Available actions (include only what he clearly supports — never invent data):
 "actions" can be empty.`;
 }
 
-function parseResponse(raw) {
+export function parseResponse(raw) {
   const clean = raw
     .trim()
     .replace(/^```json\s*/i, '')
@@ -284,7 +284,42 @@ function parseResponse(raw) {
     const m = clean.match(/\{[\s\S]*\}/);
     if (m) o = tryParse(m[0]);
   }
-  if (o) return { reply: o.reply || '…', actions: Array.isArray(o.actions) ? o.actions : [] };
+  if (o) {
+    const acts = Array.isArray(o.actions) ? o.actions : [];
+    const said = String(o.reply || '').trim();
+    // Valid JSON that carries actions but says nothing used to leave a lone "…" on screen:
+    // it did something for you and then stared at you. Let it say so.
+    return {
+      reply: said || (acts.length ? 'Got it.' : 'That got tangled on my side — say it again?'),
+      actions: acts,
+    };
+  }
+
+  // Everything below is what a person sees when the JSON did not parse, and it used to be
+  // `raw` — which is how a mentor came to say, out loud, in a chat:
+  //     { "reply": "My apologies, Гриша. It seems there was a glitch on my end and
+  // The fallback was written for ONE failure (the model answers in prose instead of JSON) and
+  // was catastrophic for the other (the model ran out of room mid-object, so the JSON is
+  // valid right up to the point where it stops).
+  //
+  // A cut-off object still contains the sentence. Take the sentence.
+  const cut = clean.match(/"reply"\s*:\s*"((?:[^"\\]|\\.)*)/);
+  if (cut) {
+    let text = cut[1];
+    try {
+      text = JSON.parse(`"${text.replace(/\\?$/, '')}"`);   // let JSON undo its own escapes
+    } catch {
+      text = text.replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+    }
+    text = text.trim();
+    // It stopped mid-thought, so say so rather than pretending that was the whole answer.
+    return { reply: text ? `${text}…` : '…', actions: [] };
+  }
+  // Genuinely not JSON — the model wrote prose, which is fine and readable. But a reply that
+  // merely STARTS with a brace is machinery, and nobody should ever be shown machinery.
+  if (clean.startsWith('{') || clean.startsWith('[')) {
+    return { reply: 'That got tangled on my side — say it again?', actions: [] };
+  }
   return { reply: raw, actions: [] };
 }
 
@@ -332,7 +367,10 @@ async function think(finalUserContent, image = null) {
       : finalUserContent,
   });
 
-  const raw = await chat({ system: systemPrompt, messages, maxTokens: 600 });
+  // 600 was the whole reason the JSON kept arriving half-written: the mentor is asked to
+  // think, and then given barely enough room to say hello and open a brace. The reply and any
+  // actions have to fit inside this together.
+  const raw = await chat({ system: systemPrompt, messages, maxTokens: 1400 });
   const parsed = parseResponse(raw);
   console.log(
     `[coach] in="${finalUserContent.slice(0, 70).replace(/\n/g, ' ')}" ` +

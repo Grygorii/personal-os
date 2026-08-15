@@ -979,11 +979,22 @@ function openBook(id){
       const zoomToSelection=()=>{
         if(!rect) return;
         const bw=box.clientWidth, bh=box.clientHeight;
-        if(!bw||!bh) return;
+        const sw=stage.offsetWidth, sh=stage.offsetHeight;
+        if(!bw||!bh||!sw||!sh) return;
         const z=Math.max(1,Math.min(1.9, Math.min(bw/rect.w, bh/rect.h)*0.82));
-        const cx=rect.x+rect.w/2, cy=rect.y+rect.h/2;
+        let tx=bw/2-(rect.x+rect.w/2)*z;
+        let ty=bh/2-(rect.y+rect.h/2)*z;
+        /* Centring on the selection is right in the middle of a photo and wrong at its edges:
+           it slides the picture out of the frame, so the part you were framing is the part
+           that gets cut. Pan is clamped so the photo always covers the box — and if the
+           scaled photo is smaller than the box, it sits in the middle instead. */
+        const pin=(t,boxLen,scaledLen)=>scaledLen<=boxLen
+          ? (boxLen-scaledLen)/2
+          : Math.min(0, Math.max(boxLen-scaledLen, t));
+        tx=pin(tx,bw,sw*z);
+        ty=pin(ty,bh,sh*z);
         stage.style.transformOrigin="0 0";
-        stage.style.transform=`translate(${bw/2-cx*z}px, ${bh/2-cy*z}px) scale(${z})`;
+        stage.style.transform=`translate(${tx}px, ${ty}px) scale(${z})`;
       };
       const end=()=>{ if(drag){ drag=null; zoomToSelection(); } };
       box.addEventListener("pointerup",end);

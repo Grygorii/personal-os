@@ -11,6 +11,7 @@ import assert from 'node:assert/strict';
 import { safeName } from '../src/ctx.js';
 import { isAllowed, trustLevel, can, visibleLogTypes, MODULES } from '../src/users.js';
 import { reflow, looksWrapped } from '../src/text.js';
+import { parseResponse } from '../src/coach.js';
 
 test('safeName: a name is a name, not an instruction', () => {
   // A real user set their display name to this, and personName() fed it to the mentor
@@ -146,6 +147,44 @@ test('modules: a subscription is the shape the gate already expects', () => {
   const lapsed = { ...reader, subscription: { status: 'active', capabilities: ['body'], until: '2020-01-01' } };
   assert.equal(can(lapsed, 'body'), false, 'an expired subscription grants nothing');
   assert.ok(visibleLogTypes(subscriber).includes('move'), "and the mentor's context follows the sale");
+});
+
+// A mentor said this out loud, in a chat, to the person who built it:
+//     { "reply": "My apologies, Гриша. It seems there was a glitch on my end and
+// The reply had run out of room mid-object, the JSON would not parse, and the fallback handed
+// the raw model output straight to the screen.
+test('the mentor never shows its own machinery', () => {
+  const cutOff = '{\n  "reply": "My apologies, Гриша. It seems there was a glitch on my end and';
+  const r = parseResponse(cutOff);
+  assert.ok(!r.reply.includes('"reply"'), 'the key name is not read out');
+  assert.ok(!r.reply.startsWith('{'), 'and neither is the brace');
+  assert.match(r.reply, /^My apologies, Гриша/, 'the sentence it managed to write survives');
+  assert.ok(r.reply.endsWith('…'), 'and says it stopped early');
+});
+
+test('a whole reply is unharmed, and its actions survive', () => {
+  const good = JSON.stringify({ reply: 'Good catch — which habit would you attach it to?',
+    actions: [{ type: 'log_study', note: 'x' }] });
+  const r = parseResponse(good);
+  assert.equal(r.reply, 'Good catch — which habit would you attach it to?');
+  assert.equal(r.actions.length, 1);
+  // fenced json is still json
+  assert.equal(parseResponse('```json\n' + good + '\n```').actions.length, 1);
+});
+
+test('escapes inside a truncated reply are undone, not printed', () => {
+  // the model writes \" and \n as escapes; a reader must see a quote and a line break
+  const r = parseResponse('{"reply": "She said \\"no\\" and then\\nthe line broke');
+  assert.ok(r.reply.includes('"no"'), `quotes come back as quotes: ${r.reply}`);
+  assert.ok(!r.reply.includes('\\n'), 'and a backslash-n is not printed literally');
+});
+
+test('machinery with nothing salvageable is not shown either', () => {
+  const r = parseResponse('{"actions": [{"type":"log_water","value":0.5}]}');
+  assert.ok(!r.reply.includes('{'), `no braces on screen: ${r.reply}`);
+  assert.ok(r.reply.length > 5, 'and something human is said instead');
+  // prose that was never JSON is perfectly fine to show
+  assert.equal(parseResponse('Just a normal sentence.').reply, 'Just a normal sentence.');
 });
 
 test('isAllowed: signing in on a public website is the acceptance', () => {
