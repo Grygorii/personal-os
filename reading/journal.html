@@ -77,7 +77,8 @@
     background:var(--raise);border:1px solid var(--line);border-radius:12px;padding:13px 15px;
     min-height:54px;cursor:pointer;font-family:var(--sans);color:var(--ink)}
   .mi:active{background:var(--accent-tint);border-color:var(--accent)}
-  .mi-i{flex:none;width:26px;text-align:center;font-size:1.1rem;color:var(--accent)}
+  .mi-i{flex:none;width:26px;display:flex;align-items:center;justify-content:center;color:var(--ink)}
+  .mi-i svg{width:20px;height:20px;display:block}
   .mi-t{flex:1;min-width:0;font-size:.96rem;font-weight:600;line-height:1.3}
   .mi-t span{display:block;font-weight:400;font-size:.8rem;color:var(--muted);margin-top:1px}
   .iconbtn{background:transparent;border:1px solid var(--line);color:var(--muted);border-radius:11px;
@@ -1578,16 +1579,38 @@ async function openContact(){
   };
 }
 
+/* Drawings, not characters. Two of the glyphs this menu used — U+2B33 for export and U+23FB
+   for sign out — simply do not exist in the Android system font, so they arrived as empty
+   boxes, and the rest were geometric characters at four different weights. A character is a
+   font's opinion about what you meant; a path is the thing itself. One stroke width, one
+   size, renders on anything. */
+const SVG=(d)=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+const ICON={
+  signin:  SVG('<path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="M10 17l5-5-5-5"/><path d="M15 12H3"/>'),
+  signout: SVG('<path d="M9 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/>'),
+  theme:   SVG('<circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor" stroke="none"/>'),
+  export:  SVG('<path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 20h16"/>'),
+  message: SVG('<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3.5 7l8.5 6 8.5-6"/>'),
+  dashboard:SVG('<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>'),
+  deck:    SVG('<rect x="3" y="7" width="14" height="14" rx="2"/><path d="M7 3h12a2 2 0 0 1 2 2v12"/>'),
+  body:    SVG('<circle cx="12" cy="5" r="2.4"/><path d="M12 8v7"/><path d="M8 10h8"/><path d="M12 15l-3 6"/><path d="M12 15l3 6"/>'),
+  routine: SVG('<path d="M4 7l2 2 3-3"/><path d="M4 14l2 2 3-3"/><path d="M12 8h8"/><path d="M12 15h8"/>'),
+  privacy: SVG('<path d="M12 3l8 3v6c0 4.5-3.2 7.9-8 9-4.8-1.1-8-4.5-8-9V6z"/>'),
+  admin:   SVG('<path d="M4 7h16"/><path d="M4 17h16"/><circle cx="9" cy="7" r="2.3"/><circle cx="15" cy="17" r="2.3"/>'),
+  dot:     SVG('<circle cx="12" cy="12" r="3"/>'),
+};
+
 $("menu-btn").onclick=()=>{
   const items=[];
-  if(GUEST) items.push(['⭑','Sign in','Keep your books on every device','/signin']);
-  items.push(['◐','Light or dark','Switch how it looks',null,()=>{ flipTheme(); }]);
-  if(!GUEST) items.push(['⭳','Export everything','Your books, thoughts and results, as a file','/api/export']);
+  if(GUEST) items.push(['signin','Sign in','Keep your books on every device','/signin']);
+  items.push(['theme','Light or dark','Switch how it looks',null,()=>{ flipTheme(); }]);
+  if(!GUEST) items.push(['export','Export everything','Your books, thoughts and results, as a file','/api/export']);
   /* Not "Support", not "Feedback" — a person. And it is above the legal line on purpose:
      the message worth having is the one from somebody about to give up, and they are not
      going to go looking for it. Needs no account, because the most useful sentence anyone
      can send is "I couldn't sign in". */
-  items.push(['✉','Message Grygorii', mailWaiting?'A reply is waiting':'Something broken, missing, or just an idea',null,()=>{ openContact(); }]);
+  items.push(['message','Message Grygorii', mailWaiting?'A reply is waiting':'Something broken, missing, or just an idea',null,()=>{ openContact(); }]);
   /* The rest of the system, for whoever is entitled to it. Driven by ME.can, which the
      server built from users.can() — so this list is not "is this Гриша", it is "what may
      this person open". When one of these becomes a subscription the entitlement changes on
@@ -1596,19 +1619,19 @@ $("menu-btn").onclick=()=>{
      XP, ranks or quests, which is the whole reason the book product hid them in the first
      place. Somebody without the capability is not sent these at all. */
   const CAN=Array.isArray(ME.can)?ME.can:[];
-  if(CAN.includes('system')) items.push(['◇','Dashboard','Where you are across everything','/dashboard']);
-  if(CAN.includes('english')) items.push(['⌗','Study deck','The words you asked to keep','/deck']);
-  if(CAN.includes('body')) items.push(['◍','Body map','What hurts, and since when','/body']);
-  if(CAN.includes('routine')) items.push(['◈','Routine','Today, and the three that matter','/routine']);
-  items.push(['⚖','What we store','The short, honest version','/privacy']);
-  if(ME.owner) items.push(['⚙','Admin','Who joined and what they did','/admin']);
-  if(!GUEST) items.push(['⏻','Sign out','','/auth/logout']);
+  if(CAN.includes('system')) items.push(['dashboard','Dashboard','Where you are across everything','/dashboard']);
+  if(CAN.includes('english')) items.push(['deck','Study deck','The words you asked to keep','/deck']);
+  if(CAN.includes('body')) items.push(['body','Body map','What hurts, and since when','/body']);
+  if(CAN.includes('routine')) items.push(['routine','Routine','Today, and the three that matter','/routine']);
+  items.push(['privacy','What we store','The short, honest version','/privacy']);
+  if(ME.owner) items.push(['admin','Admin','Who joined and what they did','/admin']);
+  if(!GUEST) items.push(['signout','Sign out','','/auth/logout']);
 
   const { close } = openSheet(
     `<div class="sheet-head">Kept</div>
      <div class="menu">${items.map(([icon,label,note,href],i)=>
        `<${href?'a':'button'} class="mi" ${href?`href="${href}"`:'type="button"'} data-i="${i}">
-          <span class="mi-i">${icon}</span>
+          <span class="mi-i">${ICON[icon]||ICON.dot}</span>
           <span class="mi-t">${esc(label)}${note?`<span>${esc(note)}</span>`:''}</span>
         </${href?'a':'button'}>`).join('')}</div>
      <button class="btn ghost" id="menu-x" style="margin-top:12px">Close</button>`,
