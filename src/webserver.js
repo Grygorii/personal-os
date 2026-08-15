@@ -111,19 +111,60 @@ const ASSETS = {
 // per day per page. No cookie, no identifier, no path, nothing about any person; you cannot
 // reconstruct a visitor from a counter. Link-preview scrapers are counted separately, so
 // "LinkedIn fetched the page but no humans followed" is visible as itself.
-const UA_BOT = /bot|crawl|spider|slurp|preview|facebookexternalhit|linkedinbot|whatsapp|telegram|slackbot|discord|embed|curl|wget|python-requests|headless/i;
+const UA_BOT = /bot|crawl|spider|slurp|preview|facebookexternalhit|linkedinbot|whatsapp|telegram|slackbot|discord|embed|headless|scrapy|uptime|monitor|pingdom|semrush|ahrefs|yandex|bingpreview/i;
+// Scripts, not people. Every real browser sends a User-Agent — a request with NONE is a
+// program, and node's own fetch sends none at all, which is how this project's own smoke
+// test came to be counted as two visitors every time it ran. Against 122 front-page visits
+// in a day, a dozen deploy checks is a real fraction of the number being read as an audience.
+const UA_TOOL = /^$|curl|wget|python|node|undici|axios|okhttp|go-http|java\/|libwww|postman|insomnia|httpie|got\/|superagent|smoketest/i;
 // Tapping a link inside LinkedIn, Facebook or Instagram opens their own embedded browser,
 // and Google refuses to run sign-in in one. Counted separately because it is the difference
 // between "nobody wanted to sign in" and "nobody was allowed to" — two opposite problems.
 const UA_INAPP = /LinkedInApp|FBAN|FBAV|FB_IAB|Instagram|Snapchat|TikTok|Line\/|MicroMessenger|Twitter/i;
 
-function countVisit(page, ua) {
+// Resolved once and kept, so the owner's own browsing can be told apart from an audience
+// without a database read on every page load.
+let OWNER_ID = null;
+async function ownerId() {
+  if (OWNER_ID !== null) return OWNER_ID;
+  try {
+    const o = await rawCol('users').findOne({ role: 'owner' }, { projection: { _id: 1 } });
+    OWNER_ID = o?._id || '';
+  } catch { OWNER_ID = ''; }
+  return OWNER_ID;
+}
+
+/**
+ * Who turned up, sorted into buckets that are kept forever and never merged.
+ *
+ * Nothing is dropped — a visit that is not a stranger still happened, and throwing it away
+ * would make the number unauditable. It is filed instead:
+ *   people  a stranger, in a real browser        <- the only number that means anything
+ *   owner   Гриша, checking his own work         <- was inflating "people" every time
+ *   tools   a script: smoke tests, curl, no UA   <- was inflating it a dozen times a day
+ *   inapp   inside LinkedIn/Facebook's browser   <- could not sign in even if they wanted
+ *   bots    crawlers and link-preview scrapers   <- proves a link was shared, not clicked
+ */
+function countVisit(page, req) {
   const day = new Date().toISOString().slice(0, 10);
-  const s = String(ua || '');
-  const kind = UA_BOT.test(s) ? 'bots' : UA_INAPP.test(s) ? 'inapp' : 'people';
-  rawCol('meta')
-    .updateOne({ _id: `visits:${day}` }, { $inc: { [`${page}.${kind}`]: 1 } }, { upsert: true })
-    .catch(() => {}); // never let counting slow or break a page load
+  const s = String(req?.headers?.['user-agent'] || '');
+  const bucket = () => {
+    if (UA_BOT.test(s)) return 'bots';
+    if (UA_TOOL.test(s)) return 'tools';
+    if (UA_INAPP.test(s)) return 'inapp';
+    return 'people';
+  };
+  const bump = (kind) =>
+    rawCol('meta')
+      .updateOne({ _id: `visits:${day}` }, { $inc: { [`${page}.${kind}`]: 1 } }, { upsert: true })
+      .catch(() => {}); // never let counting slow or break a page load
+
+  const kind = bucket();
+  if (kind !== 'people') return bump(kind);
+  // Only a would-be stranger costs a session check, and it is an HMAC verify, not a query.
+  const sid = readSession(parseCookies(req?.headers?.cookie).kept_session);
+  if (!sid) return bump('people');
+  return ownerId().then((id) => bump(sid === id ? 'owner' : 'people'));
 }
 
 // Verify Telegram Mini App initData (https://core.telegram.org/bots/webapps#validating-data).
@@ -449,7 +490,7 @@ async function adminPage() {
     rawCol('shares').find().sort({ createdAt: -1 }).limit(20).toArray(),
     dbStats().catch(() => null),
     users.listInvites(),
-    rawCol('meta').find({ _id: { $regex: '^visits:' } }).sort({ _id: -1 }).limit(7).toArray(),
+    rawCol('meta').find({ _id: { $regex: '^visits:' } }).sort({ _id: -1 }).limit(90).toArray(),
     contact.allThreads().catch(() => []),
   ]);
   const waiting = threads.reduce((n, t) => n + (t.unreadOwner ? 1 : 0), 0);
@@ -497,7 +538,7 @@ async function adminPage() {
       .map((sh) => sh.userId)
   ).size;
   const funnel = [
-    ['Saw the front page', sum((v) => v.landing?.people || 0), 'anyone who loaded readkept.com'],
+    ['Saw the front page', sum((v) => v.landing?.people || 0), 'strangers only — you and scripts excluded'],
     ['Opened the app', sum((v) => v.app?.people || 0), 'pressed the one button'],
     ['Signed up', people.filter((u) => u.createdAt && new Date(u.createdAt) >= since).length, 'made an account'],
     ['Kept a thought', keptThisWeek, 'actually used it — the first real signal'],
@@ -744,24 +785,37 @@ ${config.inviteOnly
 
 <section class="panel" id="reach">
 <h2>Who turned up</h2>
-<p class="dim" style="font-size:.86rem;margin:0 0 10px">
-  Everything above counts people who <b>signed in</b>. This counts everyone who loaded a page,
-  so a quiet week can be told apart from a week where people arrived and left at the sign-in
-  screen. One number per day — no cookie, no identifier, nothing about any person.
-  <b>Link previews</b> are the scrapers LinkedIn, WhatsApp and the rest send when your link is
-  posted: they prove the link was shared, not that anyone clicked it.
+<p class="dim" style="font-size:.86rem;margin:0 0 12px">
+  Everyone who loaded a page, sorted and kept — nothing is ever thrown away, because a number
+  you cannot audit is a number you cannot trust. <b>People</b> is the only column that means
+  an audience: strangers in a real browser, with <b>you</b> and <b>tools</b> taken out of it.
+  One count per day, no cookie, no identifier, nothing about any person.
 </p>
 <div class="scroll"><table>
-<tr><th>Day</th><th>Front page</th><th>Opened the app</th><th>Signed up</th><th>Couldn't — social app</th><th>Link previews</th></tr>
+<tr><th>Day</th><th>People · front</th><th>People · app</th><th>Signed up</th>
+  <th>You</th><th>Tools</th><th>Social app</th><th>Previews</th></tr>
 ${visits.length
-  ? visits.map((v) => `<tr><td>${esc(String(v._id).slice(7))}</td>
-      <td class="${v.landing?.people ? 'good' : 'dim'}">${v.landing?.people || 0}</td>
-      <td class="${v.app?.people ? 'good' : 'dim'}">${v.app?.people || 0}</td>
-      <td class="${signupsOn[String(v._id).slice(7)] ? 'good' : 'bad'}">${signupsOn[String(v._id).slice(7)] || 0}</td>
-      <td class="${(v.landing?.inapp || 0) + (v.app?.inapp || 0) ? 'bad' : 'dim'}">${(v.landing?.inapp || 0) + (v.app?.inapp || 0)}</td>
-      <td class="dim">${(v.landing?.bots || 0) + (v.app?.bots || 0)}</td></tr>`).join('')
-  : '<tr><td colspan="6" class="dim">Counting starts from this deploy — nothing recorded before it.</td></tr>'}
+  ? visits.slice(0, 30).map((v) => {
+      const d = String(v._id).slice(7);
+      const sum = (k) => (v.landing?.[k] || 0) + (v.app?.[k] || 0);
+      return `<tr><td>${esc(d)}</td>
+      <td class="${v.landing?.people ? 'good' : 'dim'}" style="font-weight:700">${v.landing?.people || 0}</td>
+      <td class="${v.app?.people ? 'good' : 'dim'}" style="font-weight:700">${v.app?.people || 0}</td>
+      <td class="${signupsOn[d] ? 'good' : 'bad'}">${signupsOn[d] || 0}</td>
+      <td class="dim">${sum('owner')}</td>
+      <td class="dim">${sum('tools')}</td>
+      <td class="${sum('inapp') ? 'bad' : 'dim'}">${sum('inapp')}</td>
+      <td class="dim">${sum('bots')}</td></tr>`;
+    }).join('')
+  : '<tr><td colspan="8" class="dim">Counting starts from this deploy — nothing recorded before it.</td></tr>'}
 </table></div>
+<p class="note" style="margin-bottom:22px">
+  <b>You</b> and <b>Tools</b> were counted as people until today. Every deploy check this
+  project runs hit the front page and the app with no user-agent at all, and a request with
+  none was being read as a visitor — so a dozen checks a day became a dozen phantom readers.
+  Rows before today still carry that: treat them as an upper bound, not a count.
+</p>
+${visits.length > 30 ? `<p class="dim" style="font-size:.82rem">Showing 30 of ${visits.length} days kept.</p>` : ''}
 <p class="note">“Kept a thought” is the number that matters now — a book with nothing written against it is somebody who tried and got nothing back.</p>
 </section>
 </div>
@@ -1477,12 +1531,12 @@ export function startServer(port = process.env.PORT || 8080, build = 'dev') {
     // account is asked for at the moment it starts to mean something — when the work would
     // otherwise be lost, or when an action costs real money.
     if (path === '/app' || path === '/signin') {
-      countVisit('app', req.headers['user-agent']);
+      countVisit('app', req);
       // Launched from a home-screen icon: the manifest's start_url carries ?home=1, and that
       // url is frozen into the icon when it is installed. No script, no cookie, and it cannot
       // be faked by anything except deliberately typing it.
       const fromHome = String(req.url || '').includes('home=1');
-      if (fromHome) countVisit('home', req.headers['user-agent']);
+      if (fromHome) countVisit('home', req);
       const sid = readSession(parseCookies(req.headers.cookie).kept_session);
       // A signature alone isn't enough — the account must still exist and be allowed.
       // Otherwise a stale cookie loads the app shell and then every API call 401s, which
@@ -1900,7 +1954,7 @@ self.addEventListener('notificationclick',e=>{
       // The landing page's call-to-action goes to /app, never out to Telegram: a stranger
       // clicking "start" should land in the product, not in a chat client they may not have.
       if (route.public) fragment = fragment.replaceAll('APP_URL', config.appUrl);
-      if (path === '/') countVisit('landing', req.headers['user-agent']);
+      if (path === '/') countVisit('landing', req);
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
       res.end(wrap(fragment, route.homeBar));
     } catch (err) {

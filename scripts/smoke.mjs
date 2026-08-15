@@ -23,8 +23,16 @@ const ok = (cond, what, detail = '') => {
   console.log(`${cond ? '  ok  ' : ' FAIL '} ${what}${detail && !cond ? `  — ${detail}` : ''}`);
 };
 
+// Say who we are on every request. Node's fetch sends no User-Agent at all, and a request
+// with none used to be filed as a person — so every run of this file added two visitors to
+// the day's count, and a dozen deploy checks became a dozen phantom readers in the admin.
+const UA = 'KeptSmokeTest/1 (+https://readkept.com)';
+
 async function grab(path, opts = {}) {
-  const res = await fetch(BASE + path, { redirect: 'manual', headers: opts.headers || {} });
+  const res = await fetch(BASE + path, {
+    redirect: 'manual',
+    headers: { 'User-Agent': UA, ...(opts.headers || {}) },
+  });
   return { status: res.status, loc: res.headers.get('location'), body: await res.text(), res };
 }
 
