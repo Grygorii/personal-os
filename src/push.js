@@ -113,6 +113,24 @@ async function pickThought(userId) {
 const trim = (s, n) => (s.length > n ? `${s.slice(0, n).replace(/\s+\S*$/, '')}…` : s);
 
 /**
+ * Every kind of notification this app can send, in one list. The switches on the settings
+ * page are built from this, the scheduler reads the same names, and a kind that is not here
+ * cannot be sent — so a switch can never exist for something that never arrives, and a
+ * notification can never arrive with no switch to stop it.
+ */
+export const KINDS = [
+  { id: 'daily', label: 'A thought a day',
+    note: 'One line you kept, handed back each morning.', when: '0 9 * * *' },
+  { id: 'quiz', label: 'Which book was this?',
+    note: 'One of your own thoughts, and you name the book it came from.', when: '0 19 * * 2,4,6' },
+  { id: 'idle', label: 'A book gone quiet',
+    note: "When a book you started hasn't had a thought in a fortnight.", when: '0 11 * * 0' },
+];
+
+/** Default ON. Off only when they have actually said so. */
+export const wants = (user, kind) => user?.notify?.[kind] !== false;
+
+/**
  * The daily round. Runs per person in their own timezone via the agent runner, so nobody is
  * woken at four in the morning by somebody else's schedule.
  */
@@ -120,7 +138,7 @@ export async function dailyThought(user) {
   if (!user?._id) return;
   // Default ON, and off the moment they say so. The check is here rather than at send time
   // so a person who turned it off costs nothing to skip.
-  if (user.notify?.daily === false) return;
+  if (!wants(user, 'daily')) return;
   const t = await runAs(user, () => pickThought(user._id));
   if (!t) return;                       // nothing kept yet: say nothing
   await sendTo(user._id, {
@@ -137,4 +155,44 @@ export async function sendTest(user) {
   return sendTo(user._id, t
     ? { title: t.title ? `From ${trim(t.title, 40)}` : 'Something you kept', body: trim(t.text, 160), url: '/app', tag: 'daily-thought' }
     : { title: 'Kept', body: 'This is what a daily thought will look like. Keep one and it will be yours.', url: '/app', tag: 'daily-thought' });
+}
+
+/** Their own words, and the book withheld. A game rather than a nag. */
+export async function quizNudge(user) {
+  if (!user?._id || !wants(user, 'quiz')) return;
+  const t = await runAs(user, () => pickThought(user._id));
+  if (!t) return;
+  await sendTo(user._id, {
+    title: 'Which book was this?',
+    body: trim(t.text, 150),
+    url: '/app',
+    tag: 'quiz-nudge',
+  });
+}
+
+/**
+ * A book that was started and then went quiet. Said as a fact and not a scolding — nobody
+ * needs an app to tell them off, and the last thought is the part worth being reminded of.
+ */
+export async function idleNudge(user) {
+  if (!user?._id || !wants(user, 'idle')) return;
+  const shelf = await rawCol('books').findOne({ userId: user._id });
+  const cutoff = Date.now() - 14 * 864e5;
+  let quietest = null;
+  for (const b of shelf?.books || []) {
+    if (b.status !== 'reading') continue;
+    const notes = (b.notes || []).filter((n) => n.ts);
+    if (!notes.length) continue;
+    const last = Math.max(...notes.map((n) => new Date(n.ts).getTime()));
+    if (last > cutoff) continue;                    // still warm
+    if (!quietest || last < quietest.last) quietest = { book: b, last, note: notes.find((n) => new Date(n.ts).getTime() === last) };
+  }
+  if (!quietest) return;
+  const days = Math.round((Date.now() - quietest.last) / 864e5);
+  await sendTo(user._id, {
+    title: `${trim(quietest.book.title || 'A book', 40)} — quiet for ${days} days`,
+    body: quietest.note?.text ? `Last thing you kept: ${trim(quietest.note.text, 120)}` : 'Still on your shelf, waiting.',
+    url: '/app',
+    tag: 'idle-nudge',
+  });
 }

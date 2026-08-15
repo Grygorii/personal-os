@@ -73,6 +73,20 @@
   .guestbar a{color:var(--accent-strong);font-weight:700;text-decoration:none;white-space:nowrap}
   .topact{display:flex;align-items:center;gap:8px}
   .menu{display:flex;flex-direction:column;gap:8px}
+  /* Notifications: what it is on the left, the switch on the right, nothing else. */
+  .switches{display:flex;flex-direction:column;gap:8px}
+  .sw{display:flex;align-items:center;gap:14px;background:var(--raise);border:1px solid var(--line);
+    border-radius:var(--radius);padding:13px 14px}
+  .sw-t{flex:1;min-width:0;font-size:.95rem;font-weight:600;line-height:1.3}
+  .sw-t span{display:block;font-weight:400;font-size:.8rem;color:var(--muted);margin-top:2px}
+  /* A real switch: it moves, so the state is visible without reading a label. */
+  .sw-b{flex:none;width:50px;height:30px;border-radius:20px;border:1px solid var(--line);
+    background:var(--surface);position:relative;cursor:pointer;padding:0;
+    transition:background .18s ease,border-color .18s ease}
+  .sw-b i{position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;
+    background:var(--muted);transition:transform .18s ease,background .18s ease}
+  .sw-b.on{background:var(--accent);border-color:var(--accent)}
+  .sw-b.on i{transform:translateX(20px);background:var(--on-accent)}
   .mi{display:flex;align-items:center;gap:13px;width:100%;text-align:left;text-decoration:none;
     background:var(--raise);border:1px solid var(--line);border-radius:12px;padding:13px 15px;
     min-height:54px;cursor:pointer;font-family:var(--sans);color:var(--ink)}
@@ -335,9 +349,16 @@
   /* share sheet */
   .sheet-bg{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:flex-end;
     justify-content:center;z-index:100;padding:0;touch-action:none}
+  /* A sheet can grow taller than the phone it is on. This one had no ceiling, so the menu —
+     twelve rows by now — pushed its own heading off the top of the screen, and the first item
+     with it. A sheet is bounded by the viewport and scrolls inside itself; the grab handle
+     and the close button stay put so there is always a way out. */
   .sheet{background:var(--surface);border:1px solid var(--line);border-radius:20px 20px 0 0;
     padding:8px 18px calc(22px + env(safe-area-inset-bottom));width:100%;max-width:520px;
+    max-height:88vh;max-height:88dvh;display:flex;flex-direction:column;
     animation:up .22s ease;will-change:transform}
+  /* Everything between the handle and the last button takes the leftover room and scrolls. */
+  .sheet > .menu,.sheet > .sheet-body{overflow-y:auto;overscroll-behavior:contain;min-height:0}
   @keyframes up{from{transform:translateY(24px);opacity:.6}to{transform:none;opacity:1}}
   html.sheeting{overflow:hidden}
   /* The handle is the promise that the sheet can be dragged away — without something to
@@ -1602,64 +1623,99 @@ const ICON={
   dot:     SVG('<circle cx="12" cy="12" r="3"/>'),
 };
 
-/* ---- One thought a day ----
-   Two separate yes/nos, and pretending they are one is how a switch comes to say "On" while
-   nothing ever arrives: the SERVER knows whether they want it, the BROWSER owns whether it is
-   allowed to arrive. The label always reports the weaker of the two.
-   Nothing is asked on first open. The permission prompt appears only when they press the
-   switch — a prompt nobody invited is the fastest way to be denied forever. */
-let notifyState={on:true,key:null,perm:(window.Notification&&Notification.permission)||'default'};
-function notifyNote(){
-  if(!("Notification" in window)||!("serviceWorker" in navigator)) return "Not supported on this browser";
-  if(notifyState.perm==="denied") return "Blocked in your phone's settings";
-  if(!notifyState.on) return "Off — tap to get one a day";
-  return notifyState.perm==="granted" ? "On — one a day, from your own thoughts"
-                                      : "Tap to allow, and one arrives each morning";
-}
+/* ---- Notifications, on their own screen ----
+   A row per kind, the switch on the right, and nothing else on the page. The single toggle
+   buried in the menu could only ever say on or off for one thing, and the menu was already
+   twelve rows tall.
+   Two separate yes/nos though, and treating them as one is how a switch comes to read ON
+   while nothing ever arrives: the SERVER knows what they want, the BROWSER owns whether it
+   is allowed to arrive. The header always reports the weaker of the two.
+   Nothing is asked on first open. The permission prompt appears when a switch is pressed —
+   a prompt nobody invited is the fastest way to be denied forever. */
+let notifyKinds=[], notifyKey=null;
+const notifyPerm=()=>(window.Notification&&Notification.permission)||"default";
+const notifySupported=()=>("Notification" in window)&&("serviceWorker" in navigator);
+
 async function loadNotify(){
   try{
     const r=await api("/api/push");
-    if(r.ok){ const d=await r.json(); notifyState.on=d.on!==false; notifyState.key=d.key; }
+    if(r.ok){ const d=await r.json(); notifyKinds=d.kinds||[]; notifyKey=d.key; }
   }catch(e){}
 }
-/* A VAPID key travels as base64url and the browser wants raw bytes. */
+/* A VAPID key travels as base64url; the browser wants raw bytes. */
 function keyBytes(b64){
   const pad="=".repeat((4-b64.length%4)%4);
   const raw=atob((b64+pad).replace(/-/g,"+").replace(/_/g,"/"));
   return Uint8Array.from([...raw].map(c=>c.charCodeAt(0)));
 }
-async function toggleNotify(){
-  if(!("Notification" in window)||!("serviceWorker" in navigator)){ toast("This browser can't do notifications"); return; }
-  if(notifyState.on&&notifyState.perm==="granted"){
-    try{ await api("/api/push",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({action:"off"})}); notifyState.on=false; toast("Off — no more daily thoughts"); }
-    catch(e){ toast("Couldn't reach it — try again"); }
-    return;
-  }
-  const perm=await Notification.requestPermission();
-  notifyState.perm=perm;
-  if(perm!=="granted"){
-    /* iOS refuses outright unless the app is on the home screen, and saying so is more use
-       than a generic "denied". */
-    const iOS=/iphone|ipad|ipod/i.test(navigator.userAgent);
-    const home=matchMedia("(display-mode: standalone)").matches||navigator.standalone===true;
-    toast(iOS&&!home?"Add Kept to your home screen first, then turn this on":"Notifications are blocked for this site");
-    return;
-  }
+async function ensureAllowed(){
+  if(!notifySupported()) return "unsupported";
+  if(notifyPerm()==="granted") return "ok";
+  if(notifyPerm()==="denied") return "denied";
+  const p=await Notification.requestPermission();
+  return p==="granted"?"ok":"denied";
+}
+async function currentSub(){
   try{
-    if(!notifyState.key) await loadNotify();
+    if(!notifyKey) await loadNotify();
     const reg=await navigator.serviceWorker.register("/sw.js");
     await navigator.serviceWorker.ready;
-    const sub=await reg.pushManager.subscribe({userVisibleOnly:true,
-      applicationServerKey:keyBytes(notifyState.key)});
-    const r=await api("/api/push",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({action:"on",sub:sub.toJSON()})});
-    if(!r.ok) throw new Error("server");
-    notifyState.on=true;
-    toast("On — here's one now");
-  }catch(e){ toast("Couldn't turn it on — try again"); }
+    return (await reg.pushManager.subscribe({userVisibleOnly:true,
+      applicationServerKey:keyBytes(notifyKey)})).toJSON();
+  }catch(e){ return null; }
 }
-if(!GUEST) loadNotify();
+
+async function openNotify(){
+  await loadNotify();
+  const { close }=openSheet(
+    `<div class="sheet-head">Notifications</div>
+     <p class="sheet-note" id="nf-state"></p>
+     <div class="sheet-body"><div class="switches" id="nf-list"></div></div>
+     <button class="btn ghost" id="nf-x" style="margin-top:12px">Close</button>`,
+    "Notifications");
+  $("nf-x").onclick=close;
+
+  const paint=()=>{
+    const perm=notifyPerm();
+    $("nf-state").textContent=!notifySupported()
+      ? "This browser can't show notifications."
+      : perm==="denied" ? "Blocked in your phone's settings — turn Kept back on there first."
+      : perm==="granted" ? "Sent to this device."
+      : "Turn one on and your phone will ask permission.";
+    $("nf-list").innerHTML=notifyKinds.map((k,i)=>
+      `<div class="sw"><div class="sw-t">${esc(k.label)}<span>${esc(k.note)}</span></div>
+        <button class="sw-b${k.on?" on":""}" role="switch" aria-checked="${k.on?"true":"false"}"
+          aria-label="${esc(k.label)}" data-k="${i}"><i></i></button></div>`).join("");
+    $("nf-list").querySelectorAll("[data-k]").forEach(b=>b.onclick=()=>flip(+b.dataset.k));
+  };
+
+  async function flip(i){
+    const k=notifyKinds[i]; if(!k) return;
+    const turningOn=!k.on;
+    if(turningOn){
+      const state=await ensureAllowed();
+      if(state==="unsupported"){ toast("This browser can't do notifications"); return; }
+      if(state==="denied"){
+        /* iOS refuses web push outright until the app is on the home screen, and saying so
+           is more use than a generic "blocked". */
+        const iOS=/iphone|ipad|ipod/i.test(navigator.userAgent);
+        const home=matchMedia("(display-mode: standalone)").matches||navigator.standalone===true;
+        toast(iOS&&!home?"Add Kept to your home screen first, then turn this on":"Notifications are blocked for this site");
+        paint(); return;
+      }
+    }
+    const sub=turningOn?await currentSub():null;
+    try{
+      const r=await api("/api/push",{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({kind:k.id,on:turningOn,sub})});
+      if(!r.ok) throw new Error("server");
+      notifyKinds=(await r.json()).kinds||notifyKinds;
+      paint();
+      if(turningOn) toast("On — here's one now");
+    }catch(e){ toast("Couldn't save that — try again"); }
+  }
+  paint();
+}
 
 $("menu-btn").onclick=()=>{
   const items=[];
@@ -1674,7 +1730,7 @@ $("menu-btn").onclick=()=>{
      settings page nobody opens. Default on — but the browser owns the permission, so it can
      only truly be on once they have said yes to their phone as well. The label says which of
      those two is true instead of claiming it is on when nothing can arrive. */
-  if(!GUEST) items.push(['notify','Daily thought', notifyNote(), null, ()=>{ toggleNotify(); }]);
+  if(!GUEST) items.push(['notify','Notifications','What Kept may send you, and when',null,()=>{ openNotify(); }]);
   items.push(['message','Message Grygorii', mailWaiting?'A reply is waiting':'Something broken, missing, or just an idea',null,()=>{ openContact(); }]);
   /* The rest of the system, for whoever is entitled to it. Driven by ME.can, which the
      server built from users.can() — so this list is not "is this Гриша", it is "what may

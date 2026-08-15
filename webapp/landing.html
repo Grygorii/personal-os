@@ -265,16 +265,12 @@
      beside a desktop hero. 19.5:9 is the shape of almost every phone since 2017; the status
      bar, tab bar and home indicator are subtracted because they are chrome, not screen.
      Clamped at both ends: never so short that a slide clips, never so tall it dominates. */
-  .screen-stack{position:relative;overflow:hidden;width:100%;
-    /* Height derived from WIDTH, so the screen keeps its shape at every size instead of
-       being one number measured against one laptop. A percentage height would not do it:
-       percentages in `height` resolve against the parent's height, and this parent has
-       none — which is exactly how the first attempt produced a screen 0px tall.
-       Bounded at both ends: never shorter than the tallest slide, never so tall it
-       swallows the page. */
-    aspect-ratio:9/11.6; min-height:364px; max-height:392px}
-  /* On a narrow phone the same words wrap onto more lines, so the tallest slide needs MORE
-     room there, not less — the floor is set by the 320px case, measured, not guessed. */
+  /* Height is MEASURED, not guessed — see fitStack() below. Every attempt to pick a number
+     traded one fault for another: 326px clipped three slides on a 320px screen, and 364px
+     stopped the clipping by leaving a void above the chat. The tallest slide at the CURRENT
+     width is the only right answer, and only the browser knows it.
+     The value here is a floor for the moment before the script runs. */
+  .screen-stack{position:relative;overflow:hidden;width:100%;min-height:330px}
   /* the real bottom bar from the app */
   .demo-tabs{display:flex;border-top:1px solid var(--line);margin:0 -14px;padding:8px 10px 6px}
   /* The home indicator. The last thing that makes a rectangle read as a phone. */
@@ -289,7 +285,10 @@
   /* A chat fills from the BOTTOM, like every chat anyone has ever used. Anchoring it to the
      top is what pushed the newest message — the one worth reading — off the screen. */
   .screen.chat{display:flex;flex-direction:column}
-  .screen.chat .chat-body{margin-top:auto;padding-bottom:2px}
+  /* The hero is centred on a phone, and the demo lives inside it — so the one bubble that
+     is an inline-block, the typing indicator, inherited that and sat in the middle of a
+     conversation that is otherwise left and right. */
+  .screen.chat .chat-body{margin-top:auto;padding-bottom:2px;text-align:left}
   /* Tighter than the bubbles further down the page: these live inside a fixed-height screen,
      and at full size four of them do not fit — the newest one, with the typing dots, fell off
      the bottom. Sized so the whole exchange is visible at once. */
@@ -856,6 +855,41 @@
     var screens = [].slice.call(document.querySelectorAll('.screen'));
     var dots = [].slice.call(document.querySelectorAll('.dot'));
     var caption = document.getElementById('demo-caption');
+    var stack = document.querySelector('.screen-stack');
+
+    /* The screen is exactly as tall as its tallest slide, measured at the width it is
+       actually being drawn at. Every guessed number was wrong in one direction or the other:
+       326px clipped three slides on a 320px phone, and raising it to 364px stopped the
+       clipping by opening a void above the chat. Only the browser knows how the words wrapped.
+       Measured again on resize and on rotation, because both change the wrapping. */
+    function fitStack() {
+      if (!stack || !screens.length) return;
+      var tallest = 0;
+      screens.forEach(function (s) {
+        var wasOn = s.classList.contains('on');
+        // measure it laid out normally, then put it back exactly as it was
+        s.classList.add('on');
+        s.style.position = 'static';
+        tallest = Math.max(tallest, s.scrollHeight);
+        s.style.position = '';
+        if (!wasOn) s.classList.remove('on');
+      });
+      // The CSS floor exists only for the moment before this runs; once there is a real
+      // measurement it has to give way, or a slide shorter than the floor sits in a gap.
+      if (tallest > 0) {
+        var px = Math.ceil(tallest) + 'px';
+        stack.style.height = px;
+        stack.style.minHeight = px;
+      }
+    }
+    fitStack();
+    // Fonts land after first paint and change every wrap; re-measure when they do.
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitStack).catch(function () {});
+    var fitTimer = null;
+    window.addEventListener('resize', function () {
+      clearTimeout(fitTimer);
+      fitTimer = setTimeout(fitStack, 120);
+    });
     var texts = [
       'Type a few letters. It finds the book for you.',
       'Keep a thought the moment it lands — typed, spoken, or photographed.',

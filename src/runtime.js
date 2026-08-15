@@ -14,6 +14,8 @@ const runners = {
   // impossible even if the process restarts mid-tick. Nothing here needed building — the
   // scheduler has run the coach's check-ins this way for months.
   'daily-thought': () => push.dailyThought(currentUser()),
+  'quiz-nudge': () => push.quizNudge(currentUser()),
+  'idle-nudge': () => push.idleNudge(currentUser()),
   'coach-morning': () => coach.checkIn('morning'),
   'coach-evening': () => coach.checkIn('evening'),
   'coach-weekly': () => coach.weeklyReview(),
@@ -47,6 +49,10 @@ const DEFAULT_AGENTS = [
   { id: 'backup', enabled: true, schedule: '30 3 * * 1', ownerOnly: true, channel: 'telegram', description: 'Weekly backup of every user, delivered to the owner.' },
   // 9am local: after waking, before the day takes over. One a day, never two.
   { id: 'daily-thought', enabled: true, schedule: '0 9 * * *', channel: 'push', description: 'One thought you kept, handed back.' },
+  // Evenings, three times a week — often enough to be a habit, rare enough to stay a game.
+  { id: 'quiz-nudge', enabled: true, schedule: '0 19 * * 2,4,6', channel: 'push', description: 'One of your thoughts — which book was it?' },
+  // Once a week at most, and only when a book has actually gone quiet.
+  { id: 'idle-nudge', enabled: true, schedule: '0 11 * * 0', channel: 'push', description: 'A book you started that has gone quiet.' },
 ];
 
 async function ensureAgents() {

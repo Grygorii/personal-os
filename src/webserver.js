@@ -1392,25 +1392,30 @@ export function startServer(port = process.env.PORT || 8080, build = 'dev') {
         res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
         res.end(JSON.stringify(o));
       };
+      // The switches are built from push.KINDS, so a switch cannot exist for something that
+      // never sends and nothing can send without a switch to stop it.
       if (req.method === 'GET') {
-        // Default ON. Off only if they have actually said so.
-        return json({ key: await push.publicKey(), on: acct.notify?.daily !== false });
+        return json({
+          key: await push.publicKey(),
+          kinds: push.KINDS.map((k) => ({ id: k.id, label: k.label, note: k.note, on: push.wants(acct, k.id) })),
+        });
       }
       const body = await readJson(req, 20000);
-      if (body?.action === 'off') {
-        await rawCol('users').updateOne({ _id: acct._id }, { $set: { 'notify.daily': false } });
-        await push.unsubscribeAll(acct._id);      // stop sending to devices that said no
-        return json({ ok: true, on: false });
-      }
-      if (body?.action === 'on' && body?.sub) {
-        const stored = await push.subscribe(acct._id, body.sub);
-        if (!stored) return json({ error: 'bad_subscription' }, 400);
-        await rawCol('users').updateOne({ _id: acct._id }, { $set: { 'notify.daily': true } });
-        // Send one immediately, so turning it on visibly does something.
-        push.sendTest(acct).catch(() => {});
-        return json({ ok: true, on: true });
-      }
-      return json({ error: 'bad_request' }, 400);
+      // A device address, offered whenever the browser has one to give.
+      if (body?.sub) await push.subscribe(acct._id, body.sub);
+      const kind = String(body?.kind || '');
+      if (!push.KINDS.some((k) => k.id === kind)) return json({ error: 'unknown_kind' }, 400);
+      const on = body?.on === true;
+      await rawCol('users').updateOne({ _id: acct._id }, { $set: { [`notify.${kind}`]: on } });
+      const fresh = await rawCol('users').findOne({ _id: acct._id });
+      // Nothing left switched on means nothing should be held: forget the devices entirely
+      // rather than keep an address for messages that will never be sent.
+      if (!push.KINDS.some((k) => push.wants(fresh, k.id))) await push.unsubscribeAll(acct._id);
+      else if (on) push.sendTest(acct).catch(() => {});   // turning one ON shows it working
+      return json({
+        ok: true,
+        kinds: push.KINDS.map((k) => ({ id: k.id, label: k.label, note: k.note, on: push.wants(fresh, k.id) })),
+      });
     }
 
     // ---- writing to the person who made it ----
