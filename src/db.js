@@ -43,6 +43,8 @@ export async function ensureIndexes() {
     // The inbox is read most-recent-first every time the admin page loads, and the unread
     // count is read on every single app load — including for guests.
     await rawCol('contacts').createIndex({ updated: -1 });
+    // Every daily send looks up one person's devices.
+    await rawCol('push_subs').createIndex({ userId: 1 });
     console.log('[db] indexes ensured');
   } catch (err) {
     console.error('[db] index creation failed (continuing):', err.message);

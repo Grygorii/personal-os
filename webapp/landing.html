@@ -131,6 +131,7 @@
     .hero-copy{grid-column:1}
     .hero-demo{grid-column:2;margin-top:0}
     .hero-demo .demo-wrap{margin-top:0}
+    .hero-demo .demo-phone{max-width:352px}
     .hero-copy h1{font-size:clamp(2.3rem,3.2vw,3.2rem)}
     .hero-copy .sub,.hero-copy .who{margin-left:0;margin-right:0;max-width:100%}
     /* Everything under the hero used to centre itself across BOTH columns while the words
@@ -233,7 +234,7 @@
   .demo-wrap{margin-top:24px;display:flex;justify-content:center}
   /* A bezel on ALL four sides. It had none at the bottom, so the tab bar ran off the edge of
      the frame and the whole thing read as a cropped card rather than a phone. */
-  .demo-phone{position:relative;overflow:hidden;width:100%;max-width:330px;padding:10px;
+  .demo-phone{position:relative;overflow:hidden;width:100%;max-width:min(330px, 86vw);padding:10px;
     border-radius:36px;border:1px solid var(--line);background:var(--device);
     box-shadow:0 26px 70px var(--shadow-strong)}
   .statusbar{position:relative;display:flex;justify-content:space-between;align-items:center;
@@ -259,7 +260,21 @@
   /* A FIXED height that clips, because that is what a screen is. It was min-height with
      absolutely positioned children and no overflow rule, so any screen taller than 322px
      painted straight over the tab bar below it — which is exactly what the mentor screen did. */
-  .screen-stack{position:relative;height:326px;overflow:hidden}
+  /* The screen is a RATIO of the frame, not a fixed number of pixels — so the demo has the
+     proportions of a real handset whether it is drawn at 280px on a small phone or 360px
+     beside a desktop hero. 19.5:9 is the shape of almost every phone since 2017; the status
+     bar, tab bar and home indicator are subtracted because they are chrome, not screen.
+     Clamped at both ends: never so short that a slide clips, never so tall it dominates. */
+  .screen-stack{position:relative;overflow:hidden;width:100%;
+    /* Height derived from WIDTH, so the screen keeps its shape at every size instead of
+       being one number measured against one laptop. A percentage height would not do it:
+       percentages in `height` resolve against the parent's height, and this parent has
+       none — which is exactly how the first attempt produced a screen 0px tall.
+       Bounded at both ends: never shorter than the tallest slide, never so tall it
+       swallows the page. */
+    aspect-ratio:9/11.6; min-height:364px; max-height:392px}
+  /* On a narrow phone the same words wrap onto more lines, so the tallest slide needs MORE
+     room there, not less — the floor is set by the 320px case, measured, not guessed. */
   /* the real bottom bar from the app */
   .demo-tabs{display:flex;border-top:1px solid var(--line);margin:0 -14px;padding:8px 10px 6px}
   /* The home indicator. The last thing that makes a rectangle read as a phone. */

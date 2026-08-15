@@ -18,6 +18,10 @@ export const config = {
   // 'anthropic'. Deep work (portraits, exams) still prefers Claude when a key exists.
   provider: (oneLine(process.env.LLM_PROVIDER) || 'anthropic').toLowerCase(),
   anthropicKey: oneLine(process.env.ANTHROPIC_API_KEY),
+  // Web push identity. Optional: if unset, a keypair is generated once and kept in the
+  // database, so notifications work without anybody having to remember a deploy step.
+  vapidPublic: oneLine(process.env.VAPID_PUBLIC) || '',
+  vapidPrivate: oneLine(process.env.VAPID_PRIVATE) || '',
   model: oneLine(process.env.CLAUDE_MODEL) || 'claude-sonnet-4-6',
   deepModel: oneLine(process.env.DEEP_MODEL) || oneLine(process.env.CLAUDE_MODEL) || 'claude-sonnet-4-6',
   geminiKey: oneLine(process.env.GEMINI_API_KEY),

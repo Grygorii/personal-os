@@ -7,9 +7,10 @@ import { syncWordBank } from './agents/english.js';
 import * as users from './users.js';
 import { runAs } from './ctx.js';
 import { config } from './config.js';
+import { initPush } from './push.js';
 
 // Bump on each deploy so we can confirm which build is actually live (read meta.boot).
-const VERSION = 'icons-1';
+const VERSION = 'push-1';
 
 // A rejected promise nobody caught kills the process on modern Node, and Railway restarts
 // it — so the only trace of a whole class of bug was a silent restart. Log it, keep serving.
@@ -28,6 +29,13 @@ async function main() {
   await col('meta').updateOne({ _id: 'boot' }, { $set: { version: VERSION, at: new Date() } }, { upsert: true });
   console.log(`[boot] ${VERSION}`);
   await ensureIndexes();
+  // The keypair that lets a push service trust us. Non-fatal: a server that cannot send
+  // notifications is a smaller problem than a server that will not start.
+  try {
+    await initPush();
+  } catch (err) {
+    console.error('[push] not available (everything else continues):', err.message);
+  }
   // Bring everyone already signed up in line with the rules as they stand today. Shipping
   // a change only fixes the next person unless something walks back over the existing ones.
   const fixed = await users.reconcileAccounts();

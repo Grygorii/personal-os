@@ -4,11 +4,16 @@ import { config } from './config.js';
 import { sendDocument } from './telegram.js';
 import * as coach from './coach.js';
 import * as users from './users.js';
-import { runAs } from './ctx.js';
+import { runAs, currentUser } from './ctx.js';
+import * as push from './push.js';
 
 // Map agent id -> scheduled handler. The coach owns the proactive pulse;
 // water/book commands still work on demand via the router (no schedule needed).
 const runners = {
+  // Per-user, in their own timezone, once a day, with alreadyRan() making a double send
+  // impossible even if the process restarts mid-tick. Nothing here needed building — the
+  // scheduler has run the coach's check-ins this way for months.
+  'daily-thought': () => push.dailyThought(currentUser()),
   'coach-morning': () => coach.checkIn('morning'),
   'coach-evening': () => coach.checkIn('evening'),
   'coach-weekly': () => coach.weeklyReview(),
@@ -40,6 +45,8 @@ const DEFAULT_AGENTS = [
   { id: 'coach-evening', enabled: true, schedule: '0 21 * * *', channel: 'telegram', description: 'Evening check-in — closes today, nods at tomorrow.' },
   { id: 'coach-weekly', enabled: true, schedule: '0 19 * * 0', channel: 'telegram', description: 'Sunday week-in-review — trends over time.' },
   { id: 'backup', enabled: true, schedule: '30 3 * * 1', ownerOnly: true, channel: 'telegram', description: 'Weekly backup of every user, delivered to the owner.' },
+  // 9am local: after waking, before the day takes over. One a day, never two.
+  { id: 'daily-thought', enabled: true, schedule: '0 9 * * *', channel: 'push', description: 'One thought you kept, handed back.' },
 ];
 
 async function ensureAgents() {

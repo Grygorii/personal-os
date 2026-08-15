@@ -1598,8 +1598,68 @@ const ICON={
   routine: SVG('<path d="M4 7l2 2 3-3"/><path d="M4 14l2 2 3-3"/><path d="M12 8h8"/><path d="M12 15h8"/>'),
   privacy: SVG('<path d="M12 3l8 3v6c0 4.5-3.2 7.9-8 9-4.8-1.1-8-4.5-8-9V6z"/>'),
   admin:   SVG('<path d="M4 7h16"/><path d="M4 17h16"/><circle cx="9" cy="7" r="2.3"/><circle cx="15" cy="17" r="2.3"/>'),
+  notify:  SVG('<path d="M18 9a6 6 0 1 0-12 0c0 6-2 7-2 7h16s-2-1-2-7"/><path d="M10.5 20a1.8 1.8 0 0 0 3 0"/>'),
   dot:     SVG('<circle cx="12" cy="12" r="3"/>'),
 };
+
+/* ---- One thought a day ----
+   Two separate yes/nos, and pretending they are one is how a switch comes to say "On" while
+   nothing ever arrives: the SERVER knows whether they want it, the BROWSER owns whether it is
+   allowed to arrive. The label always reports the weaker of the two.
+   Nothing is asked on first open. The permission prompt appears only when they press the
+   switch — a prompt nobody invited is the fastest way to be denied forever. */
+let notifyState={on:true,key:null,perm:(window.Notification&&Notification.permission)||'default'};
+function notifyNote(){
+  if(!("Notification" in window)||!("serviceWorker" in navigator)) return "Not supported on this browser";
+  if(notifyState.perm==="denied") return "Blocked in your phone's settings";
+  if(!notifyState.on) return "Off — tap to get one a day";
+  return notifyState.perm==="granted" ? "On — one a day, from your own thoughts"
+                                      : "Tap to allow, and one arrives each morning";
+}
+async function loadNotify(){
+  try{
+    const r=await api("/api/push");
+    if(r.ok){ const d=await r.json(); notifyState.on=d.on!==false; notifyState.key=d.key; }
+  }catch(e){}
+}
+/* A VAPID key travels as base64url and the browser wants raw bytes. */
+function keyBytes(b64){
+  const pad="=".repeat((4-b64.length%4)%4);
+  const raw=atob((b64+pad).replace(/-/g,"+").replace(/_/g,"/"));
+  return Uint8Array.from([...raw].map(c=>c.charCodeAt(0)));
+}
+async function toggleNotify(){
+  if(!("Notification" in window)||!("serviceWorker" in navigator)){ toast("This browser can't do notifications"); return; }
+  if(notifyState.on&&notifyState.perm==="granted"){
+    try{ await api("/api/push",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({action:"off"})}); notifyState.on=false; toast("Off — no more daily thoughts"); }
+    catch(e){ toast("Couldn't reach it — try again"); }
+    return;
+  }
+  const perm=await Notification.requestPermission();
+  notifyState.perm=perm;
+  if(perm!=="granted"){
+    /* iOS refuses outright unless the app is on the home screen, and saying so is more use
+       than a generic "denied". */
+    const iOS=/iphone|ipad|ipod/i.test(navigator.userAgent);
+    const home=matchMedia("(display-mode: standalone)").matches||navigator.standalone===true;
+    toast(iOS&&!home?"Add Kept to your home screen first, then turn this on":"Notifications are blocked for this site");
+    return;
+  }
+  try{
+    if(!notifyState.key) await loadNotify();
+    const reg=await navigator.serviceWorker.register("/sw.js");
+    await navigator.serviceWorker.ready;
+    const sub=await reg.pushManager.subscribe({userVisibleOnly:true,
+      applicationServerKey:keyBytes(notifyState.key)});
+    const r=await api("/api/push",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({action:"on",sub:sub.toJSON()})});
+    if(!r.ok) throw new Error("server");
+    notifyState.on=true;
+    toast("On — here's one now");
+  }catch(e){ toast("Couldn't turn it on — try again"); }
+}
+if(!GUEST) loadNotify();
 
 $("menu-btn").onclick=()=>{
   const items=[];
@@ -1610,6 +1670,11 @@ $("menu-btn").onclick=()=>{
      the message worth having is the one from somebody about to give up, and they are not
      going to go looking for it. Needs no account, because the most useful sentence anyone
      can send is "I couldn't sign in". */
+  /* One a day, and the switch sits in plain sight rather than three screens down in a
+     settings page nobody opens. Default on — but the browser owns the permission, so it can
+     only truly be on once they have said yes to their phone as well. The label says which of
+     those two is true instead of claiming it is on when nothing can arrive. */
+  if(!GUEST) items.push(['notify','Daily thought', notifyNote(), null, ()=>{ toggleNotify(); }]);
   items.push(['message','Message Grygorii', mailWaiting?'A reply is waiting':'Something broken, missing, or just an idea',null,()=>{ openContact(); }]);
   /* The rest of the system, for whoever is entitled to it. Driven by ME.can, which the
      server built from users.can() — so this list is not "is this Гриша", it is "what may

@@ -14,6 +14,7 @@ import * as moderation from './moderation.js';
 import { runAs, uid, personName, languageRule } from './ctx.js';
 import { verifyTelegramLogin, verifyGoogleToken, createSession, readSession, parseCookies, sessionCookie, clearedCookie, refCookie, clearedRefCookie, mailCookie } from './auth.js';
 import * as contact from './contact.js';
+import * as push from './push.js';
 import { addBook } from './library.js';
 
 // Read a small JSON request body (exam answers etc.). Hard cap, raised only for the one
@@ -1375,6 +1376,43 @@ export function startServer(port = process.env.PORT || 8080, build = 'dev') {
       return;
     }
 
+    // ---- one thought a day ----
+    // Everything here needs a signed-in person: a notification is sent to somebody, and a
+    // guest is nobody. Kept deliberately small — the browser owns the permission, the server
+    // only owns the address to send to and the yes/no.
+    if (path === '/api/push') {
+      const sid = readSession(parseCookies(req.headers.cookie).kept_session);
+      const acct = sid ? await rawCol('users').findOne({ _id: sid }) : null;
+      if (!acct || !users.isAllowed(acct)) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'sign_in' }));
+        return;
+      }
+      const json = (o, code = 200) => {
+        res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+        res.end(JSON.stringify(o));
+      };
+      if (req.method === 'GET') {
+        // Default ON. Off only if they have actually said so.
+        return json({ key: await push.publicKey(), on: acct.notify?.daily !== false });
+      }
+      const body = await readJson(req, 20000);
+      if (body?.action === 'off') {
+        await rawCol('users').updateOne({ _id: acct._id }, { $set: { 'notify.daily': false } });
+        await push.unsubscribeAll(acct._id);      // stop sending to devices that said no
+        return json({ ok: true, on: false });
+      }
+      if (body?.action === 'on' && body?.sub) {
+        const stored = await push.subscribe(acct._id, body.sub);
+        if (!stored) return json({ error: 'bad_subscription' }, 400);
+        await rawCol('users').updateOne({ _id: acct._id }, { $set: { 'notify.daily': true } });
+        // Send one immediately, so turning it on visibly does something.
+        push.sendTest(acct).catch(() => {});
+        return json({ ok: true, on: true });
+      }
+      return json({ error: 'bad_request' }, 400);
+    }
+
     // ---- writing to the person who made it ----
     // Deliberately outside the block below that demands an account. Everything else here is
     // work we do on a reader's behalf and have to bill to somebody; a message is the one
@@ -1790,10 +1828,32 @@ export function startServer(port = process.env.PORT || 8080, build = 'dev') {
       return;
     }
     if (path === '/sw.js') {
-      // Deliberately minimal: claim control, serve the network. Caching pages that show
-      // live personal data would be worse than useless.
+      // Still caches nothing — pages here show live personal data, and a stale one is worse
+      // than a slow one. It now also receives the daily thought and opens the app when the
+      // notification is tapped. If a push arrives with no readable payload it is ignored
+      // rather than shown as an empty notification, which some platforms otherwise do.
       res.writeHead(200, { 'Content-Type': 'application/javascript', 'Cache-Control': 'no-cache' });
-      res.end("self.addEventListener('install',e=>self.skipWaiting());self.addEventListener('activate',e=>e.waitUntil(self.clients.claim()));self.addEventListener('fetch',()=>{});");
+      res.end(`self.addEventListener('install',e=>self.skipWaiting());
+self.addEventListener('activate',e=>e.waitUntil(self.clients.claim()));
+self.addEventListener('fetch',()=>{});
+self.addEventListener('push',e=>{
+  let d=null; try{ d=e.data&&e.data.json(); }catch(err){}
+  if(!d||!d.title) return;
+  e.waitUntil(self.registration.showNotification(d.title,{
+    body:d.body||'', tag:d.tag||'kept', renotify:false,
+    icon:'/icon-192.png', badge:'/icon-192.png',
+    data:{url:d.url||'/app'}
+  }));
+});
+self.addEventListener('notificationclick',e=>{
+  e.notification.close();
+  const url=(e.notification.data&&e.notification.data.url)||'/app';
+  // Focus the app if it is already open rather than piling up another window.
+  e.waitUntil(clients.matchAll({type:'window',includeUncontrolled:true}).then(list=>{
+    for(const c of list){ if(c.url.indexOf(url)>-1&&'focus' in c) return c.focus(); }
+    return clients.openWindow(url);
+  }));
+});`);
       return;
     }
 
