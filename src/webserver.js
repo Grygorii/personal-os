@@ -1678,7 +1678,16 @@ export function startServer(port = process.env.PORT || 8080, build = 'dev') {
               .sort({ source: 1, lastSeen: -1 }) // 'chat' < 'curriculum' alphabetically
               .limit(200)
               .toArray();
-            return rows.map((r) => ({ word: r.word, note: r.why || r.note || '', count: r.count || 1, source: r.source || 'chat' }));
+            // `usage` is where it belongs and an example — the half of an explanation that
+            // makes a word usable rather than merely recognised. The deck was only ever
+            // given the meaning.
+            return rows.map((r) => ({
+              word: r.word,
+              note: r.why || r.note || '',
+              usage: r.usage || '',
+              count: r.count || 1,
+              source: r.source || 'chat',
+            }));
           }
           if (path === '/api/tidy') return tidyText(body?.text);
           if (path === '/api/readpage') {

@@ -143,6 +143,18 @@ Available actions (only what they clearly support):
 - {"type":"log_study","note":"their reflection","depth":"light|solid|deep"}
 - {"type":"remember_insight","text":"something durable you learned about them"}
 - {"type":"log_note","text":"worth remembering"}
+${users.can(currentUser(), 'english') ? `
+WORDS. Reading in a second language means meeting words you half-know, and asking about one
+is the moment it can actually be learned. When they ask what a word or phrase means — or use
+one wrongly — answer with three things, briefly and in one short message:
+  1. what it means, in plain words
+  2. the natural way to say it, and the way people get it wrong
+  3. where it belongs — formal, everyday, spoken, written — with one example sentence
+Then keep it for them with add_word, in the same reply, without being asked and without
+announcing it. Being told a word and losing it by the next page is the same failure as
+reading a book and losing the book.
+- {"type":"add_word","word":"...","meaning":"plain-words meaning","usage":"where it belongs + one example"}
+` : ''}
 "actions" can be empty.`;
   }
 
@@ -382,7 +394,7 @@ async function think(finalUserContent, image = null) {
 
 // ---------- acting on what he said ----------
 
-async function applyAction(a) {
+export async function applyAction(a) {
   switch (a.type) {
     case 'log_water':
       await logEvent('water', { value: Number(a.litres) || 0 });
@@ -467,6 +479,30 @@ async function applyAction(a) {
         { $push: { insights: { $each: [{ text: a.text, ts: new Date() }], $slice: -40 } } }
       );
       break;
+    // A word asked about is a word worth keeping. Asking what something means, being told,
+    // and then losing it by the next page is the same failure as reading a book and losing
+    // the book — so the answer goes into the deck as it is given, without being asked for.
+    // Only reachable by someone who has the english module: the action is not offered
+    // otherwise, and this refuses it even if it were.
+    case 'add_word': {
+      if (!users.can(currentUser(), 'english')) break;
+      const word = String(a.word || '').trim().slice(0, 60);
+      if (!word) break;
+      await col('english_words').updateOne(
+        { word },
+        {
+          $setOnInsert: { word, createdAt: new Date(), source: 'chat' },
+          $set: {
+            why: String(a.meaning || a.why || '').slice(0, 300),
+            usage: String(a.usage || '').slice(0, 300),
+            lastSeen: new Date(),
+          },
+          $inc: { count: 1 },
+        },
+        { upsert: true }
+      );
+      break;
+    }
     case 'set_skill_focus':
       await col('profile').updateOne(
         { _id: 'me' },

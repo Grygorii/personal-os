@@ -151,14 +151,22 @@ function render(d){
   }catch(e){} }
   const demo=new URLSearchParams(location.search).has("demo");
   if(demo){ render(DEMO); return; }
-  if(tg && tg.initData){
-    fetch("/api/dashboard",{headers:{"X-Telegram-Init-Data":tg.initData}})
-      .then(r=>r.ok?r.json():Promise.reject(r.status))
-      .then(render)
-      .catch(err=>{document.getElementById("app").innerHTML=`<div class="msg">Couldn't load your data (${esc(String(err))}). Reopen from Telegram, or make sure the bot has deployed.</div>`;});
-  } else {
-    document.getElementById("app").innerHTML=`<div class="msg">Open this from your Telegram app (the menu button) to see your live stats.<br><br><a href="?demo=1" style="color:var(--accent)">Preview with sample data</a></div>`;
-  }
+  /* "Open this from your Telegram app" was the whole page for anyone in a browser — including
+     the person holding it, in the app it now lives inside. /api/dashboard has accepted a
+     session cookie for as long as the website has had sign-in; this page just never asked.
+     Telegram's signature when there is one, the session otherwise, and a real way back when
+     neither works. */
+  fetch("/api/dashboard",{credentials:"same-origin",
+      headers:(tg&&tg.initData)?{"X-Telegram-Init-Data":tg.initData}:{}})
+    .then(r=>r.ok?r.json():Promise.reject(r.status))
+    .then(render)
+    .catch(err=>{
+      const signedOut=String(err)==="401";
+      document.getElementById("app").innerHTML=`<div class="msg">${signedOut
+        ? `Sign in and your live numbers appear here.<br><br><a href="/signin" style="color:var(--accent)">Sign in</a>`
+        : `Couldn't load your data (${esc(String(err))}).`}
+        <br><br><a href="?demo=1" style="color:var(--accent)">Preview with sample data</a></div>`;
+    });
 })();
 </script>
 </body>

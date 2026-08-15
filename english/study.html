@@ -565,9 +565,12 @@ $("theme").onclick=()=>{
    moment a conversation surfaces a gap. Offline / outside Telegram → built-ins only. */
 async function loadLiveWords(){
   try{
+    /* Telegram's signature when there is one, the website's own session when there is not.
+       This used to give up if Telegram was absent, which meant the deck was unreachable from
+       the app it belongs to — even though /api/words has taken a session cookie all along. */
     const initData=(window.Telegram&&Telegram.WebApp&&Telegram.WebApp.initData)||"";
-    if(!initData) return;
-    const r=await fetch("/api/words",{headers:{"x-telegram-init-data":initData}});
+    const r=await fetch("/api/words",{credentials:"same-origin",
+      headers:initData?{"x-telegram-init-data":initData}:{}});
     if(!r.ok) return;
     const rows=await r.json();
     if(!Array.isArray(rows)) return;
@@ -581,7 +584,9 @@ async function loadLiveWords(){
         w:key,
         pos:row.source==="curriculum"?"word bank":"caught in conversation",
         senses:[row.note||"You reached for this in a real conversation and it wasn't there. Ask your tutor to go deep on it."],
-        eg:"",
+        /* Where it belongs and an example. A word you can recognise and cannot place is not
+           learned, so the mentor now sends both and the card shows both. */
+        eg:row.usage||"",
         flag:row.source!=="curriculum"&&row.count>1?`Missed ${row.count} times in conversation.`:""
       });
     }

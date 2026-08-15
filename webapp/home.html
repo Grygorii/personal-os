@@ -134,8 +134,8 @@
     try{
       var tg = window.Telegram && window.Telegram.WebApp;
       var initData = tg && tg.initData;
-      if(!initData) return;
-      var r = await fetch('/api/dashboard', { headers: { 'x-telegram-init-data': initData } });
+      var r = await fetch('/api/dashboard', { credentials: 'same-origin',
+        headers: initData ? { 'x-telegram-init-data': initData } : {} });
       if(!r.ok) return;
       var d = await r.json();
       document.getElementById('p-lvl').textContent = 'Level ' + d.level + ' · ' + d.rank;
