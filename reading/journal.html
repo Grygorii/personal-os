@@ -1624,8 +1624,10 @@ const ICON={
   routine: SVG('<path d="M4 7l2 2 3-3"/><path d="M4 14l2 2 3-3"/><path d="M12 8h8"/><path d="M12 15h8"/>'),
   privacy: SVG('<path d="M12 3l8 3v6c0 4.5-3.2 7.9-8 9-4.8-1.1-8-4.5-8-9V6z"/>'),
   admin:   SVG('<path d="M4 7h16"/><path d="M4 17h16"/><circle cx="9" cy="7" r="2.3"/><circle cx="15" cy="17" r="2.3"/>'),
+  lang:    SVG('<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18"/>'),
   key:     SVG('<circle cx="8" cy="14" r="4"/><path d="M11 11l9-9"/><path d="M17 5l2 2"/><path d="M14.5 7.5l2 2"/>'),
   notify:  SVG('<path d="M18 9a6 6 0 1 0-12 0c0 6-2 7-2 7h16s-2-1-2-7"/><path d="M10.5 20a1.8 1.8 0 0 0 3 0"/>'),
+  tick:    SVG('<path d="M4 12.5l5 5L20 6.5"/>'),
   dot:     SVG('<circle cx="12" cy="12" r="3"/>'),
 };
 
@@ -1800,6 +1802,52 @@ function openKey(){
 }
 if(!GUEST) loadKey();
 
+/* ---- The language the mentor writes in ----
+   Asking in the chat was never going to hold. The system prompt is rebuilt from the stored
+   setting on every single turn, so a sentence in the conversation wins for exactly one reply
+   and then loses to the setting again — which is why "please answer in English" appeared to
+   work and then quietly stopped. This is the layer that request had to reach.
+   Asking in chat works too now: the mentor has a set_language action, so it changes the
+   setting rather than bending for one message. */
+let langState={language:"auto",options:[]};
+function langNote(){
+  if(langState.language==="auto") return "Following whatever you write in";
+  const o=langState.options.find(x=>x.id===langState.language);
+  return `Always ${o?o.label:langState.language}`;
+}
+async function loadLang(){
+  try{ const r=await api("/api/language"); if(r.ok) langState=await r.json(); }catch(e){}
+}
+function openLang(){
+  const { close }=openSheet(
+    `<div class="sheet-head">Language</div>
+     <p class="sheet-note">What the mentor writes in. Choosing one here holds — it is not a
+       request it can drift away from.</p>
+     <div class="sheet-body"><div class="menu" id="lg-list"></div></div>
+     <button class="btn ghost" id="lg-x" style="margin-top:12px">Close</button>`,
+    "Language");
+  $("lg-x").onclick=close;
+  const rows=[{id:"auto",label:"Match what I write"},...langState.options];
+  const paint=()=>{
+    $("lg-list").innerHTML=rows.map((o,i)=>
+      `<button class="mi" data-l="${i}">
+         <span class="mi-i">${o.id===langState.language?ICON.tick:""}</span>
+         <span class="mi-t">${esc(o.label)}</span></button>`).join("");
+    $("lg-list").querySelectorAll("[data-l]").forEach(b=>b.onclick=async()=>{
+      const pick=rows[+b.dataset.l];
+      try{
+        const r=await api("/api/language",{method:"POST",headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({language:pick.id})});
+        if(!r.ok) throw new Error("save");
+        langState.language=pick.id; paint();
+        toast(pick.id==="auto"?"It will follow you":`It will always write in ${pick.label}`);
+      }catch(e){ toast("Couldn't save that — try again"); }
+    });
+  };
+  paint();
+}
+if(!GUEST) loadLang();
+
 $("menu-btn").onclick=()=>{
   const items=[];
   if(GUEST) items.push(['signin','Sign in','Keep your books on every device','/signin']);
@@ -1814,6 +1862,7 @@ $("menu-btn").onclick=()=>{
      only truly be on once they have said yes to their phone as well. The label says which of
      those two is true instead of claiming it is on when nothing can arrive. */
   if(!GUEST) items.push(['notify','Notifications','What Kept may send you, and when',null,()=>{ openNotify(); }]);
+  if(!GUEST) items.push(['lang','Language', langNote(), null, ()=>{ openLang(); }]);
   items.push(['message','Message Grygorii', mailWaiting?'A reply is waiting':'Something broken, missing, or just an idea',null,()=>{ openContact(); }]);
   /* The rest of the system, for whoever is entitled to it. Driven by ME.can, which the
      server built from users.can() — so this list is not "is this Гриша", it is "what may

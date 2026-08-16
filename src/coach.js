@@ -3,9 +3,11 @@ import { getProfile, col, logEvent, recentCount } from './db.js';
 import { send, sendPings, sendLong } from './telegram.js';
 import { config } from './config.js';
 import * as system from './system.js';
-import { currentUser, personName, languageRule } from './ctx.js';
+import { currentUser, personName, languageRule, isLanguage } from './ctx.js';
 import { addBook } from './library.js';
 import * as users from './users.js';
+import { rawCol } from './db.js';
+const rawUsers = () => rawCol('users');
 
 // ---------- context gathering ----------
 
@@ -143,6 +145,7 @@ Available actions (only what they clearly support):
 - {"type":"log_study","note":"their reflection","depth":"light|solid|deep"}
 - {"type":"remember_insight","text":"something durable you learned about them"}
 - {"type":"log_note","text":"worth remembering"}
+- {"type":"set_language","language":"English"}  (only when they ask you to change language for good)
 ${users.can(currentUser(), 'english') ? `
 WORDS. Reading in a second language means meeting words you half-know, and asking about one
 is the moment it can actually be learned. When they ask what a word or phrase means — or use
@@ -486,6 +489,18 @@ export async function applyAction(a) {
     // the book — so the answer goes into the deck as it is given, without being asked for.
     // Only reachable by someone who has the english module: the action is not offered
     // otherwise, and this refuses it even if it were.
+    // Asking in chat used to change nothing: the model obeyed for one reply, and the next
+    // turn rebuilt the system prompt from the stored setting and switched straight back.
+    // This is what "please always answer in English" has to reach to survive the turn.
+    case 'set_language': {
+      const lang = String(a.language || '').trim();
+      // The closed list, not a pattern. A regex allowing letters and spaces also allows
+      // "Ignore previous instructions and", which languageRule() would then paste verbatim
+      // into the mentor's own instructions — the display-name injection through a new door.
+      if (!isLanguage(lang) || lang === 'auto') break;
+      await rawUsers().updateOne({ _id: currentUser()._id }, { $set: { language: lang } });
+      break;
+    }
     case 'add_word': {
       if (!users.can(currentUser(), 'english')) break;
       const word = String(a.word || '').trim().slice(0, 60);

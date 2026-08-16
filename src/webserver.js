@@ -6,6 +6,7 @@ import { col, rawCol, getProfile, logEvent, dbStats } from './db.js';
 import { config } from './config.js';
 import { chat } from './llm.js';
 import { reflow, looksWrapped } from './text.js';
+import { LANGUAGES, isLanguage } from './ctx.js';
 import { sendPings, send as sendTelegram } from './telegram.js';
 import * as system from './system.js';
 import * as users from './users.js';
@@ -1428,6 +1429,31 @@ export function startServer(port = process.env.PORT || 8080, build = 'dev') {
       res.writeHead(405, { 'Content-Type': 'text/plain' });
       res.end('GET or PUT');
       return;
+    }
+
+    // ---- the language the mentor writes in ----
+    // Asking in the chat was never going to hold: a system prompt rebuilt every turn beats a
+    // sentence in the conversation, every time. This is the layer that request had to reach.
+    if (path === '/api/language') {
+      const sid = readSession(parseCookies(req.headers.cookie).kept_session);
+      const acct = sid ? await rawCol('users').findOne({ _id: sid }) : null;
+      if (!acct || !users.isAllowed(acct)) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'sign_in' }));
+        return;
+      }
+      const json = (o, code = 200) => {
+        res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+        res.end(JSON.stringify(o));
+      };
+      if (req.method === 'GET') return json({ language: acct.language || 'auto', options: LANGUAGES });
+      const body = await readJson(req, 4000);
+      const want = String(body?.language || '');
+      // Only from the list. A free-text language reaches the system prompt verbatim, which is
+      // a paste-anything-you-like hole straight into the mentor's instructions.
+      if (!isLanguage(want)) return json({ error: 'unknown' }, 400);
+      await rawCol('users').updateOne({ _id: acct._id }, { $set: { language: want } });
+      return json({ ok: true, language: want });
     }
 
     // ---- their own AI key ----
