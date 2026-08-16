@@ -1734,7 +1734,7 @@ let keyState={provider:null,hint:null};
 function keyNote(){
   return keyState.provider
     ? `Using your own ${keyState.provider==="gemini"?"Google":"Anthropic"} key — ${keyState.hint||""}`
-    : "Use your own and the daily limit stops applying";
+    : "For the technical — removes the daily limit";
 }
 async function loadKey(){
   try{ const r=await api("/api/mykey"); if(r.ok) keyState=await r.json(); }catch(e){}
@@ -1814,7 +1814,6 @@ $("menu-btn").onclick=()=>{
      only truly be on once they have said yes to their phone as well. The label says which of
      those two is true instead of claiming it is on when nothing can arrive. */
   if(!GUEST) items.push(['notify','Notifications','What Kept may send you, and when',null,()=>{ openNotify(); }]);
-  if(!GUEST) items.push(['key','Your own AI key', keyNote(), null, ()=>{ openKey(); }]);
   items.push(['message','Message Grygorii', mailWaiting?'A reply is waiting':'Something broken, missing, or just an idea',null,()=>{ openContact(); }]);
   /* The rest of the system, for whoever is entitled to it. Driven by ME.can, which the
      server built from users.can() — so this list is not "is this Гриша", it is "what may
@@ -1829,6 +1828,11 @@ $("menu-btn").onclick=()=>{
   if(CAN.includes('body')) items.push(['body','Body map','What hurts, and since when','/body']);
   if(CAN.includes('routine')) items.push(['routine','Routine','Today, and the three that matter','/routine']);
   items.push(['privacy','What we store','The short, honest version','/privacy']);
+  /* Down here on purpose. Getting an API key means finding a console, making an account and
+     generating a credential — almost nobody will do that, and pretending otherwise by putting
+     it near the top would give the most prominent row in the menu to the least-used feature.
+     It is an escape hatch for the few who want one, not a plan for how this gets paid for. */
+  if(!GUEST) items.push(['key','Your own AI key', keyNote(), null, ()=>{ openKey(); }]);
   if(ME.owner) items.push(['admin','Admin','Who joined and what they did','/admin']);
   if(!GUEST) items.push(['signout','Sign out','','/auth/logout']);
 
