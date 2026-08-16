@@ -1430,6 +1430,50 @@ export function startServer(port = process.env.PORT || 8080, build = 'dev') {
       return;
     }
 
+    // ---- their own AI key ----
+    // The storage, the encryption and the routing have all existed since the Telegram days —
+    // /mykey has worked for months. It simply had no door in the app, so the one feature that
+    // makes heavy use free was reachable only by people who no longer use Telegram.
+    // The key is written and never read back: what returns is a masked hint, so a stolen
+    // session cannot lift somebody's API key out of this endpoint.
+    if (path === '/api/mykey') {
+      const sid = readSession(parseCookies(req.headers.cookie).kept_session);
+      const acct = sid ? await rawCol('users').findOne({ _id: sid }) : null;
+      if (!acct || !users.isAllowed(acct)) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'sign_in' }));
+        return;
+      }
+      const json = (o, code = 200) => {
+        res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+        res.end(JSON.stringify(o));
+      };
+      const state = (u) => ({
+        provider: u.llm?.provider || null,
+        hint: u.llm?.hint || null,
+        since: u.llm?.setAt || null,
+      });
+      if (req.method === 'GET') return json(state(acct));
+      const body = await readJson(req, 8000);
+      if (body?.action === 'clear') {
+        await users.clearUserKey(acct._id);
+        return json({ ok: true, provider: null, hint: null });
+      }
+      const provider = String(body?.provider || '');
+      const key = String(body?.key || '').trim();
+      if (!['anthropic', 'gemini'].includes(provider)) return json({ error: 'unknown_provider' }, 400);
+      if (key.length < 20 || key.length > 300) return json({ error: 'bad_key' }, 400);
+      try {
+        await users.setUserKey(acct._id, provider, key);
+      } catch (err) {
+        // The commonest cause is ENCRYPTION_KEY missing on the server. Say which, rather than
+        // letting somebody paste a key three times into a door that cannot lock.
+        return json({ error: 'not_stored', why: err.message }, 500);
+      }
+      const fresh = await rawCol('users').findOne({ _id: acct._id });
+      return json({ ok: true, ...state(fresh) });
+    }
+
     // ---- one thought a day ----
     // Everything here needs a signed-in person: a notification is sent to somebody, and a
     // guest is nobody. Kept deliberately small — the browser owns the permission, the server

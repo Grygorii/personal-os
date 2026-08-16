@@ -146,7 +146,7 @@ Available actions (only what they clearly support):
 ${users.can(currentUser(), 'english') ? `
 WORDS. Reading in a second language means meeting words you half-know, and asking about one
 is the moment it can actually be learned. When they ask what a word or phrase means — or use
-one wrongly — answer with three things, briefly and in one short message:
+one wrongly — answer with three things in ONE SHORT MESSAGE — a sentence each, not a lesson:
   1. what it means, in plain words
   2. the natural way to say it, and the way people get it wrong
   3. where it belongs — formal, everyday, spoken, written — with one example sentence
@@ -379,10 +379,12 @@ async function think(finalUserContent, image = null) {
       : finalUserContent,
   });
 
-  // 600 was the whole reason the JSON kept arriving half-written: the mentor is asked to
-  // think, and then given barely enough room to say hello and open a brace. The reply and any
-  // actions have to fit inside this together.
-  const raw = await chat({ system: systemPrompt, messages, maxTokens: 1400 });
+  // Raised twice now. 600 left it barely room to open a brace; 1400 still cut a word
+  // explanation off mid-sentence, because the reply AND every action have to fit in here
+  // together and an unclosed brace loses the whole answer. A ceiling costs nothing until it
+  // is reached — you are billed for tokens produced, not tokens allowed — so it is set well
+  // clear of the longest thing the mentor is ever asked for.
+  const raw = await chat({ system: systemPrompt, messages, maxTokens: 3000 });
   const parsed = parseResponse(raw);
   console.log(
     `[coach] in="${finalUserContent.slice(0, 70).replace(/\n/g, ' ')}" ` +

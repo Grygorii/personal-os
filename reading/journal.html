@@ -207,8 +207,13 @@
   .cap[hidden]{display:none}
   .caphint{color:var(--faint);font-size:.76rem;margin:7px 2px 0}
   /* choosing the part of the page to read */
+  /* Room around the picture, so the frame has somewhere to be. The corner brackets are drawn
+     slightly OUTSIDE the selection, and with the photo flush against the container they were
+     clipped the moment the frame reached an edge — which is exactly where you put it when the
+     words you want run to the margin. */
   .cropbox{position:relative;touch-action:none;-webkit-user-select:none;user-select:none;
-    background:var(--raise);border-radius:12px;overflow:hidden;display:flex;justify-content:center}
+    background:var(--raise);border-radius:12px;overflow:hidden;display:flex;justify-content:center;
+    padding:16px}
   .cropstage{position:relative;transition:transform .32s cubic-bezier(.22,.61,.36,1);will-change:transform}
   .cropbox img{display:block;max-width:100%;max-height:46vh;width:auto;height:auto;pointer-events:none}
   /* A camera dims everything OUTSIDE the frame and leaves the kept part bright. This used to
@@ -952,7 +957,7 @@ function openBook(id){
       const reset=()=>{
         const ib=imgBox();
         if(!ib.w||!ib.h) return;
-        rect={ x:ib.left+ib.w*0.06, y:ib.top+ib.h*0.28, w:ib.w*0.88, h:ib.h*0.44 };
+        rect={ x:ib.left+ib.w*0.08, y:ib.top+ib.h*0.28, w:ib.w*0.84, h:ib.h*0.44 };
         paint();
       };
       img.addEventListener("load",reset);
@@ -1619,6 +1624,7 @@ const ICON={
   routine: SVG('<path d="M4 7l2 2 3-3"/><path d="M4 14l2 2 3-3"/><path d="M12 8h8"/><path d="M12 15h8"/>'),
   privacy: SVG('<path d="M12 3l8 3v6c0 4.5-3.2 7.9-8 9-4.8-1.1-8-4.5-8-9V6z"/>'),
   admin:   SVG('<path d="M4 7h16"/><path d="M4 17h16"/><circle cx="9" cy="7" r="2.3"/><circle cx="15" cy="17" r="2.3"/>'),
+  key:     SVG('<circle cx="8" cy="14" r="4"/><path d="M11 11l9-9"/><path d="M17 5l2 2"/><path d="M14.5 7.5l2 2"/>'),
   notify:  SVG('<path d="M18 9a6 6 0 1 0-12 0c0 6-2 7-2 7h16s-2-1-2-7"/><path d="M10.5 20a1.8 1.8 0 0 0 3 0"/>'),
   dot:     SVG('<circle cx="12" cy="12" r="3"/>'),
 };
@@ -1717,6 +1723,83 @@ async function openNotify(){
   paint();
 }
 
+/* ---- Bring your own AI key ----
+   Everything behind this has existed since the Telegram days — encrypted storage, per-user
+   routing, a fallback to the shared allowance. It simply had no door in the app, so the one
+   feature that makes heavy use free was reachable only by people who had stopped using
+   Telegram.
+   The key is WRITTEN and never read back. What comes out is a masked hint, so a stolen
+   session cannot lift somebody's API key out of the endpoint that stored it. */
+let keyState={provider:null,hint:null};
+function keyNote(){
+  return keyState.provider
+    ? `Using your own ${keyState.provider==="gemini"?"Google":"Anthropic"} key — ${keyState.hint||""}`
+    : "Use your own and the daily limit stops applying";
+}
+async function loadKey(){
+  try{ const r=await api("/api/mykey"); if(r.ok) keyState=await r.json(); }catch(e){}
+}
+function openKey(){
+  const { close }=openSheet(
+    `<div class="sheet-head">Your own AI key</div>
+     <p class="sheet-note" id="k-note"></p>
+     <div class="sheet-body">
+       <label for="k-prov">Where the key is from</label>
+       <select id="k-prov">
+         <option value="gemini">Google AI Studio — free</option>
+         <option value="anthropic">Anthropic (Claude) — pay per use</option>
+       </select>
+       <!-- Said plainly, because everybody assumes otherwise: a Claude Pro or ChatGPT Plus
+            subscription does NOT include this. Those pay for a chat window; an API key is
+            billed separately. Google's free tier is the only one an ordinary person can
+            realistically get, so it goes first and it is named as free. -->
+       <p class="caphint" style="margin-top:8px">A Claude Pro, ChatGPT Plus or Perplexity
+         subscription <b>doesn't</b> work here — those pay for a chat window, not for an app to
+         call on your behalf. Google's is free: <b>aistudio.google.com</b> → Get API key →
+         copy it here.</p>
+       <label for="k-key" style="margin-top:12px;display:block">Paste the key</label>
+       <input id="k-key" type="password" autocomplete="off" spellcheck="false" placeholder="AIza… or sk-ant-…">
+       <p class="caphint">It is encrypted before it is stored, and never shown again — only the
+         last few characters, so you can tell which key it is.</p>
+     </div>
+     <button class="btn" id="k-save" style="margin-top:12px">Save the key</button>
+     <button class="btn ghost" id="k-clear" style="margin-top:8px" hidden>Remove it and go back to the shared allowance</button>
+     <button class="btn ghost" id="k-x" style="margin-top:8px">Close</button>`,
+    "Your own AI key");
+  $("k-x").onclick=close;
+
+  const paint=()=>{
+    $("k-note").textContent=keyState.provider
+      ? `Right now: your own ${keyState.provider==="gemini"?"Google":"Anthropic"} key (${keyState.hint||"saved"}). Your calls, your bill, no daily cap.`
+      : "Right now: the shared allowance, which is capped each day. Add your own key and the cap stops applying — the calls go on your account instead of ours.";
+    $("k-clear").hidden=!keyState.provider;
+    if(keyState.provider) $("k-prov").value=keyState.provider;
+  };
+  paint();
+
+  $("k-save").onclick=async()=>{
+    const key=$("k-key").value.trim();
+    if(key.length<20){ toast("That doesn't look like a key"); return; }
+    const b=$("k-save"); b.disabled=true; b.textContent="Saving…";
+    try{
+      const r=await api("/api/mykey",{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({provider:$("k-prov").value,key})});
+      const d=await r.json();
+      if(!r.ok) throw new Error(d.why||d.error||"failed");
+      keyState=d; $("k-key").value=""; paint(); toast("Saved — your calls now use your key");
+    }catch(e){ toast("Couldn't save it: "+e.message); }
+    b.disabled=false; b.textContent="Save the key";
+  };
+  $("k-clear").onclick=async()=>{
+    try{
+      const r=await api("/api/mykey",{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({action:"clear"})});
+      if(r.ok){ keyState=await r.json(); paint(); toast("Removed — back to the shared allowance"); }
+    }catch(e){ toast("Couldn't remove it — try again"); }
+  };
+}
+if(!GUEST) loadKey();
+
 $("menu-btn").onclick=()=>{
   const items=[];
   if(GUEST) items.push(['signin','Sign in','Keep your books on every device','/signin']);
@@ -1731,6 +1814,7 @@ $("menu-btn").onclick=()=>{
      only truly be on once they have said yes to their phone as well. The label says which of
      those two is true instead of claiming it is on when nothing can arrive. */
   if(!GUEST) items.push(['notify','Notifications','What Kept may send you, and when',null,()=>{ openNotify(); }]);
+  if(!GUEST) items.push(['key','Your own AI key', keyNote(), null, ()=>{ openKey(); }]);
   items.push(['message','Message Grygorii', mailWaiting?'A reply is waiting':'Something broken, missing, or just an idea',null,()=>{ openContact(); }]);
   /* The rest of the system, for whoever is entitled to it. Driven by ME.can, which the
      server built from users.can() — so this list is not "is this Гриша", it is "what may
