@@ -11,6 +11,7 @@ import assert from 'node:assert/strict';
 import { safeName, isLanguage, LANGUAGES } from '../src/ctx.js';
 import { isAllowed, trustLevel, can, visibleLogTypes, MODULES } from '../src/users.js';
 import { safeUrl, cleanSteps, cleanTasks, cleanQuestions } from '../src/shape.js';
+import { parseGrades, gradedAny, bandFor } from '../src/grade.js';
 import { reflow, looksWrapped } from '../src/text.js';
 import { parseResponse } from '../src/coach.js';
 
@@ -279,4 +280,86 @@ test('cleanQuestions: every place he asked it is kept, and only real links', () 
   assert.equal(q.threads[1].where, 'link', 'an unknown place becomes a plain link');
   assert.equal(q.answer, 'Yes, if small enough.', 'where he landed is kept');
   assert.equal(cleanQuestions([{ text: '   ' }]).length, 0, 'an empty question is not a question');
+});
+
+test('parseGrades: the line format survives what killed the JSON one', () => {
+  // The real reply that lost five answers. `"score">52` — one character where a colon
+  // belonged — and JSON.parse took the whole exam down with it.
+  const broken = '{"grades":[{"score":72,"feedback":"This landed."},{"score">52,"feedback":"Vague."}],"overall":61,"verdict":"Close."}';
+  const g = parseGrades(broken, 2);
+  assert.equal(g.grades.length, 2, 'a mangled separator no longer costs the whole run');
+
+  const lines = [
+    'Q1 SCORE: 72',
+    'Q1 LANDED: You named the actual mechanism, not the slogan.',
+    'Q1 MISSING: You never said what it costs to get it wrong.',
+    'Q2 SCORE: 38',
+    'Q2 LANDED: Nothing much.',
+    'Q2 MISSING: This is a summary of the chapter, not an answer.',
+    'UNDERSTOOD: 72',
+    'USED: 38',
+    'CHALLENGED: 50',
+    'OVERALL: 55',
+    'VERDICT: You understood it and have not used it yet.',
+  ].join('\n');
+  const ok = parseGrades(lines, 2);
+  assert.equal(ok.grades[0].score, 72);
+  assert.equal(ok.grades[1].score, 38);
+  assert.equal(ok.overall, 55);
+  assert.match(ok.verdict, /have not used it yet/);
+  assert.match(ok.grades[1].missing, /^This is a summary/);
+  // The three dimensions are the structure: understanding is table stakes, using it is the
+  // whole claim of the product, and pushing back is what separates a reader from a repeater.
+  assert.deepEqual(
+    { understood: ok.understood, used: ok.used, challenged: ok.challenged },
+    { understood: 72, used: 38, challenged: 50 }
+  );
+});
+
+test('parseGrades: one bad line costs one line', () => {
+  // Q1 mangled the separator, Q2 is clean. Q2 must still be marked, and must not slide into
+  // Q1's slot — a shifted grade is worse than a missing one, because it looks correct.
+  const g = parseGrades('Q1 SCORE> 70\nQ2 SCORE: 40\nQ2 MISSING: Thin.\nOVERALL: 55', 2);
+  assert.equal(g.grades.length, 2);
+  assert.equal(g.grades[0].score, 70, 'and a loose separator is tolerated anyway');
+  assert.equal(g.grades[1].score, 40, 'Q2 stays Q2');
+});
+
+test('parseGrades: the three dimensions are computed when the model omits them', () => {
+  // The model is asked for them, but a missing line must never mean a missing dimension: the
+  // questions already carry the shape (Q1-2 comprehension, Q3-4 application, Q5 pushback), so
+  // the numbers can always be derived from the per-question marks.
+  const g = parseGrades(
+    ['Q1 SCORE: 80', 'Q2 SCORE: 70', 'Q3 SCORE: 40', 'Q4 SCORE: 30', 'Q5 SCORE: 60'].join('\n'),
+    5
+  );
+  assert.equal(g.understood, 75, 'Q1-Q2');
+  assert.equal(g.used, 35, 'Q3-Q4');
+  assert.equal(g.challenged, 60, 'Q5');
+  // 75*0.3 + 35*0.5 + 60*0.2 = 52. Note what the weighting does: a reader who clearly
+  // understood the book (75) but did nothing with it (35) lands at 52 — under the line where
+  // you own the idea. That is the motto doing arithmetic, and it is the point of the weights.
+  assert.equal(g.overall, 52, 'an overall from the marks, weighted toward using it');
+  assert.equal(bandFor(g.overall).label, 'the right idea, not yet owned');
+});
+
+test('bandFor: a number a reader can interpret without being told the rubric', () => {
+  assert.match(bandFor(20).label, /bluff|generic|restat/i);
+  assert.equal(bandFor(45).label, bandFor(59).label);
+  assert.notEqual(bandFor(59).label, bandFor(60).label, '60 is the line where you own the idea');
+  assert.notEqual(bandFor(79).label, bandFor(80).label, '80 is where you applied it to your life');
+  assert.equal(bandFor(null), null, 'no score means no band, not the bottom one');
+});
+
+test('parseGrades: a reply with nothing readable says so instead of inventing a mark', () => {
+  for (const junk of ['', 'I cannot grade this.', '{"nope":1}', null]) {
+    const g = parseGrades(junk, 5);
+    assert.equal(g.grades.every((x) => x.score == null && !x.landed && !x.missing), true, JSON.stringify(junk));
+    assert.equal(gradedAny(g), false, 'and it reports that plainly instead of showing zeros');
+  }
+  // Missing scores must never be read as zero — a 0% is a judgement, absent is not.
+  const g = parseGrades('Q1 LANDED: Good.', 2);
+  assert.equal(g.grades[0].score, null);
+  assert.equal(g.grades[0].landed, 'Good.');
+  assert.equal(gradedAny(g), true, 'a note with no number is still worth showing');
 });

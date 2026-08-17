@@ -921,6 +921,7 @@ function openBook(id){
         ?`<p class="sub" style="margin:0 0 8px">Last result: <b style="color:var(--good)">${b.exam.score}%</b> · ${fmtDate(b.exam.ts)}${b.exam.verdict?`<br><span style="color:var(--muted)">${esc(b.exam.verdict)}</span>`:""}</p>`
         :`<p class="sub" style="margin:0 0 8px">Prove you own this book — honest questions, honestly graded.</p>`}
       <div id="exam-area"></div>
+      ${b.exam?`<div style="margin-top:10px"><button class="btn" id="b-paper">See my answers and marks</button></div>`:""}
       <div style="margin-top:10px"><button class="btn ghost" id="b-exam">🎓 ${b.exam?"Retake the exam":"Test my knowledge"}</button></div>
     </div>
     <div class="sec">
@@ -1308,6 +1309,7 @@ function openBook(id){
     if(guestBlocked("The exam","Your questions are written for this book by a model, and marked by one.")) return;
     startExam(id);
   };
+  if($("b-paper")) $("b-paper").onclick=()=>showPaper(id);
   $("b-share").onclick=()=>{
     if(guestBlocked("Sharing","A shared page lives on the server, so it needs somewhere to live.")) return;
     shareBook(id);
@@ -1315,6 +1317,75 @@ function openBook(id){
 }
 
 /* ---- Knowledge exam: honest questions, honestly graded ---- */
+/* ---- a grade with a shape ----
+   A bare 52% tells you nothing you can act on, and it hides the one thing this app claims to
+   measure. The five questions already have three jobs — Q1-2 the book's ideas, Q3-4 using them
+   in your own life, Q5 pushing back — so the result is shown along the same three lines.
+   "You understood it and you have not used it" is worth reading. One number is not. */
+const BANDS=[[80,"used it in your own life"],[60,"you own the book's idea"],
+             [40,"the right idea, not yet owned"],[0,"generic, restated or bluffed"]];
+const bandFor=s=>s==null?null:(BANDS.find(b=>s>=b[0])||BANDS[3])[1];
+const gradeColor=s=>s==null?"var(--faint)":s>=60?"var(--good)":s>=40?"var(--star)":"var(--bad)";
+function dimBar(label,score,note){
+  return `<div style="margin-top:10px">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
+      <span style="font-weight:600;font-size:.86rem">${label}</span>
+      <span style="font-weight:700;color:${gradeColor(score)}">${score==null?"—":score+"%"}</span>
+    </div>
+    <div class="bar" style="margin-top:5px"><i style="width:${score||0}%;background:${gradeColor(score)}"></i></div>
+    <div style="color:var(--faint);font-size:.76rem;margin-top:3px">${esc(note)}</div>
+  </div>`;
+}
+function examResultHtml(res,questions,answers){
+  const overall=res.overall, band=bandFor(overall);
+  return `<div style="text-align:center;padding:14px 4px 2px">
+      <div style="font-family:var(--serif);font-size:2.4rem;font-weight:600;color:${gradeColor(overall)}">${overall==null?"—":overall+"%"}</div>
+      ${band?`<div style="color:var(--muted);font-size:.84rem">${esc(band)}</div>`:""}
+      ${res.verdict?`<p class="sub" style="margin:8px 0 0">${esc(res.verdict)}</p>`:""}
+    </div>
+    <div class="sec" style="margin-top:14px;background:var(--raise)">
+      ${dimBar("Understood",res.understood,"Could you explain it to someone else?")}
+      ${dimBar("Used",res.used,"Did you do anything with it? This is the one that counts.")}
+      ${dimBar("Challenged",res.challenged,"Can you say where the author is wrong?")}
+    </div>`+
+    (res.grades||[]).map((gr,i)=>`<div class="item" style="margin-top:12px">
+      <div class="meta" style="margin:0 0 6px">
+        <span class="npage">Q${i+1}${gr.score==null?"":` · ${gr.score}%`}</span>
+        ${gr.score==null?"":`<span>${esc(bandFor(gr.score))}</span>`}
+      </div>
+      ${questions&&questions[i]?`<div style="font-weight:600;font-size:.9rem;line-height:1.4">${esc(questions[i])}</div>`:""}
+      ${answers&&answers[i]?`<div class="why" style="font-family:var(--serif);color:var(--ink);margin-top:8px">${esc(answers[i])}</div>`:""}
+      ${gr.landed?`<div class="why" style="margin-top:8px"><b style="color:var(--good)">Landed:</b> ${esc(gr.landed)}</div>`:""}
+      ${gr.missing?`<div class="why" style="margin-top:4px"><b style="color:var(--bad)">Missing:</b> ${esc(gr.missing)}</div>`:""}
+    </div>`).join("");
+}
+
+/* Reopening a paper already sat. The exam used to leave behind a number on a card; the
+   thinking that earned it was written down and then never shown again. */
+async function showPaper(id){
+  const b=state.books.find(x=>x.id===id); if(!b)return;
+  const area=$("exam-area"), btn=$("b-exam");
+  area.innerHTML='<p class="sub">Fetching your paper…</p>';
+  try{
+    const r=await api(`/api/bookexam/paper?title=${encodeURIComponent(b.title)}`);
+    if(!r.ok) throw 0;
+    const p=await r.json();
+    if(p.error){ area.innerHTML=""; toast("No saved exam for this book yet"); return; }
+    btn.hidden=true;
+    area.innerHTML=examResultHtml(p,p.questions,p.answers)+
+      `<div style="margin-top:12px"><button class="btn" id="paper-ask">Talk it through with the mentor</button></div>
+       <div style="margin-top:8px"><button class="btn ghost" id="paper-close">Close</button></div>`;
+    $("paper-close").onclick=()=>openBook(id);
+    /* The mentor already has the whole paper in its context, so this only has to open the
+       conversation — no need to paste the exam into the message. */
+    $("paper-ask").onclick=()=>{
+      $("tab-chat").click();
+      const inp=$("chat-input");
+      if(inp){ inp.value=`Let's go through my exam on ${b.title}.`; inp.focus(); }
+    };
+  }catch(e){ area.innerHTML=""; toast("Couldn't load your paper"); }
+}
+
 async function startExam(id){
   const b=state.books.find(x=>x.id===id); if(!b)return;
   const btn=$("b-exam"),area=$("exam-area");
@@ -1326,12 +1397,18 @@ async function startExam(id){
     const ex=await r.json();
     if(ex.error){ btn.disabled=false;btn.textContent="🎓 Test my knowledge";toast(ex.message||"Try again tomorrow");return; }
     btn.hidden=true;
-    area.innerHTML=`<p class="sub" style="margin:8px 0 4px;color:var(--muted)">Answer in your own words — 2–4 sentences each. Graded honestly: bluff scores low.</p>`+
+    area.innerHTML=`<p class="sub" style="margin:8px 0 4px;color:var(--muted)">${ex.resumed
+        ? "Your answers were saved — here they are again. Edit anything, then send it for marking."
+        : "Answer in your own words — 2–4 sentences each. Graded honestly: bluff scores low."}</p>`+
       ex.questions.map((q,i)=>`<div style="margin-top:12px">
         <label style="text-transform:none;font-size:.9rem;letter-spacing:0;color:var(--ink)"><b>Q${i+1}.</b> ${esc(q)}</label>
         <textarea class="exam-ans" data-i="${i}" placeholder="your answer…"></textarea>
       </div>`).join("")+
       `<div style="margin-top:14px"><button class="btn" id="exam-submit">Submit for honest grading</button></div>`;
+    /* Assigned, not interpolated into the markup: an answer containing a quote mark would
+       break straight out of a value="" attribute, and these are long paragraphs of prose. */
+    if(Array.isArray(ex.answers))
+      area.querySelectorAll(".exam-ans").forEach((t,i)=>{ t.value=ex.answers[i]||""; });
     $("exam-submit").onclick=async()=>{
       const answers=[...area.querySelectorAll(".exam-ans")].map(t=>t.value.trim());
       if(answers.every(a=>!a)){toast("Answer at least one question");return;}
@@ -1340,18 +1417,18 @@ async function startExam(id){
         const g=await api("/api/bookexam/grade",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({eid:ex.eid,answers})});
         if(!g.ok)throw 0;
         const res=await g.json();
+        /* The marking failed and the writing did not. Say exactly that — "Grading failed" on
+           its own reads as "your work is gone", which is what he understandably assumed. */
+        if(res.error){
+          sb.disabled=false; sb.textContent="Mark it again";
+          toast("Your answers are saved — the marking failed. Press again.");
+          return;
+        }
         patch(id,{exam:{score:res.overall,ts:Date.now(),verdict:res.verdict||""}});
-        area.innerHTML=`<div style="text-align:center;padding:14px 4px 6px">
-            <div style="font-family:var(--serif);font-size:2.2rem;font-weight:600;color:${res.overall>=60?"var(--good)":"var(--bad)"}">${res.overall}%</div>
-            ${res.verdict?`<p class="sub" style="margin:4px 0 0">${esc(res.verdict)}</p>`:""}
-          </div>`+
-          res.grades.map((gr,i)=>`<div class="note">
-            <div class="ntop"><span class="npage">Q${i+1} · ${gr.score}%</span></div>
-            <div class="ntext" style="color:var(--muted)">${esc(gr.feedback||"")}</div>
-          </div>`).join("")+
+        area.innerHTML=examResultHtml(res,ex.questions,answers)+
           `<div style="margin-top:12px"><button class="btn ghost" id="exam-done">Done</button></div>`;
         $("exam-done").onclick=()=>openBook(id);
-        toast("Result saved to this book");
+        toast("Saved — you can reopen this any time");
       }catch(e){sb.disabled=false;sb.textContent="Submit for honest grading";toast("Grading failed — try again");}
     };
   }catch(e){btn.disabled=false;btn.textContent="🎓 Test my knowledge";toast("Couldn't create the exam — try again");}

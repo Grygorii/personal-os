@@ -81,7 +81,7 @@ function partOfDayNow() {
   return h < 5 ? 'the middle of the night' : h < 12 ? 'morning' : h < 17 ? 'afternoon' : h < 22 ? 'evening' : 'late night';
 }
 
-function buildSystem({ profile, logsSummary, behavior, reading, energy, state, pursuits, now, partOfDay, rawLogs }) {
+async function buildSystem({ profile, logsSummary, behavior, reading, energy, state, pursuits, now, partOfDay, rawLogs }) {
   const readingLine = reading
     ? `${reading.title}${reading.author ? ' by ' + reading.author : ''} — status: ${reading.status || 'reading'}${reading.progress ? `, progress: ${reading.progress}` : ''}`
     : 'nothing right now';
@@ -107,6 +107,25 @@ function buildSystem({ profile, logsSummary, behavior, reading, energy, state, p
     const bookLogs = summarizeLogs(
       (rawLogs || []).filter((l) => allowed.has(l.type))
     );
+    /* The exam, whole, so it can actually be discussed. Until now the mentor knew only that a
+       score existed ("book exam: Zero to One — 52%") and could say nothing useful about it. An
+       exam is the one place a reader writes at length about what they took from a book; handing
+       the mentor the questions, their own answers and the marking is what turns a number into a
+       conversation. Latest paper only, and truncated — this rides in every message. */
+    const paper = (await col('book_exams').find({ status: 'graded' })
+      .sort({ gradedAt: -1 }).limit(1).toArray())[0];
+    const examBlock = paper
+      ? `
+THEIR LAST EXAM — "${paper.title}", ${paper.overall}% overall (understood ${paper.understood ?? '—'}, used ${paper.used ?? '—'}, challenged ${paper.challenged ?? '—'}).
+Verdict given: ${paper.verdict || '—'}
+${(paper.questions || []).map((q, i) => {
+  const g = (paper.grades || [])[i] || {};
+  return `Q${i + 1} ${String(q).slice(0, 220)}
+  THEY WROTE: ${String((paper.answers || [])[i] || '(blank)').slice(0, 500)}
+  MARKED ${g.score ?? '—'}${g.landed ? ` · landed: ${g.landed}` : ''}${g.missing ? ` · missing: ${g.missing}` : ''}`;
+}).join('\n')}
+You may discuss this if they raise it, or if it is plainly the thing worth talking about — quote what they actually wrote, argue with the marking if you think it was unfair, and press the "used" score hardest: understanding a book is not the point. Never open a conversation by reciting the score at them.`
+      : '';
     const BOOK_PROFILE_KEYS = ['name', 'language', 'about', 'interests', 'goals', 'reading', 'values', 'work'];
     const shown = Object.fromEntries(
       Object.entries(profile || {}).filter(([k]) => BOOK_PROFILE_KEYS.includes(k))
@@ -134,7 +153,7 @@ STYLE: short and human (1–3 sentences) — this is a chat inside their reading
 CONTEXT: it is ${now} (${partOfDay}). Currently reading: ${readingLine}
 Recent reading activity:
 ${bookLogs}
-
+${examBlock}
 OUTPUT — reply with ONLY a JSON object, no fences:
 { "reply": "your message", "actions": [] }
 Available actions (only what they clearly support):
@@ -353,7 +372,7 @@ async function think(finalUserContent, image = null) {
     ? pursuitRows.map((p) => `${p.name}: ${system.rankForStat(p.xp || 0)} (${p.sessions || 0} sessions, ${p.stage || 'active'})`).join('; ')
     : 'none yet';
 
-  const systemPrompt = buildSystem({
+  const systemPrompt = await buildSystem({
     profile,
     // The unsummarised logs travel too, so the books branch can filter by MODULE before it
     // summarises. Filtering the finished sentence would mean the water was already written.
