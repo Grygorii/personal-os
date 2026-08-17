@@ -2367,6 +2367,33 @@ export function startServer(port = process.env.PORT || 8080, build = 'dev') {
          database, so neither needs a user to scope to, and personName() already answers "them"
          when nobody is signed in. Everything else in this block still requires an account,
          because everything else either stores something or remembers something. */
+      /* FINDING A BOOK IS THE FIRST STEP OF THE PIPELINE AND IT WAS BEHIND THE DOOR.
+         `/api/booksearch` sat in the authenticated list, so for every guest who ever typed a
+         title into "Start typing to find the book" the list came back empty and they were left
+         filling four fields by hand — or leaving. The landing page demonstrates this lookup as
+         the way in. It has never once worked for somebody without an account, and "added a
+         book" is the number that has never moved.
+         It costs no model money — an outbound lookup with a 6s timeout, proxied through our own
+         origin so the reader never talks to a third party — so it is not metered against the
+         free tries. The per-IP limiter is the whole of the protection it needs. */
+      if (!acct && path === '/api/booksearch' && req.method === 'GET') {
+        if (!users.rateLimit(`look:${clientIp(req)}`, 20)) {
+          res.writeHead(429, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'slow_down' }));
+          return;
+        }
+        const q = new URL(req.url, 'http://x').searchParams.get('q') || '';
+        try {
+          const out = await searchBooks(q);
+          res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+          res.end(JSON.stringify(out));
+        } catch (e) {
+          // A failed lookup must leave them typing, never staring at an error.
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ results: [] }));
+        }
+        return;
+      }
       const FREE_TO_TRY = path === '/api/readpage' || path === '/api/tidy';
       if (!acct && FREE_TO_TRY && req.method === 'POST') {
         const t = await freeTryLeft(req);

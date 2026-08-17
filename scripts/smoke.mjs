@@ -177,6 +177,27 @@ ok(app.body.includes('function freeSpent'), 'and running out is handled as an of
   ok(/Four cookies/i.test(privacy.body), 'and counts the cookies correctly');
 }
 
+// Wave 3: the empty shelf, where "added a book" has always died. The find-a-book lookup — the
+// one the landing page demonstrates as the way in — was behind the auth gate, so for every
+// guest who ever typed a title the results came back empty and they were left filling four
+// fields by hand. This is the check that it is genuinely open.
+console.log('\na stranger can find their book');
+{
+  const look = await grab('/api/booksearch?q=atomic+habits');
+  ok(look.status === 200, '/api/booksearch answers a guest', `got ${look.status}`);
+  let results = null;
+  try { results = JSON.parse(look.body).results; } catch { /* reported below */ }
+  ok(Array.isArray(results) && results.length > 0,
+    'and finds real books', look.body.slice(0, 80));
+  ok(!!results?.[0]?.author, 'with the author filled in, so nobody has to type it');
+}
+ok(app.body.includes('id="firstrun"'), '/app opens an empty shelf on one question');
+ok(app.body.includes('What are you reading right now?'), 'and that question is the one that matters');
+ok(app.body.includes('function addBookFrom'), 'and picking a book IS adding it');
+ok(app.body.includes('id="fr-manual"'), 'with a way out when the search cannot find it');
+ok(app.body.includes('.stats[hidden]{display:none}'),
+  'and the row of zeros can actually be hidden');
+
 // Almost everyone opens this on a phone, so the tap-target floor is a product rule, not a
 // preference. It is declared once as --tap; these check the token exists and that no component
 // has quietly gone back under it.

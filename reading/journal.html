@@ -319,6 +319,19 @@
   .places[hidden]{display:none}
   .addrow[hidden]{display:none}
   .item[hidden]{display:none}
+  /* The first screen. Deliberately roomy and deliberately singular — one question, one field,
+     nothing else competing for the tap. */
+  .firstrun{background:var(--surface);border:1px solid var(--line);border-radius:16px;
+    padding:26px 20px 22px;margin-top:6px;text-align:center}
+  .firstrun h2{font-family:var(--serif);font-size:1.42rem;font-weight:600;margin:0 0 8px;line-height:1.25}
+  .firstrun p{color:var(--muted);font-size:.94rem;margin:0 0 18px}
+  .firstrun .lookup{text-align:left}
+  .firstrun input{font-size:1.02rem;min-height:52px}
+  .frskip{background:none;border:0;color:var(--faint);font-family:var(--sans);font-size:.84rem;
+    font-weight:600;margin-top:16px;cursor:pointer;text-decoration:underline;
+    text-decoration-color:var(--line);text-underline-offset:3px}
+  .firstrun[hidden]{display:none}
+  .stats[hidden]{display:none}
   /* choosing the part of the page to read */
   /* Room around the picture, so the frame has somewhere to be. The corner brackets are drawn
      slightly OUTSIDE the selection, and with the photo flush against the container they were
@@ -579,7 +592,26 @@
       <div class="stat"><div class="n" id="st-finished">0</div><div class="l">Finished</div></div>
       <div class="stat"><div class="n" id="st-notes">0</div><div class="l">Thoughts</div></div>
     </div>
-    <div class="addrow"><button class="btn" id="add-toggle">＋ Add a book</button></div>
+    <!-- ---- the first screen, when the shelf is empty ----
+         "Added a book" is the number that has never moved, and this is the screen it dies on.
+         What was here: four stat tiles all reading 0, a search box for thoughts that do not
+         exist yet, and a button that opened a four-field form. A dashboard of zeros and a
+         data-entry task, handed to somebody who has been in the product for eight seconds.
+         What is here now: one question, and picking the answer IS adding the book — no second
+         button to find, no author to look up, no page count to guess. Status, pages and author
+         are all editable in the book itself, so asking for them up front bought nothing and
+         cost the only moment we get. -->
+    <div class="firstrun" id="firstrun" hidden>
+      <h2>What are you reading right now?</h2>
+      <p>Type a few letters of the title. Tap it, and you're in.</p>
+      <div class="lookup">
+        <input id="fr-title" placeholder="Atomic Habits, Zero to One…" autocomplete="off"
+               role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="fr-hits">
+        <div id="fr-hits" role="listbox" hidden></div>
+      </div>
+      <button class="frskip" id="fr-manual" type="button">Can't find it? Add it by hand</button>
+    </div>
+    <div class="addrow" id="addrow"><button class="btn" id="add-toggle">＋ Add a book</button></div>
     <div class="form" id="addbook" hidden>
       <label for="ab-title">Title</label>
       <div class="lookup">
@@ -771,10 +803,20 @@ function renderStats(){
 }
 function renderLibrary(){
   /* The screen every reader who stopped, stopped on. */
-  if(!state.books.length) step("empty_shelf");
+  const empty=!state.books.length;
+  if(empty) step("empty_shelf");
+  /* An empty shelf gets ONE question and nothing else. The stats are four zeros, the thought
+     search has nothing to search, and "＋ Add a book" is a second tap toward a form — all three
+     are furniture that makes the app look like a report on nothing. They come back the moment
+     there is a book to report on. */
+  $("firstrun").hidden=!empty;
+  document.querySelector(".stats").hidden=empty;
+  document.querySelector(".findrow").hidden=empty;
+  $("addrow").hidden=empty;
+  if(empty){ $("addbook").hidden=true; }
   renderStats();
   const list=$("book-list");
-  if(!state.books.length){list.innerHTML='<div class="empty">No books yet. Add one above — then log the thoughts it sparks.</div>';syncFind();return;}
+  if(empty){ list.innerHTML=""; syncFind(); return; }
   const order={reading:0,want:1,finished:2};
   const books=[...state.books].sort((a,b)=>(order[a.status]-order[b.status])||(b.updated||0)-(a.updated||0));
   list.innerHTML=books.map(b=>{
@@ -2272,44 +2314,74 @@ function clearAddForm(){
 }
 function hideHits(){ const h=$("ab-hits"); h.hidden=true; h.innerHTML=""; $("ab-title").setAttribute("aria-expanded","false"); }
 
-(function(){
-  const input=$("ab-title"), box=$("ab-hits");
+/* ---- finding a book, in one place ----
+   The lookup was written inline for the add form and then the empty shelf needed the same
+   thing, which is how a second copy gets born and drifts. One function, told which input to
+   watch and what to do when a book is picked. */
+function attachLookup(input, box, onPick){
   let timer=null, seq=0;
-
-  function show(html){ box.innerHTML=html; box.hidden=false; input.setAttribute("aria-expanded","true"); }
-
+  const hide=()=>{ box.hidden=true; box.innerHTML=""; input.setAttribute("aria-expanded","false"); };
   async function look(){
     const q=input.value.trim();
-    if(q.length<3){ hideHits(); return; }
+    if(q.length<3){ hide(); return; }
     const mine=++seq;
-    show('<div class="searching">Looking it up…</div>');
+    box.innerHTML='<div class="searching">Looking it up…</div>';
+    box.hidden=false; input.setAttribute("aria-expanded","true");
     let hits=[];
     try{
       const r=await api("/api/booksearch?q="+encodeURIComponent(q));
       if(r.ok) hits=(await r.json()).results||[];
     }catch(e){}
     if(mine!==seq) return;                       // a later keystroke already won
-    if(!hits.length){ hideHits(); return; }      // nothing found — just let them type
+    if(!hits.length){ hide(); return; }          // nothing found — just let them type
     box.innerHTML=hits.map((b,i)=>`<button class="hit" type="button" data-i="${i}" role="option">
       ${b.cover?`<img src="/cover/${b.cover}" alt="" loading="lazy">`:'<span class="noimg"></span>'}
       <span><span class="ht">${esc(b.title)}</span>
       <span class="ha">${esc(b.author||"Unknown author")}${b.year?` · ${b.year}`:""}${b.pages?` · ${b.pages}p`:""}</span></span>
     </button>`).join("");
     box.hidden=false; input.setAttribute("aria-expanded","true");
-    box.querySelectorAll(".hit").forEach(el=>el.onclick=()=>{
-      const b=hits[+el.dataset.i];
-      input.value=b.title;
-      $("ab-author").value=b.author||"";
-      if(b.pages) $("ab-total").value=b.pages;
-      pickedCover=b.cover||null;
-      hideHits();
-    });
+    box.querySelectorAll(".hit").forEach(el=>el.onclick=()=>{ hide(); onPick(hits[+el.dataset.i]); });
   }
+  input.addEventListener("input",()=>{ clearTimeout(timer); timer=setTimeout(look,350); });
+  input.addEventListener("keydown",e=>{ if(e.key==="Escape") hide(); });
+  document.addEventListener("click",e=>{ if(!e.target.closest(".lookup")) hide(); });
+  return { hide };
+}
 
-  input.addEventListener("input",()=>{ pickedCover=null; clearTimeout(timer); timer=setTimeout(look,350); });
-  input.addEventListener("keydown",e=>{ if(e.key==="Escape") hideHits(); });
-  document.addEventListener("click",e=>{ if(!e.target.closest(".lookup")) hideHits(); });
-})();
+// The add form: picking a book fills the fields, and they press Add when they are ready.
+attachLookup($("ab-title"), $("ab-hits"), (b)=>{
+  $("ab-title").value=b.title;
+  $("ab-author").value=b.author||"";
+  if(b.pages) $("ab-total").value=b.pages;
+  pickedCover=b.cover||null;
+});
+
+/* The first screen: picking IS adding, and it lands them inside the book with the thought box
+   already on screen. Anything else — status, page count, a rating — is a decision they cannot
+   make yet and can change in two taps once they can. */
+function addBookFrom(b, status){
+  const book={id:uid(),title:b.title,author:b.author||"",total:b.pages||null,page:0,
+    status:status||"reading",rating:0,notes:[],tasks:[],questions:[],cover:b.cover||null,
+    started:Date.now(),updated:Date.now()};
+  step("book_added");
+  state.books.push(book);
+  save();
+  renderLibrary();
+  openBook(book.id);
+  toast("On your shelf — now write what struck you");
+  return book;
+}
+attachLookup($("fr-title"), $("fr-hits"), (b)=>addBookFrom(b,"reading"));
+/* Open Library does not have everything, and a reader whose book is missing must not be stuck
+   on a screen that only offers search. */
+$("fr-manual").onclick=()=>{
+  const typed=$("fr-title").value.trim();
+  $("firstrun").hidden=true;
+  $("addrow").hidden=false;
+  $("addbook").hidden=false;
+  $("ab-title").value=typed;
+  $("ab-title").focus();
+};
 
 $("add-toggle").onclick=()=>{const f=$("addbook");f.hidden=!f.hidden;if(!f.hidden)$("ab-title").focus();else hideHits();};
 $("ab-save").onclick=()=>{
