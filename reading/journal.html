@@ -241,12 +241,32 @@
   .pill{display:inline-block;font-size:.7rem;font-weight:700;padding:3px 8px;border-radius:99px;
     background:var(--accent-tint);color:var(--accent-strong)}
   .pill.new{background:var(--good);color:#fff}
-  .item .act{display:flex;gap:12px;margin-top:10px}
+  /* Four actions do not fit one 375px row. Without a wrap rule flex squeezed each button until
+     its OWN label broke over two lines — "I found an answer" became four ragged words and the
+     row read as damaged. So the ROW wraps and the LABELS never do. */
+  .item .act{display:flex;flex-wrap:wrap;gap:4px 16px;margin-top:10px}
   .item .act button{background:none;border:0;color:var(--muted);font-family:var(--sans);
-    font-size:.8rem;font-weight:600;padding:6px 0;min-height:34px;cursor:pointer}
+    font-size:.8rem;font-weight:600;padding:6px 0;min-height:34px;cursor:pointer;white-space:nowrap}
   .addrow{display:flex;gap:8px;margin-top:10px}
   .addrow input{flex:1}
   .addrow button{flex:0 0 auto;padding:0 16px}
+  /* The switcher at the top of the book card — three things you write, one place, and the
+     active tab is the heading. Serif and a size up on the selected one, so it reads as a title
+     rather than as a row of controls. */
+  .bsegs{margin:0 0 2px}
+  .bsegs button{position:relative;font-size:.86rem;padding:11px 4px}
+  .bsegs button.on{font-family:var(--serif);font-size:1.05rem;font-weight:600}
+  /* The count rides beside the label. Blank when zero — a "0" reads as a fault, and the
+     element still has to exist so the text can be set without rebuilding the row. */
+  .bsegs button b{font-weight:700;font-size:.72rem;margin-left:5px;opacity:.75;
+    font-family:var(--sans);vertical-align:1px}
+  .bsegs button b:empty{display:none}
+  /* One dot, only when somebody has actually written back — the single thing in here that
+     arrives without him doing anything. */
+  .bsegs.hasnew button[data-p="tasks"]::after,.bsegs.hasnew button[data-p="qs"]::after{
+    content:"";position:absolute;top:6px;right:6px;width:7px;height:7px;border-radius:50%;
+    background:var(--good)}
+  /* Panes carry no display rule of their own, so `hidden` genuinely hides them. */
   /* The rule that keeps getting relearned: `hidden` is only a default, and any author
      `display` beats it. Every class above that sets one gets its guard here, whether or not it
      is hidden today — the next person to add a `hidden` to one of these should not have to
@@ -680,6 +700,8 @@ function flowText(s){
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
 const STATUS={reading:"Reading",finished:"Finished",want:"Want to read"};
 let openId=null;
+/* Which pane of the book card is showing, and which book it was chosen for. */
+let bookSeg="notes", bookSegFor=null;
 
 function toast(m){const t=$("toast");t.textContent=m;t.classList.add("show");setTimeout(()=>t.classList.remove("show"),1900);}
 function stars(n){let s="";for(let i=1;i<=5;i++)s+=`<span class="${i<=n?"":"off"}">★</span>`;return s;}
@@ -836,9 +858,20 @@ function openBook(id){
       </div>
       <div style="margin-top:12px"><button class="btn ghost" id="b-savep">Save progress</button></div>
     </div>
+    <!-- The three things you write while reading, in one card you switch between rather than
+         three stacked boxes you scroll past. They are the same kind of act — something you put
+         down because of this book — so they belong in one place, and the switcher IS the
+         heading. Three separate sections meant the exam and the share button sat a full screen
+         further down, and "add a question" was only ever found by scrolling to it. -->
     <div class="sec">
-      <h3>Thoughts</h3>
-      <p class="sub" style="margin:0 0 6px">A thought from your reading — tag the page it came from.</p>
+      <div class="segs bsegs" id="b-seg">
+        <button data-p="notes" class="on">Thoughts<b id="c-notes"></b></button>
+        <button data-p="tasks">To do<b id="c-tasks"></b></button>
+        <button data-p="qs">Questions<b id="c-qs"></b></button>
+      </div>
+
+      <div class="pane" id="pane-notes">
+      <p class="sub" style="margin:12px 0 6px">A thought from your reading — tag the page it came from.</p>
       <label for="n-text">Your thought</label>
       <textarea id="n-text" placeholder="What struck you? An idea, a question, a line worth keeping…"></textarea>
       <div class="caps">
@@ -865,21 +898,22 @@ function openBook(id){
           </div>`;
         }).join(""):'<div class="empty" style="padding:10px">No thoughts yet.</div>'}
       </div>
-    </div>
-    <!-- The motto, made into a control. A thought is what the book said; these two are what
-         you are going to do about it and what you still want to ask. -->
-    <div class="sec">
-      <h3>What you'll do about it</h3>
-      <p class="sub" style="margin:0 0 6px">One thing you'll actually do because of this book.</p>
-      <div id="tasks-list"></div>
-      <div style="margin-top:12px"><button class="btn ghost" id="t-add">＋ Add something to do</button></div>
-    </div>
-    <div class="sec">
-      <h3>Questions</h3>
-      <p class="sub" style="margin:0 0 6px">Something you'd put to someone else who read it — then
-      ask around and keep the replies.</p>
-      <div id="qs-list"></div>
-      <div style="margin-top:12px"><button class="btn ghost" id="q-add">＋ Add a question</button></div>
+      </div><!-- /pane-notes -->
+
+      <!-- The motto, made into a control. A thought is what the book said; these two are what
+           you are going to do about it and what you still want to ask. -->
+      <div class="pane" id="pane-tasks" hidden>
+        <p class="sub" style="margin:12px 0 6px">One thing you'll actually do because of this book.</p>
+        <div id="tasks-list"></div>
+        <div style="margin-top:12px"><button class="btn" id="t-add">＋ Add something to do</button></div>
+      </div>
+
+      <div class="pane" id="pane-qs" hidden>
+        <p class="sub" style="margin:12px 0 6px">Something you'd put to someone else who read it —
+        then ask around and keep the replies.</p>
+        <div id="qs-list"></div>
+        <div style="margin-top:12px"><button class="btn" id="q-add">＋ Add a question</button></div>
+      </div>
     </div>
     <div class="sec">
       <h3>Knowledge exam</h3>
@@ -896,8 +930,12 @@ function openBook(id){
     </div>
     <div style="margin-top:16px"><button class="btn danger" id="b-del">Delete this book</button></div>`;
 
-  /* Both lists, and the buttons that make one. Drawn after the template so the cards can be
-     redrawn on their own without rebuilding the whole book page under the reader's finger. */
+  /* Both lists, and the buttons that make one. Drawn after the template so the panes can be
+     redrawn on their own without rebuilding the whole book page under the reader's finger.
+     All three panes are RENDERED and switched with `hidden` rather than built on demand: the
+     thought composer's handlers are wired once below, and conditional rendering would have
+     meant re-wiring the camera, the tidy button and the file input on every switch — four
+     things that already each cost a bug to get right. */
   const drawItems=()=>{
     const ts=listOf(b,"tasks").slice().sort((p,q)=>(p.status==="done"?1:0)-(q.status==="done"?1:0)||(q.ts||0)-(p.ts||0));
     $("tasks-list").innerHTML=ts.length?ts.map(t=>taskCard(t,b,false)).join("")
@@ -905,8 +943,36 @@ function openBook(id){
     const qs=listOf(b,"questions").slice().sort((p,q)=>(q.ts||0)-(p.ts||0));
     $("qs-list").innerHTML=qs.length?qs.map(q=>questionCard(q,b,false)).join("")
       :'<div class="empty" style="padding:10px">Nothing yet.</div>';
+    /* A count on the tab is the whole reason to look at it. Open tasks rather than all of
+       them — a "3" that never moves because they are all finished tells you nothing. Zero is
+       left blank instead of showing a 0, which reads as a problem rather than as an invitation. */
+    const openTasks=ts.filter(t=>t.status!=="done").length;
+    const unread=[...ts,...qs].reduce((n,x)=>n+replyCount(x),0);
+    $("c-notes").textContent=(b.notes||[]).length||"";
+    $("c-tasks").textContent=openTasks||"";
+    $("c-qs").textContent=qs.length||"";
+    /* One dot on the switcher when somebody has actually written back, because that is the
+       only thing here that arrives without him doing anything. */
+    $("b-seg").classList.toggle("hasnew",unread>0);
   };
+  /* Which of the three you were last on. Sticky while you stay in the book — ticking a star
+     re-renders the page and must not throw you back to Thoughts — and reset to Thoughts when
+     you open a DIFFERENT book, because reading is what you came for. */
+  if(bookSegFor!==id){ bookSeg="notes"; bookSegFor=id; }
+  const showPane=(p)=>{
+    bookSeg=p; bookSegFor=id;
+    for(const k of ["notes","tasks","qs"]) $("pane-"+k).hidden=(k!==p);
+    $("b-seg").querySelectorAll("button").forEach(bt=>{
+      const on=bt.dataset.p===p;
+      bt.classList.toggle("on",on); bt.setAttribute("aria-selected",String(on));
+    });
+  };
+  $("b-seg").addEventListener("click",e=>{
+    const bt=e.target.closest("button[data-p]"); if(!bt) return;
+    showPane(bt.dataset.p);
+  });
   drawItems();
+  showPane(bookSeg);
   redrawBook=drawItems;
   wireItems($("tasks-list")); wireItems($("qs-list"));
   /* A task written while reading page 34 almost always comes from what you just wrote down, so
@@ -1745,7 +1811,7 @@ function questionCard(q,b,showBook){
     <div class="act">
       <button data-ask="${q.id}">ask around</button>
       <button data-place="${q.id}">+ where I asked</button>
-      <button data-answered="${q.id}">${q.answer?"edit answer":"I found an answer"}</button>
+      <button data-answered="${q.id}">${q.answer?"edit answer":"answer it"}</button>
       <button data-rm="${q.id}" data-kind="questions">remove</button>
     </div>
   </div>`;
