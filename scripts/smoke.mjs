@@ -198,6 +198,15 @@ ok(app.body.includes('id="fr-manual"'), 'with a way out when the search cannot f
 ok(app.body.includes('.stats[hidden]{display:none}'),
   'and the row of zeros can actually be hidden');
 
+// Wave 4: the exam is the only genuinely novel thing here, and finishing a book used to lead
+// nowhere at all — the status flipped and the offer sat two screens down waiting to be found.
+console.log('\nfinishing a book leads to the exam');
+ok(app.body.includes('function offerExam'), '/app offers the exam when a book is finished');
+ok(app.body.includes('examOffered'), 'and remembers, so it asks once rather than nagging');
+ok(app.body.includes('function shareResult'), 'and a result can be sent from where it was earned');
+ok(/understood \$\{res\.understood|understood:res\.understood/.test(app.body),
+  'and the three dimensions travel with it');
+
 // Almost everyone opens this on a phone, so the tap-target floor is a product rule, not a
 // preference. It is declared once as --tap; these check the token exists and that no component
 // has quietly gone back under it.

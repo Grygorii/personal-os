@@ -1085,7 +1085,15 @@ function openBook(id){
   $("b-rate").querySelectorAll("button").forEach(bt=>bt.onclick=()=>{patch(id,{rating:+bt.dataset.r});openBook(id);});
   $("b-status").querySelectorAll("button").forEach(bt=>bt.onclick=()=>{
     const s=bt.dataset.s; const p={status:s}; if(s==="finished"&&!b.finished)p.finished=Date.now();
+    /* FINISHING A BOOK USED TO LEAD NOWHERE. The status flipped, the page redrew, and the one
+       thing this product exists to offer sat two screens down waiting to be found. The moment
+       somebody finishes is the only moment they are certain to want testing on it — so it gets
+       asked, once per book, with a real way to decline. `examOffered` is what makes it once:
+       re-marking a book finished must never nag. */
+    const firstFinish=s==="finished"&&!b.exam&&!b.examOffered;
+    if(firstFinish) p.examOffered=Date.now();
     patch(id,p);openBook(id);
+    if(firstFinish) offerExam(id);
   });
   $("b-savep").onclick=()=>{
     const page=parseInt($("b-page").value,10); const total=parseInt($("b-total").value,10);
@@ -1488,6 +1496,52 @@ async function showPaper(id){
   }catch(e){ area.innerHTML=""; toast("Couldn't load your paper"); }
 }
 
+/* Sending a result. The three numbers go with it, because they are the interesting part — a
+   bare percentage is a fact about the sharer and means nothing to a stranger, whereas
+   "understood 78, used 41" is an argument, and it is the one this product is making. */
+async function shareResult(id,res){
+  const b=state.books.find(x=>x.id===id); if(!b) return;
+  const bt=$("exam-share"); if(bt){ bt.disabled=true; bt.textContent="Making the page…"; }
+  let url=null;
+  try{
+    const r=await api("/api/share",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({title:b.title,author:b.author||"",score:res.overall,
+        understood:res.understood??null,used:res.used??null,challenged:res.challenged??null,
+        verdict:res.verdict||"",thoughts:[]})});
+    if(r.ok) url=(await r.json()).url;
+  }catch(e){}
+  if(bt){ bt.disabled=false; bt.textContent="Send this to someone who read it"; }
+  if(!url){ toast("Couldn't make the page — try again"); return; }
+  step("share_made");
+  const used=res.used==null?null:res.used;
+  openShareSheet({
+    title:`${b.title} — tested`,
+    text:used!=null
+      ? `I was tested on ${b.title}: understood ${res.understood??"—"}%, used ${used}%. Finishing a book is not the same as using it.`
+      : `I scored ${res.overall}% on an honest test of ${b.title}.`,
+    url,
+    quote:res.verdict||"",
+    attribution:`— on ${b.title}${b.author?` by ${b.author}`:""}`,
+  });
+}
+
+/* The moment the book is closed. Offered once, declinable, and it says what the exam is FOR
+   rather than that it exists — "you finished it" is the setup, "what did you keep" is the ask. */
+function offerExam(id){
+  const b=state.books.find(x=>x.id===id); if(!b) return;
+  const n=(b.notes||[]).length;
+  const { close }=openSheet(`
+    <div class="sheet-head">You finished ${esc(b.title)}</div>
+    <p class="sheet-note">So what did you keep? Five questions written for this book${n?`, and for the ${n} thought${n===1?"":"s"} you saved in it`:""} — marked honestly, which means a bluff scores low.</p>
+    <p class="sheet-note" style="margin-top:-6px">You get three numbers back: whether you understood
+      it, whether you <b>used</b> it, and whether you can say where the author is wrong.</p>
+    <button class="btn" id="oe-go">Test me on it</button>
+    <button class="btn ghost" id="oe-x" style="margin-top:8px">Later</button>`,
+    "You finished the book");
+  $("oe-x").onclick=close;
+  $("oe-go").onclick=()=>{ close(); startExam(id); };
+}
+
 async function startExam(id){
   const b=state.books.find(x=>x.id===id); if(!b)return;
   const btn=$("b-exam"),area=$("exam-area");
@@ -1528,10 +1582,13 @@ async function startExam(id){
           return;
         }
         step("exam_graded");
-        patch(id,{exam:{score:res.overall,ts:Date.now(),verdict:res.verdict||""}});
+        patch(id,{exam:{score:res.overall,ts:Date.now(),verdict:res.verdict||"",
+          understood:res.understood??null,used:res.used??null,challenged:res.challenged??null}});
         area.innerHTML=examResultHtml(res,ex.questions,answers)+
-          `<div style="margin-top:12px"><button class="btn ghost" id="exam-done">Done</button></div>`;
+          `<div style="margin-top:14px"><button class="btn" id="exam-share">Send this to someone who read it</button></div>
+           <div style="margin-top:8px"><button class="btn ghost" id="exam-done">Done</button></div>`;
         $("exam-done").onclick=()=>openBook(id);
+        $("exam-share").onclick=()=>shareResult(id,res);
         toast("Saved — you can reopen this any time");
       }catch(e){sb.disabled=false;sb.textContent="Submit for honest grading";toast("Grading failed — try again");}
     };

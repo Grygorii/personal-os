@@ -588,7 +588,21 @@ async function saveBooks(books) {
           last: Number(b.quiz.last) || null,
         }
       : null,
-    exam: b.exam ? { score: Number(b.exam.score) || 0, ts: Number(b.exam.ts) || Date.now(), verdict: String(b.exam.verdict || '').slice(0, 600) } : null,
+    exam: b.exam
+      ? {
+          score: Number(b.exam.score) || 0,
+          ts: Number(b.exam.ts) || Date.now(),
+          verdict: String(b.exam.verdict || '').slice(0, 600),
+          // The three dimensions on the card too, so the shelf and a shared page agree.
+          understood: b.exam.understood == null ? null : Number(b.exam.understood) || 0,
+          used: b.exam.used == null ? null : Number(b.exam.used) || 0,
+          challenged: b.exam.challenged == null ? null : Number(b.exam.challenged) || 0,
+        }
+      : null,
+    // When they were offered the exam for finishing it. A whitelist drops what it has not heard
+    // of, so without this line the offer would be forgotten on the next sync and asked again
+    // every single time the book was opened — the feature turning into a nag.
+    examOffered: b.examOffered == null ? null : Number(b.examOffered) || null,
     // What he decided to DO about the book, and what he wants to ASK about it. Both live here
     // rather than in their own collections because both are only ever about one book, and
     // riding this document means export, backup, GDPR delete and per-user scoping already
@@ -1012,7 +1026,8 @@ ${visits.length > 30 ? `<p class="dim" style="font-size:.82rem">Showing 30 of ${
 // 16 hex chars = 64 bits from the CSPRNG. Old 9-char links keep working.
 const shareCode = () => crypto.randomBytes(8).toString('hex');
 
-async function createShare({ title, author, score, verdict, thoughts, thought, name }) {
+async function createShare({ title, author, score, verdict, thoughts, thought, name,
+                             understood, used, challenged }) {
   const code = shareCode();
   // ONLY what they ticked in the share sheet. This used to publish whichever note happened
   // to be last, without asking — which is how a private thought ends up on a public URL.
@@ -1030,6 +1045,13 @@ async function createShare({ title, author, score, verdict, thoughts, thought, n
     title: String(title || '').slice(0, 300),
     author: String(author || '').slice(0, 200),
     score: score == null ? null : Math.max(0, Math.min(100, Number(score) || 0)),
+    // The three dimensions travel with the result. This triplet is the actually novel thing
+    // this product produces — "understood it, did nothing with it" is a claim nobody else
+    // makes, and it is the motto stated as data. It stayed locked in the app while the public
+    // page published a bare percentage, which is the least interesting number in the record.
+    understood: understood == null ? null : Math.max(0, Math.min(100, Number(understood) || 0)),
+    used: used == null ? null : Math.max(0, Math.min(100, Number(used) || 0)),
+    challenged: challenged == null ? null : Math.max(0, Math.min(100, Number(challenged) || 0)),
     verdict: String(verdict || '').slice(0, 400),
     thoughts: picked,
     name: String(name || '').slice(0, 60),
@@ -1190,6 +1212,10 @@ function shareCard(s) {
   ${quote.length && s.score != null
     ? `<text x="80" y="560" fill="#D9AE4A" font-family="Georgia,serif" font-size="34" font-weight="bold">${s.score}% on an honest test of the book</text>`
     : ''}
+  ${!quote.length && s.used != null
+    ? `<text x="80" y="430" fill="#9C9686" font-family="Georgia,serif" font-size="30">understood ${s.understood ?? '—'}%  ·  <tspan fill="#D9AE4A" font-weight="bold">used ${s.used}%</tspan>  ·  challenged ${s.challenged ?? '—'}%</text>
+  <text x="80" y="486" fill="#ECE8DF" font-family="Georgia,serif" font-size="30" font-style="italic">Finishing a book is not the same as using it.</text>`
+    : ''}
   <text x="80" y="592" fill="#6E695C" font-family="Georgia,serif" font-size="26">readkept.com — read it, prove you kept it</text>
 </svg>`;
 }
@@ -1344,10 +1370,10 @@ function sharePage(s) {
     else now: cream page, white card, black text, and yellow only where a highlighter goes. */
  :root{color-scheme:light dark;
    --paper:#FCFAF5;--surface:#FFFFFF;--ink:#191713;--muted:#55514A;--faint:#6C6759;
-   --line:#E6E0D3;--mark:#FFF176;--mark-ink:#191713;--shadow:rgba(70,58,34,.10)}
+   --line:#E6E0D3;--mark:#FFF176;--mark-ink:#191713;--good:#2E7D52;--warn:#9A6B00;--shadow:rgba(70,58,34,.10)}
  @media (prefers-color-scheme:dark){:root{
    --paper:#14130F;--surface:#1D1B16;--ink:#ECE8DF;--muted:#9C9686;--faint:#8A8478;
-   --line:#2C2A22;--mark:#E8CB48;--mark-ink:#14130F;--shadow:rgba(0,0,0,.45)}}
+   --line:#2C2A22;--mark:#E8CB48;--mark-ink:#14130F;--good:#6FBF8E;--warn:#D9AE4A;--shadow:rgba(0,0,0,.45)}}
  *{box-sizing:border-box} body{margin:0;background:var(--paper);color:var(--ink);
    font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;line-height:1.6;
    display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px}
@@ -1367,6 +1393,15 @@ function sharePage(s) {
  .cred .n{font-family:Georgia,serif;font-size:1.9rem;font-weight:700;color:var(--ink);line-height:1}
  .cred .l{color:var(--muted);font-size:.86rem;line-height:1.35}
  .verdict{color:var(--muted);font-size:.93rem;margin-top:12px;font-style:italic}
+ /* The three dimensions, drawn the same way the app draws them so a shared result looks like
+    the thing it came from. Understanding a book is table stakes; USED is the one the whole
+    product is an argument about, which is why it is never hidden even when it is the low one. */
+ .dims{margin-top:18px;display:flex;flex-direction:column;gap:13px}
+ .dim .dh{display:flex;justify-content:space-between;align-items:baseline;font-size:.9rem;font-weight:600}
+ .dim .dh b.ok{color:var(--good)} .dim .dh b.no{color:var(--warn)}
+ .dbar{height:7px;border-radius:99px;background:var(--line);overflow:hidden;margin-top:5px}
+ .dbar i{display:block;height:100%}
+ .dwhy{color:var(--faint);font-size:.76rem;margin-top:3px}
  .pitch{margin:28px 0 14px;font-size:1.02rem;text-align:center;color:var(--muted)}
  .pitch b{color:var(--ink)}
  a.cta{display:block;background:var(--ink);color:var(--paper);text-decoration:none;font-weight:600;
@@ -1390,6 +1425,16 @@ function sharePage(s) {
   ${s.score != null
     ? `<div class="cred"><div class="n">${s.score}%</div>
     <div class="l">${esc(who)} was tested on this book — honest questions, honestly graded.</div></div>
+    ${[['Understood', s.understood], ['Used', s.used], ['Challenged', s.challenged]].some(([, v]) => v != null)
+      ? `<div class="dims">${[
+          ['Understood', s.understood, 'could explain it'],
+          ['Used', s.used, 'actually did something with it'],
+          ['Challenged', s.challenged, 'could say where the author is wrong'],
+        ].filter(([, v]) => v != null).map(([label, v, why]) => `<div class="dim">
+        <div class="dh"><span>${label}</span><b class="${v >= 60 ? 'ok' : 'no'}">${v}%</b></div>
+        <div class="dbar"><i style="width:${v}%;background:${v >= 60 ? 'var(--good)' : 'var(--warn)'}"></i></div>
+        <div class="dwhy">${why}</div></div>`).join('')}</div>`
+      : ''}
     ${s.verdict ? `<div class="verdict">${esc(s.verdict)}</div>` : ''}`
     : ''}
 

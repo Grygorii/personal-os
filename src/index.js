@@ -10,7 +10,7 @@ import { config } from './config.js';
 import { initPush } from './push.js';
 
 // Bump on each deploy so we can confirm which build is actually live (read meta.boot).
-const VERSION = 'wave3-1';
+const VERSION = 'wave4-1';
 
 // A rejected promise nobody caught kills the process on modern Node, and Railway restarts
 // it — so the only trace of a whole class of bug was a silent restart. Log it, keep serving.
