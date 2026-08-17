@@ -182,6 +182,13 @@ MULTI_TENANT INVITE_ONLY AUTO_ACCEPT`.
   friend can watch steps move and reply without an account. The crop's coordinate-space bug,
   found on the third report.
 
+## The plan
+
+[docs/waves.md](docs/waves.md) — nine waves, in order, each with one outcome and one number
+that says whether it worked. Waves 1-3 decide whether this product has a future; do not skip
+ahead. **His two standing decisions there:** doors stay open and the ask to sign in comes after
+value, never at the door; and the subscription stays built-but-dark until **1,000 users**.
+
 ## Open
 
 **His, and only his — do not do these for him:**
