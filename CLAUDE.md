@@ -33,9 +33,13 @@ capability.
 2. Adds a book, reads, saves **thoughts tagged to a page** — typed, or photographed and
    transcribed (`/api/readpage`), or tidied (`/api/tidy`).
 3. Finds any thought again later (client-side search in `journal.html`).
-4. Finishes the book → takes an **exam** the model generates and grades (`/api/bookexam`).
-5. Optionally shares a thought or a result (`/api/share` → public `/r/<code>` page).
-6. Talks to the **mentor** (`/api/chat`), which sees only the modules they have.
+4. Writes down **what to do about it** and **what they still want to ask** — the Do tab.
+   A task keeps the line that caused it and its steps; a question keeps a link to every place
+   it was asked. Both can become a page a friend opens and replies to with no account
+   (`/api/convo` → public `/c/<code>`).
+5. Finishes the book → takes an **exam** the model generates and grades (`/api/bookexam`).
+6. Optionally shares a thought or a result (`/api/share` → public `/r/<code>` page).
+7. Talks to the **mentor** (`/api/chat`), which sees only the modules they have.
 
 ## Layout
 
@@ -54,15 +58,17 @@ src/
   auth.js        128  sessions, Google token verify, cookie
   runtime.js     119  node-cron; the agent registry
   ctx.js          89  AsyncLocalStorage user context, languageRule(), LANGUAGES, safeName()
+  shape.js        86  pure sanitizers for tasks/questions + safeUrl(); testable on purpose
   index.js        82  boot; VERSION lives here — bump it every deploy
   text.js         48  reflow()/looksWrapped() — printed line breaks are the paper's, not the sentence's
   agents/           english, bookCoach, water, reading, routine, body
-reading/journal.html   2335  THE APP. Search, crop, sheets, mentor chat, notifications, language.
+reading/journal.html   2700  THE APP. Four tabs: Library, Do, Quiz, Mentor. Search, crop,
+                             sheets, mentor chat, notifications, language.
 webapp/                landing.html (947), signin, dashboard, home, privacy, icons
 english/               his C2 study system (run via the /english skill)
 body/ routines/        his private modules
-scripts/smoke.mjs 204  62 assertions against the LIVE site. Run after every deploy.
-test/logic.test.js     19 pure-function tests. No DB, no network.
+scripts/smoke.mjs 220  79 assertions against the LIVE site. Run after every deploy.
+test/logic.test.js     23 pure-function tests. No DB, no network.
 ```
 
 ## Data model (collections in `personal_os`)
@@ -70,10 +76,10 @@ test/logic.test.js     19 pure-function tests. No DB, no network.
 | collection | holds |
 |---|---|
 | `users` | one doc per person. `_id` is a Telegram id, or `g:<google-sub>` |
-| `books` | **one doc per user**, `books[]` array; **thoughts live at `books[].notes[]`** |
+| `books` | **one doc per user**, `books[]` array. **thoughts at `books[].notes[]`**, tasks at `books[].tasks[]`, questions at `books[].questions[]` |
 | `conversation` | mentor memory (1,210 docs — the biggest thing here) |
 | `logs` | typed life events: water, sleep, mood, book, note… (his modules) |
-| `shares` | public share codes and view counts |
+| `shares` | public share codes and view counts. `kind:'task'\|'question'` docs are the shared conversation pages behind `/c/<code>`, and hold `replies[]` |
 | `contacts` | contact threads, keyed by hashed IP for guests |
 | `meta` | `boot` (version), `visits:<YYYY-MM-DD>` (five buckets), book-rec caches |
 | `reading` | **legacy**. The mentor used to write here while the app read `books` — two stores that never met. Do not add to it. |
@@ -107,7 +113,14 @@ These are not style preferences. Each one reached a real person.
 9. **Two ceilings drift apart.** A `maxTokens` and a length guard set months apart silently
    destroyed text past 2,000 chars. Guard against *shrinkage*, not just overflow, and always
    log `stop_reason`.
-10. **Never route regexes or escapes through a Python/Bash heredoc.** `\b` became a literal
+10. **`saveBooks` is a whitelist, and a whitelist deletes what it hasn't heard of.** It bit
+    `quiz` once. An absent key now means "the client didn't mention it" and keeps what the
+    server holds; an empty array still means "I deleted them all". A stale tab on a second
+    phone syncs the whole shelf.
+11. **A pan and the box it is clamped to must be in the same coordinate space.** The crop
+    measured the selection in the stage's pixels and clamped as though 0 were the box's left
+    edge; flex-centring a portrait photo put those 141px apart and sheared the right side off.
+12. **Never route regexes or escapes through a Python/Bash heredoc.** `\b` became a literal
     backspace and `\\n` became real newlines — four separate times. Use the Edit tool.
 
 ## Ship loop
@@ -152,6 +165,10 @@ MULTI_TENANT INVITE_ONLY AUTO_ACCEPT`.
   reading its own JSON braces aloud. Notifications, drawn icons, notifications page.
 - **Aug 16:** visit counting stopped filing his own deploy checks as visitors; room around
   the crop; bring-your-own-key in the app; **language you choose once and the mentor keeps**.
+- **Aug 17:** the **Do tab** — tasks that keep the line that caused them, and questions that
+  keep a link to every place they were asked. One shared `/c/<code>` page serves both, so a
+  friend can watch steps move and reply without an account. The crop's coordinate-space bug,
+  found on the third report.
 
 ## Open
 
@@ -159,6 +176,12 @@ MULTI_TENANT INVITE_ONLY AUTO_ACCEPT`.
 - Rotate the exposed Anthropic API key.
 - Atlas DB user still has more privilege than it needs.
 - Mongo Network Access is still `0.0.0.0/0`.
+
+**Named next steps on the two newest features (both "improve with time" by his instruction):**
+the mentor cannot see tasks or questions yet, so nothing nudges an open task; Reddit replies
+are not fetched automatically (Reddit blocks unauthenticated reads from cloud hosts, and the
+privacy page promises no third parties) — he pastes the permalink and opens it himself; a
+partner on a task is a name plus a link, not an account.
 
 **Deferred with his agreement:** photos saved as thoughts and photos to the mentor (needs an
 image-storage decision plus moderation); payments (his trigger: 10 people finishing a second
