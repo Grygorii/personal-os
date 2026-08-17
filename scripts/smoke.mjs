@@ -146,6 +146,37 @@ ok(app.body.includes('sessionStorage.getItem'), 'each beat counts once per visit
     'and that no cookie or identifier is involved');
 }
 
+// Wave 2: a stranger reaches the thing that makes this product distinctive BEFORE being asked
+// for anything. Photographing a page used to be behind a wall, so the ask arrived as a door at
+// the exact moment the product was about to prove itself.
+console.log('\na stranger can taste it first');
+ok(!app.body.includes('guestBlocked("Reading a page"'), 'photographing a page is no longer walled');
+ok(!app.body.includes('guestBlocked("Tidying up"'), 'nor is tidying');
+ok(app.body.includes('function freeSpent'), 'and running out is handled as an offer');
+{
+  // The endpoint really is open to a guest, and really is metered. Has to be a POST: a GET is
+  // deliberately not a free try, so checking one would only prove the method guard works.
+  // Text this short returns before any model call, so this costs nothing but one of the day's
+  // 250 free tries — a fair price for knowing the front door is open.
+  const free = await fetch(`${BASE}/api/tidy`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'User-Agent': UA },
+    body: JSON.stringify({ text: 'x' }),
+  });
+  const freeBody = await free.json().catch(() => ({}));
+  ok(free.status === 200, '/api/tidy runs for a guest with no account', `got ${free.status}`);
+  ok(typeof freeBody.freeLeft === 'number', 'and tells them how many tries are left',
+    JSON.stringify(freeBody).slice(0, 60));
+  ok(/kept_free=/.test(free.headers.get('set-cookie') || ''), 'and counts it on their device');
+  // Everything that stores or remembers still needs an account.
+  for (const p of ['/api/chat', '/api/bookexam', '/api/share']) {
+    const r = await grab(p);
+    ok(r.status === 401 || r.status === 405, `${p} still requires an account`, `got ${r.status}`);
+  }
+  ok(/free tries/i.test(privacy.body), '/privacy declares the free-tries cookie');
+  ok(/Four cookies/i.test(privacy.body), 'and counts the cookies correctly');
+}
+
 // Almost everyone opens this on a phone, so the tap-target floor is a product rule, not a
 // preference. It is declared once as --tap; these check the token exists and that no component
 // has quietly gone back under it.

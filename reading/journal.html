@@ -1058,13 +1058,15 @@ function openBook(id){
   $("n-text").addEventListener("input",()=>setTidy(true));
 
   $("n-tidy").onclick=async()=>{
-    if(guestBlocked("Tidying up","It runs on a model on the server, so it needs to know whose it is.")) return;
+    /* No wall here any more. A guest gets a few free tries and the server counts them; the
+       offer to sign in arrives when they run out, having already seen what it does. */
     const ta=$("n-text"), before=ta.value.trim();
     if(!before){ toast("Write or dictate something first"); return; }
     const bt=$("n-tidy"); bt.disabled=true; bt.textContent="✨ Tidying…";
     try{
       const r=await api("/api/tidy",{method:"POST",headers:{"Content-Type":"application/json"},
         body:JSON.stringify({text:before})});
+      if(await freeSpent(r)) { bt.disabled=false; bt.textContent="✨ Tidy it up"; return; }
       const d=r.ok?await r.json():null;
       if(d&&d.text&&d.text!==before){
         ta.value=d.text;
@@ -1077,10 +1079,7 @@ function openBook(id){
     bt.disabled=false; bt.textContent="✨ Tidy it up";
   };
 
-  $("n-shot").onclick=()=>{
-    if(guestBlocked("Reading a page","A photo is read by a model on the server, which costs real money to run.")) return;
-    $("n-file").click();
-  };
+  $("n-shot").onclick=()=>{ $("n-file").click(); };
   $("n-file").onchange=async(ev)=>{
     const file=ev.target.files&&ev.target.files[0];
     ev.target.value="";                                  // let them pick the same photo twice
@@ -1094,6 +1093,7 @@ function openBook(id){
       const dataUrl=await shrink(file,region);
       const r=await api("/api/readpage",{method:"POST",headers:{"Content-Type":"application/json"},
         body:JSON.stringify({image:dataUrl})});
+      if(await freeSpent(r)) { bt.disabled=false; bt.textContent="📷 Photograph the page"; return; }
       const d=r.ok?await r.json():null;
       if(!d) toast("Couldn't read that — try again");
       else if(d.error) toast(d.message||"Try again tomorrow");
@@ -1303,7 +1303,7 @@ function openBook(id){
      bottom: somebody sharing a good thought is not trying to advertise us, and a page that
      pushes will make them stop sharing. */
   $("notes-list").querySelectorAll("[data-share]").forEach(bt=>bt.onclick=async()=>{
-    if(guestBlocked("Sharing","A shared page lives on the server, so it needs somewhere to live.")) return;
+    if(guestBlocked("Send this to someone who read it","A shared page has to live somewhere they can open it — that needs an account to hang it on.")) return;
     const bk=state.books.find(x=>x.id===id), n=bk.notes[+bt.dataset.share];
     if(!n||!n.text) return;
     bt.disabled=true; bt.textContent="…";
@@ -1366,12 +1366,12 @@ function openBook(id){
   });
   $("b-del").onclick=()=>{ if(confirm("Delete this book and its thoughts?")){ state.books=state.books.filter(x=>x.id!==id); save(); $("b-back").click(); } };
   $("b-exam").onclick=()=>{
-    if(guestBlocked("The exam","Your questions are written for this book by a model, and marked by one.")) return;
+    if(guestBlocked("Find out what you actually kept","Five questions written for this book and marked honestly — and the result is saved, so you can come back and argue with it.")) return;
     startExam(id);
   };
   if($("b-paper")) $("b-paper").onclick=()=>showPaper(id);
   $("b-share").onclick=()=>{
-    if(guestBlocked("Sharing","A shared page lives on the server, so it needs somewhere to live.")) return;
+    if(guestBlocked("Send this to someone who read it","A shared page has to live somewhere they can open it — that needs an account to hang it on.")) return;
     shareBook(id);
   };
 }
@@ -1512,20 +1512,51 @@ const ME = window.__me || { guest: true, owner: false };
 const GUEST = ME.guest;
 
 function needsAccount(what, why){
+  /* This used to open "X needs an account" and then explain that a model costs money to run —
+     which is true, and is our problem rather than theirs. A person meeting this has already
+     written something; the sentence they should read is what they GET, and the fact that the
+     work they have done comes with them. */
   const { close } = openSheet(`
-    <div class="sheet-head">${esc(what)} needs an account</div>
-    <p class="sheet-note">${esc(why)} Everything you've written so far comes with you.</p>
-    <a class="btn" href="/signin" style="display:block;text-align:center;text-decoration:none;line-height:1.4">Sign in and keep it</a>
+    <div class="sheet-head">${esc(what)}</div>
+    <p class="sheet-note">${esc(why)}</p>
+    <p class="sheet-note" style="margin-top:-6px">Everything already in this browser comes with
+      you, and stops living in just this one.</p>
+    <a class="btn" href="/signin" style="display:block;text-align:center;text-decoration:none;line-height:1.4">Keep everything I've written</a>
     <button class="btn ghost" id="na-x" style="margin-top:8px">Not now</button>`,
-    'Sign in to continue');
+    'Keep going');
   $("na-x").onclick=close;
 }
 
 /* One gate, so no paid call can slip out unauthenticated by being forgotten later. */
 function guestBlocked(what, why){
-  step("wall_hit");
+  /* The beat fires only when a wall is actually MET. Counting before the guest check meant
+     every signed-in tap was filed as somebody being turned away, which would have made the one
+     number this wave exists to read say the opposite of the truth. */
   if(!GUEST) return false;
+  step("wall_hit");
   needsAccount(what, why);
+  return true;
+}
+
+/* The free tries are gone. This is the ONLY moment worth asking at: they have used the thing,
+   it worked, and they want to do it again — so the ask can be an offer instead of a door.
+   Returns true when it handled the response, so the caller stops. */
+async function freeSpent(r){
+  if(r.status!==401&&r.status!==429) return false;
+  let why=""; try{ why=(await r.clone().json()).error||""; }catch(e){}
+  if(why==="slow_down"){ toast("One at a time — try again in a moment"); return true; }
+  if(why!=="free_used"&&why!=="free_today") return false;
+  step("wall_hit");
+  const today=why==="free_today";
+  const { close }=openSheet(`
+    <div class="sheet-head">${today?"That's today's free reads used up":"You've used your three free reads"}</div>
+    <p class="sheet-note">${today
+      ? "Everyone shares a daily pool of free page reads and today's is gone. An account has its own allowance, starting now."
+      : "Make an account and keep going — and your books, thoughts and photographs follow you to your phone instead of living in this one browser."}</p>
+    <a class="btn" href="/signin" style="display:block;text-align:center;text-decoration:none;line-height:1.4">Keep everything I've written</a>
+    <button class="btn ghost" id="fs-x" style="margin-top:8px">Not now — I'll type it</button>`,
+    "Keep going");
+  $("fs-x").onclick=close;
   return true;
 }
 
@@ -3014,7 +3045,7 @@ function endRound(){
     }
   }
   $("tab-chat").onclick=()=>{
-    if(guestBlocked("The mentor","It remembers your books between conversations, which needs an account to remember into.")) return;
+    if(guestBlocked("Talk it over with the mentor","It reads your shelf and remembers between conversations — which needs somewhere to remember into.")) return;
     tab("chat");
   };
   $("tab-quiz").onclick=()=>{ openId=null; tab("quiz"); };
@@ -3106,7 +3137,7 @@ async function loadRecs(refresh){
   finally{ btn.disabled=false; }
 }
 $("recs-refresh").onclick=()=>{
-  if(guestBlocked("Recommendations","They're chosen for you by a model, from what you have read.")) return;
+  if(guestBlocked("Get your next four books","Chosen from what you have actually read and what you said you care about.")) return;
   loadRecs(true);
 };
 if(GUEST){

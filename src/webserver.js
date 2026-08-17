@@ -193,6 +193,44 @@ const STEPS = [
 ];
 const STEP_IDS = new Set(STEPS.map(([id]) => id));
 
+/* ---- WAVE 2: let a stranger taste it before asking for anything ----
+   Photographing a page and having the words come out is the most distinctive thing this app
+   does, and it was behind a wall — so somebody who pressed "Try it free", opened a book and
+   tapped the camera met a refusal at the exact moment the product was about to prove itself.
+   That is the ask arriving as a door rather than as an offer, which is precisely the shape he
+   said he did not want.
+   These calls cost real money, so the answer is an allowance rather than an open endpoint.
+   Three layers, each doing a different job:
+     · a cookie counts what THIS browser has used — the honest path, and the only one a real
+       person ever meets. Trivially cleared, and that is fine; it is not a lock.
+     · the in-memory per-IP limiter absorbs a burst.
+     · one global counter per day is the actual ceiling on the bill. It is a single integer
+       with nothing about anyone in it, which is why the cap is global rather than per person:
+       a per-IP daily cap would mean storing a per-person identifier, and the privacy page
+       promises we do not.
+   When the allowance is gone the app offers an account instead of refusing a feature. */
+const FREE_TRIES = 3;
+const FREE_PER_DAY = 250;
+
+async function freeTryLeft(req) {
+  const used = Math.max(0, Math.min(99, parseInt(parseCookies(req.headers.cookie).kept_free || '0', 10) || 0));
+  if (used >= FREE_TRIES) return { ok: false, reason: 'free_used', left: 0 };
+  if (!users.rateLimit(`free:${clientIp(req)}`, 5)) return { ok: false, reason: 'slow_down', left: FREE_TRIES - used };
+  const day = new Date().toISOString().slice(0, 10);
+  const doc = await rawCol('meta').findOneAndUpdate(
+    { _id: `freetries:${day}` },
+    { $inc: { n: 1 } },
+    { upsert: true, returnDocument: 'after' }
+  );
+  // Everyone's free tries for the day are spent. Rare, and it must read as "come back
+  // tomorrow or sign in", never as a broken button.
+  if ((doc?.n ?? doc?.value?.n ?? 0) > FREE_PER_DAY) return { ok: false, reason: 'free_today', left: 0 };
+  return { ok: true, used: used + 1, left: FREE_TRIES - used - 1 };
+}
+
+const freeCookie = (used) =>
+  `kept_free=${used}; Path=/; Max-Age=${60 * 60 * 24 * 90}; SameSite=Lax; Secure; HttpOnly`;
+
 function countStep(name, req) {
   if (!STEP_IDS.has(name)) return Promise.resolve();
   const day = new Date().toISOString().slice(0, 10);
@@ -2324,6 +2362,37 @@ export function startServer(port = process.env.PORT || 8080, build = 'dev') {
       if (acct && (!acct.lastSeen || Date.now() - new Date(acct.lastSeen).getTime() > 3600e3)) {
         rawCol('users').updateOne({ _id: acct._id }, { $set: { lastSeen: new Date() } })
           .catch(() => {});   // never let a metric break a reader's request
+      }
+      /* The two that a guest may try. Both are pure text-in, text-out — neither touches the
+         database, so neither needs a user to scope to, and personName() already answers "them"
+         when nobody is signed in. Everything else in this block still requires an account,
+         because everything else either stores something or remembers something. */
+      const FREE_TO_TRY = path === '/api/readpage' || path === '/api/tidy';
+      if (!acct && FREE_TO_TRY && req.method === 'POST') {
+        const t = await freeTryLeft(req);
+        if (!t.ok) {
+          res.writeHead(t.reason === 'slow_down' ? 429 : 401, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: t.reason }));
+          return;
+        }
+        try {
+          const body = await readJson(req, path === '/api/readpage' ? 2_000_000 : 200000);
+          // Same arguments the signed-in path uses: the field, not the envelope.
+          const data = path === '/api/readpage' ? await readPage(body?.image) : await tidyText(body?.text);
+          res.writeHead(200, {
+            'Content-Type': 'application/json',
+            'Cache-Control': 'no-store',
+            // Spent only when the work actually succeeded. Charging someone a free try for a
+            // request that failed is the cheapest possible way to lose them.
+            'Set-Cookie': freeCookie(t.used),
+          });
+          res.end(JSON.stringify({ ...data, freeLeft: t.left }));
+        } catch (e) {
+          console.error(`[free] ${path} failed:`, e.message);
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'failed' }));
+        }
+        return;
       }
       if (!acct || !users.isAllowed(acct)) {
         res.writeHead(401, { 'Content-Type': 'application/json' });
