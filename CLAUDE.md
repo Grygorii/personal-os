@@ -136,6 +136,18 @@ Then bump `VERSION` in [src/index.js](src/index.js), commit, `git push origin ma
 node scripts/smoke.mjs
 ```
 
+**When a deploy never arrives, check whether the problem is even yours.** On 17 Aug a build
+failed at *Initialization → Snapshot code* with `##FORBIDDEN## repository forbidden`, which on
+a normal day means Railway's GitHub App lost access to the repo. It wasn't: GitHub was in a
+site-wide incident (13:40–17:00 UTC, Git Operations degraded 15:21). Reading it as a
+permissions problem nearly sent him editing a GitHub App config that was never broken. So:
+read https://www.githubstatus.com first, and confirm the failing operation directly —
+`git clone --depth 1 <repo>` is the thing Railway actually does.
+Two useful facts from it: a failed snapshot **cannot half-deploy** (Railway had no code, so the
+previous build kept serving and no reader noticed), and **Redeploy, not another push**, is the
+lever while Webhooks is degraded — a push only reaches Railway through the webhook, while
+Redeploy is initiated by Railway and needs nothing but the clone.
+
 `smoke.mjs` exists because four bugs in a row were invisible to unit tests — an unsubstituted
 placeholder, a `ReferenceError` that killed the whole app script, a CSS rule that showed "Not
 signed in" to a signed-in owner, and a route serving a raw template. It also **asks Google
