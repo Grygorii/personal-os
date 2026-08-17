@@ -1,22 +1,37 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Kept — privacy</title>
-<meta name="theme-color" content="#14130F">
+<meta name="theme-color" content="#FCFAF5">
 <meta name="robots" content="index,follow">
 <style>
-  :root{color-scheme:dark}
-  body{margin:0;background:#14130F;color:#ECE8DF;line-height:1.65;
-    font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  /* THE SHARED PALETTE. Identical tokens in landing.html, signin.html, and the two pages the
+     server renders (/r/ and /c/). This page was missed by the repalette and stayed black with
+     gold links months after the product moved to cream, white and black — which is the "old
+     app look" he caught on a shared link, still living in the one page a stranger reads before
+     deciding whether to trust us with their reading.
+     smoke.mjs now asserts every page declares these, so the next page cannot drift either. */
+  :root{color-scheme:light dark;
+    --paper:#FCFAF5;--surface:#FFFFFF;--ink:#191713;--muted:#55514A;--faint:#6C6759;
+    --line:#E6E0D3;--mark:#FFF176;--mark-ink:#191713}
+  @media (prefers-color-scheme:dark){:root{
+    --paper:#14130F;--surface:#1D1B16;--ink:#ECE8DF;--muted:#9C9686;--faint:#8A8478;
+    --line:#2C2A22;--mark:#E8CB48;--mark-ink:#14130F}}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);line-height:1.65;font-synthesis:none;
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans",Helvetica,Arial,sans-serif}
   .w{max-width:620px;margin:0 auto;padding:40px 20px 70px}
-  a{color:#D9AE4A}
-  .brand{font-family:Georgia,serif;color:#D9AE4A;font-size:1rem;margin-bottom:26px}
+  /* A link is a link, but it must never be the only thing marking it — yellow goes where a
+     highlighter would go, and underline carries the meaning. */
+  a{color:var(--ink);text-decoration:underline;text-decoration-color:var(--mark);
+    text-decoration-thickness:2px;text-underline-offset:2px}
+  .brand{font-family:Georgia,serif;color:var(--ink);font-weight:600;font-size:1rem;margin-bottom:26px}
   h1{font-family:Georgia,serif;font-size:1.9rem;margin:0 0 6px;line-height:1.2}
   h2{font-family:Georgia,serif;font-size:1.15rem;margin:30px 0 6px}
-  .upd{color:#8A8478;font-size:.84rem;margin:0 0 24px}
-  p,li{color:#C9C3B6;font-size:.96rem}
+  .upd{color:var(--faint);font-size:.84rem;margin:0 0 24px}
+  p,li{color:var(--muted);font-size:.96rem}
   ul{padding-left:20px}
-  b{color:#ECE8DF}
-  .box{background:#1D1B16;border:1px solid #2C2A22;border-radius:14px;padding:16px 18px;margin:22px 0}
-  .foot{color:#8A8478;font-size:.8rem;margin-top:36px;border-top:1px solid #2C2A22;padding-top:18px}
+  b{color:var(--ink)}
+  .box{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin:22px 0}
+  .foot{color:var(--faint);font-size:.8rem;margin-top:36px;border-top:1px solid var(--line);padding-top:18px}
 </style>
 <div class="w">
   <div class="brand">📕 Kept</div>

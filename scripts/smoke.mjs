@@ -99,6 +99,50 @@ ok(app.body.includes('id="t-add"') && app.body.includes('id="q-add"'),
 ok(app.body.includes('function placeSheet'), 'and a question can keep the link to where it was asked');
 ok(app.body.includes('/api/convo'), 'and the app knows where the shared page lives');
 
+// ---- every page is the same product ----
+// He found a shared link that still had "the old app look" — and he was right twice: /signin
+// and /privacy were still black-and-gold months after the product moved to cream, so tapping
+// "Try it free" dropped a visitor through a trapdoor into the previous brand at the exact
+// moment they were deciding whether to trust it. A page can be missed by a repalette in
+// silence, so the palette is asserted rather than remembered.
+console.log('\nevery page is the same product');
+{
+  // Two creams exist on purpose and neither is the old black: #FCFAF5 is the document cream
+  // for pages that are read (landing, privacy, a shared page), #EEEDE8 is a shade down for
+  // the app, where white cards sit on it and need to separate. What must never happen again
+  // is a page whose LIGHT mode is the dark paper — that is the old coat, not a shade choice.
+  const CREAMS = ['#FCFAF5', '#EEEDE8'];
+  const pages = [['/', landing], ['/signin', signin], ['/privacy', privacy], ['/app', app]];
+  for (const [name, page] of pages) {
+    // The FIRST --paper in source order is the light default; the dark ones come later inside
+    // prefers-color-scheme blocks. (Matching a whole :root{...} block does not work here — the
+    // app's light block is longer than any sane window, so the regex fell through to the dark
+    // one and reported a fault that did not exist.)
+    const paper = (page.body.match(/--paper:\s*(#[0-9A-Fa-f]{6})/) || [])[1];
+    ok(!!paper && CREAMS.includes(paper.toUpperCase()),
+      `${name} opens on cream, not on the old dark paper`, `got ${paper || 'no --paper'}`);
+    ok(/prefers-color-scheme\s*:\s*dark/.test(page.body), `${name} answers to dark mode`);
+    // The retired brand gold. --star and --mark are warm yellows by design; a hardcoded
+    // D9AE4A as an accent or a link colour is the old coat showing through.
+    const goldAccent = /(?:--accent|color)\s*:\s*#D9AE4A/i.test(page.body);
+    ok(!goldAccent, `${name} has no leftover gold accent`);
+    ok(!page.body.includes('#231a05'), `${name} has no text colour hardcoded for the old gold`);
+  }
+}
+
+// Almost everyone opens this on a phone, so the tap-target floor is a product rule, not a
+// preference. It is declared once as --tap; these check the token exists and that no component
+// has quietly gone back under it.
+console.log('\nthings you tap are big enough to tap');
+ok(app.body.includes('--tap:44px'), '/app declares the 44px tap floor in one place');
+{
+  const small = [...app.body.matchAll(/min-height:\s*(\d+)px/g)]
+    .map((m) => Number(m[1]))
+    .filter((n) => n > 0 && n < 44);
+  ok(small.length === 0, 'no component sets a tap target under 44px',
+    small.length ? `found ${small.join('px, ')}px` : '');
+}
+
 // ---- 4. the hidden attribute is not defeated by a display rule ----
 // This is the guestbar bug as a rule rather than a memory. Any selector that sets a display
 // on an element the app also hides with [hidden] needs an explicit [hidden] guard.

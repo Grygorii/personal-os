@@ -4,33 +4,47 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Kept — sign in</title>
-<meta name="theme-color" content="#14130F">
-<meta name="color-scheme" content="dark">
+<!-- Two, media-scoped, the way landing.html does it. One fixed value paints the phone's status
+     bar the wrong colour for half the people who open it, and the seam shows above the page. -->
+<meta name="theme-color" content="#FCFAF5" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#14130F" media="(prefers-color-scheme: dark)">
+<meta name="color-scheme" content="light dark">
 <!-- The app itself has nothing for a search engine to read, and a sign-in screen is a poor
      first result for the product. The landing page is what should rank. -->
 <meta name="robots" content="noindex, follow">
 <link rel="manifest" href="/manifest.webmanifest">
 <style>
-  :root{--paper:#14130F;--surface:#1D1B16;--ink:#ECE8DF;--muted:#9C9686;--faint:#8A8478;
-    --line:#2C2A22;--accent:#D9AE4A;
-    --serif:"Iowan Old Style",Georgia,serif;--sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  /* THE SHARED PALETTE — same tokens as landing.html, privacy.html and the server-rendered
+     /r/ and /c/ pages. This page was still black with a gold accent long after the product
+     moved to cream, so someone tapping "Try it free" on a cream landing page fell through a
+     trapdoor into the old brand at the exact moment they were deciding whether to trust it.
+     The door has to look like the house. smoke.mjs asserts this now. */
+  :root{color-scheme:light dark;
+    --paper:#FCFAF5;--surface:#FFFFFF;--ink:#191713;--muted:#55514A;--faint:#6C6759;
+    --line:#E6E0D3;--accent:#191713;--on-accent:#FCFAF5;--mark:#FFF176;
+    --serif:"Iowan Old Style",Charter,Georgia,"Noto Serif",serif;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans",Helvetica,Arial,sans-serif}
+  @media (prefers-color-scheme:dark){:root{
+    --paper:#14130F;--surface:#1D1B16;--ink:#ECE8DF;--muted:#9C9686;--faint:#8A8478;
+    --line:#2C2A22;--accent:#ECE8DF;--on-accent:#14130F;--mark:#E8CB48}}
   *{box-sizing:border-box}
   body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);font-family:var(--sans);
+    font-synthesis:none;
     display:flex;align-items:center;justify-content:center;padding:24px;line-height:1.6}
   .card{max-width:380px;width:100%;text-align:center}
-  .logo{font-family:var(--serif);color:var(--accent);font-size:1.1rem;margin-bottom:30px}
+  .logo{font-family:var(--serif);color:var(--ink);font-weight:600;font-size:1.1rem;margin-bottom:30px}
   h1{font-family:var(--serif);font-size:1.85rem;font-weight:600;margin:0 0 10px;line-height:1.2}
   p.sub{color:var(--muted);margin:0 0 30px}
   .widget{display:flex;justify-content:center;min-height:48px}
   .err{color:#E1685C;font-size:.9rem;min-height:1.2em;margin-top:16px}
   .note{color:var(--faint);font-size:.84rem;margin-top:16px}
   .foot{color:var(--faint);font-size:.78rem;margin-top:34px}
-  .inapp{background:var(--surface);border:1px solid var(--accent);border-radius:14px;
+  .inapp{background:var(--surface);border:1px solid var(--line);border-radius:14px;
     padding:17px 18px;margin-top:18px;text-align:left}
   .inapp b{color:var(--ink);display:block;margin-bottom:7px}
   .inapp p{color:var(--muted);font-size:.9rem;margin:0 0 12px}
   .inapp .tiny{font-size:.8rem;color:var(--faint);margin:10px 0 0}
-  .copybtn{width:100%;background:var(--accent);color:#231a05;border:0;border-radius:11px;
+  .copybtn{width:100%;background:var(--accent);color:var(--on-accent);border:0;border-radius:11px;
     padding:13px;min-height:46px;font-family:var(--sans);font-weight:700;font-size:.95rem;cursor:pointer}
 </style>
 </head>

@@ -13,8 +13,15 @@
     --on-accent:#FCFAF5;   /* text sitting ON --accent; flips with it */
     --mark:#FFF176; --mark-ink:#191713;
     --good:#2E9E5E; --good-tint:#E4F3EA; --bad:#CE4A3E; --bad-tint:#F7E4E1;
-    --serif:"Iowan Old Style",Georgia,"Palatino Linotype",Palatino,"Times New Roman",serif;
-    --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    /* Every name in the old serif stack — Iowan Old Style, Georgia, Palatino, Times New Roman —
+       is absent on Android, so on his own phone all of it silently resolved to the generic
+       serif and the typeface chosen here was one he had never actually seen. Noto Serif is
+       named explicitly now: it is what Android was substituting anyway, and a stack should say
+       what it really renders. Charter and Charis ship on many Android builds and read better on
+       a screen than the fallback, so they get first refusal. */
+    --serif:"Iowan Old Style",Charter,"Bitstream Charter","Charis SIL",Georgia,
+      "Noto Serif","Droid Serif",serif;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans",Helvetica,Arial,sans-serif;
     --radius:12px;
   }
   @media (prefers-color-scheme:dark){
@@ -37,10 +44,38 @@
     --faint:#8A8478; --line:#2C2A22; --accent:#ECE8DF; --accent-strong:#FFFFFF; --accent-tint:#24221C;
     --on-accent:#14130F; --star:#D9AE4A; --mark:#E8CB48; --mark-ink:#14130F; --good:#43B571; --good-tint:#12291C; --bad:#E1685C; --bad-tint:#301715;
   }
+  /* ======================= ONE RULE FOR EVERYTHING YOU TAP =======================
+     Almost everyone opens this on a phone, so a control that is hard to hit is not a polish
+     problem, it is the product not working. Apple's minimum is 44px, Google's is 48; 44 is the
+     floor here and nothing tappable is allowed below it.
+     It lives in ONE place on purpose. It was previously set per component — .nrm said 34, the
+     step rows said 38, the delete ✕ came out 22×30 — so every new control had to rediscover
+     the rule, and the one that got it most wrong was the one that deletes a step.
+     Anything tappable added later inherits this by being a button/a/input. To make something
+     deliberately smaller, override it and say why. */
+  :root{ --tap:44px }
+  button,a.sh,.tb,[role="button"]{min-height:var(--tap)}
+  /* Text-only actions inside cards: full height for the thumb, no extra ink on the page. */
+  .item .act button,.note .nrm,.places a,.places button,.steps button.s,.steps .rm{
+    min-height:var(--tap);display:inline-flex;align-items:center}
+  /* The ✕ that removes a step. Square, and the whole square works — this one deletes
+     something, so it is the last control that should need a careful aim. */
+  .steps .rm{min-width:var(--tap);justify-content:center}
+  /* A link inside a sentence is not a button and must not become a 44px block in the middle of
+     a paragraph — these are the deliberate exceptions, and they sit next to the rule. */
+  .why a,.ntext a,p a,.sub a{min-height:0;display:inline}
   *{box-sizing:border-box}
   html{-webkit-text-size-adjust:100%;background:var(--paper)}
+  /* No -webkit-font-smoothing:antialiased. It sounds like the crisp setting and does the
+     opposite on the devices where it applies: on iOS and macOS it drops subpixel rendering and
+     THINS every glyph, which on a cream page reads as washed out rather than sharp. On Android
+     and Windows it does nothing at all. Letting the OS render at full weight is the crisper of
+     the two, and it is the only one that is crisper on every platform.
+     font-synthesis:none because a faked bold — the browser smearing a regular weight when the
+     real one is missing — is genuinely blurry, and it is exactly what happens when a font in
+     the stack is absent. Better to fall back to a real weight than to a drawn-on one. */
   body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);
-    -webkit-font-smoothing:antialiased;overscroll-behavior-y:contain}
+    font-synthesis:none;overscroll-behavior-y:contain}
   /* Should feel like an app, not a page: no long-press selection on controls, no 300ms
      double-tap delay, no blue flash — and a real pressed state so every tap lands. */
   button,a.sh,.book{touch-action:manipulation;-webkit-user-select:none;user-select:none;
@@ -67,10 +102,11 @@
   .installbar b{color:var(--ink)}
   .installbar span{flex:1;min-width:160px}
   .installbar button{border-radius:9px;font-family:var(--sans);font-weight:700;cursor:pointer;
-    min-height:36px;padding:0 14px;font-size:.82rem}
+    padding:0 14px;font-size:.82rem}
   #install-yes{background:var(--accent);color:var(--on-accent);border:0}
   #install-no{background:transparent;border:0;color:var(--faint);padding:0 8px;font-size:.9rem}
-  .guestbar a{color:var(--accent-strong);font-weight:700;text-decoration:none;white-space:nowrap}
+  .guestbar a{color:var(--accent-strong);font-weight:700;text-decoration:none;white-space:nowrap;
+    display:inline-flex;align-items:center;min-height:var(--tap)}
   .topact{display:flex;align-items:center;gap:8px}
   .menu{display:flex;flex-direction:column;gap:8px}
   /* Notifications: what it is on the left, the switch on the right, nothing else. */
@@ -96,7 +132,7 @@
   .mi-t{flex:1;min-width:0;font-size:.96rem;font-weight:600;line-height:1.3}
   .mi-t span{display:block;font-weight:400;font-size:.8rem;color:var(--muted);margin-top:1px}
   .iconbtn{background:transparent;border:1px solid var(--line);color:var(--muted);border-radius:11px;
-    width:40px;height:40px;font-size:1.05rem;cursor:pointer;font-family:var(--sans);flex:none;
+    width:var(--tap);height:var(--tap);font-size:1.05rem;cursor:pointer;font-family:var(--sans);flex:none;
     display:inline-flex;align-items:center;justify-content:center;text-decoration:none}
   .iconbtn.wide{width:auto;padding:0 13px;font-size:.82rem;font-weight:600;color:var(--accent-strong);
     border-color:var(--accent)}
@@ -224,18 +260,18 @@
   .steps li{display:flex;gap:9px;align-items:flex-start}
   /* The whole row is the target, not a 14px box — this is a checklist used with a thumb. */
   .steps button.s{flex:1;display:flex;gap:9px;align-items:flex-start;text-align:left;
-    background:none;border:0;padding:7px 2px;min-height:38px;color:var(--ink);
+    background:none;border:0;padding:7px 2px;color:var(--ink);
     font-family:var(--sans);font-size:.92rem;line-height:1.4;cursor:pointer}
   .steps .bx{flex:0 0 19px;height:19px;margin-top:1px;border:2px solid var(--line);border-radius:5px;
     display:flex;align-items:center;justify-content:center;font-size:.72rem;font-weight:700;color:transparent}
   .steps button.s.d .bx{background:var(--good);border-color:var(--good);color:#fff}
   .steps button.s.d span.t{color:var(--faint);text-decoration:line-through}
-  .steps .rm{flex:0 0 auto;background:none;border:0;color:var(--faint);font-size:.76rem;
-    padding:7px 6px;cursor:pointer}
+  .steps .rm{flex:0 0 auto;background:none;border:0;color:var(--faint);font-size:.9rem;
+    padding:0;cursor:pointer}
   /* Where this was asked. A row of real links, because the point is to get back to them. */
   .places{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}
   .places a,.places button{display:inline-flex;align-items:center;gap:5px;text-decoration:none;
-    border:1px solid var(--line);border-radius:99px;padding:6px 11px;min-height:32px;
+    border:1px solid var(--line);border-radius:99px;padding:6px 13px;
     background:var(--raise);color:var(--ink);font-family:var(--sans);font-size:.78rem;
     font-weight:600;cursor:pointer}
   .pill{display:inline-block;font-size:.7rem;font-weight:700;padding:3px 8px;border-radius:99px;
@@ -246,16 +282,20 @@
      row read as damaged. So the ROW wraps and the LABELS never do. */
   .item .act{display:flex;flex-wrap:wrap;gap:4px 16px;margin-top:10px}
   .item .act button{background:none;border:0;color:var(--muted);font-family:var(--sans);
-    font-size:.8rem;font-weight:600;padding:6px 0;min-height:34px;cursor:pointer;white-space:nowrap}
+    font-size:.8rem;font-weight:600;padding:6px 0;cursor:pointer;white-space:nowrap}
   .addrow{display:flex;gap:8px;margin-top:10px}
   .addrow input{flex:1}
   .addrow button{flex:0 0 auto;padding:0 16px}
   /* The switcher at the top of the book card — three things you write, one place, and the
      active tab is the heading. Serif and a size up on the selected one, so it reads as a title
      rather than as a row of controls. */
+  /* One typeface, one size, all three. The selected tab used to switch to the serif AND jump
+     from .86rem to 1.05rem, so the row re-laid itself out under the finger every time it was
+     tapped and the three labels never sat on the same baseline. Weight and colour say which
+     one is active; nothing moves. */
   .bsegs{margin:0 0 2px}
-  .bsegs button{position:relative;font-size:.86rem;padding:11px 4px}
-  .bsegs button.on{font-family:var(--serif);font-size:1.05rem;font-weight:600}
+  .bsegs button{position:relative;font-size:.88rem;padding:12px 4px;letter-spacing:.005em}
+  .bsegs button.on{font-weight:700}
   /* The count rides beside the label. Blank when zero — a "0" reads as a fault, and the
      element still has to exist so the text can be set without rebuilding the row. */
   .bsegs button b{font-weight:700;font-size:.72rem;margin-left:5px;opacity:.75;
@@ -335,12 +375,12 @@
   .fhit .fm{color:var(--faint);font-size:.76rem;margin-top:7px}
   .fhit mark{background:var(--mark);color:var(--mark-ink);border-radius:3px;padding:0 1px}
   .note .nact{display:flex;gap:16px;margin-top:6px}
-  .note .nrm{background:transparent;border:0;color:var(--faint);cursor:pointer;font-size:.8rem;padding:6px 0;min-height:34px;font-family:var(--sans)}
+  .note .nrm{background:transparent;border:0;color:var(--faint);cursor:pointer;font-size:.8rem;padding:6px 0;font-family:var(--sans)}
   .note .nrm:active{color:var(--accent-strong)}
   /* The one worth noticing of the three. */
   .note .nshare{color:var(--accent-strong);font-weight:700}
   .nedit{display:flex;gap:8px;margin-top:8px}
-  .nedit .btn{width:auto;flex:1;min-height:42px;padding:9px 14px;font-size:.88rem}
+  .nedit .btn{width:auto;flex:1;padding:9px 14px;font-size:.88rem}
   /* quiz */
   .qhead{display:flex;justify-content:space-between;align-items:center;gap:10px;
     color:var(--muted);font-size:.8rem;margin-top:16px}
@@ -352,7 +392,7 @@
   .qmeta img{width:40px;height:60px;object-fit:cover;border-radius:5px;flex:none;background:var(--raise)}
   .qmeta .qm{flex:1;min-width:0}
   .qlink{background:transparent;border:0;color:var(--accent-strong);font-weight:600;font-size:.86rem;
-    cursor:pointer;padding:8px 0;font-family:var(--sans);min-height:40px}
+    cursor:pointer;padding:8px 0;font-family:var(--sans)}
   /* end of round */
   .qsum{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:22px 18px;margin-top:16px;text-align:center}
   .qbig{font-family:var(--serif);font-size:3rem;font-weight:700;line-height:1;color:var(--accent)}
@@ -574,13 +614,13 @@
          Telegram's WebView broke into invisible text once already. */
       .recs-head{display:flex;align-items:center;justify-content:space-between;margin:22px 2px 10px}
       .recs-head .t{font-weight:600;font-size:1.02rem;font-family:var(--serif);color:var(--ink)}
-      .recs-head button{background:var(--accent-tint);border:1px solid var(--accent);color:var(--accent-strong);border-radius:10px;padding:9px 14px;min-height:40px;cursor:pointer;font-family:var(--sans);font-weight:600;font-size:.82rem}
+      .recs-head button{background:var(--accent-tint);border:1px solid var(--accent);color:var(--accent-strong);border-radius:10px;padding:9px 14px;cursor:pointer;font-family:var(--sans);font-weight:600;font-size:.82rem}
       .recs-head button:disabled{opacity:.55}
       .rec{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px 15px;margin-bottom:10px;color:var(--ink)}
       .rec .rt{font-weight:600;font-size:1.05rem;font-family:var(--serif);color:var(--ink)}
       .rec .ra{color:var(--muted);font-size:.85rem;margin-top:1px}
       .rec .rw{color:var(--ink);font-size:.88rem;margin-top:7px;line-height:1.45}
-      .rec .rec-add{margin-top:10px;background:var(--accent-tint);border:1px solid var(--accent);border-radius:10px;padding:10px 14px;min-height:42px;cursor:pointer;font-family:var(--sans);font-size:.84rem;font-weight:600;color:var(--accent-strong)}
+      .rec .rec-add{margin-top:10px;background:var(--accent-tint);border:1px solid var(--accent);border-radius:10px;padding:10px 14px;cursor:pointer;font-family:var(--sans);font-size:.84rem;font-weight:600;color:var(--accent-strong)}
       .rec .rec-add:active{background:var(--accent);color:var(--on-accent)}
       .recs-note{color:var(--faint);font-size:.78rem;margin:2px 2px 0}
       .recs-loading{color:var(--muted);font-size:.9rem;padding:8px 2px}
