@@ -683,6 +683,22 @@ function api(path,opts){
   const id=initData(); if(id) o.headers["x-telegram-init-data"]=id;
   return fetch(path,o);
 }
+/* ---- WAVE 1: one beat of the funnel ----
+   Fired at most once per browser session, because the question is "did a person get this far",
+   not "how many times". sessionStorage rather than a cookie or an id: it dies with the tab,
+   never leaves the device, and nothing about who they are is sent — the body is a single name
+   from a list the server already knows.
+   Deliberately unawaited and deliberately silent. A counter must never slow down or break the
+   thing it is counting; if it fails, we lose a number, and losing a number is nothing. */
+function step(name){
+  try{
+    const k="kept-step-"+name;
+    if(sessionStorage.getItem(k)) return;
+    sessionStorage.setItem(k,"1");
+    fetch("/api/step",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({name}),keepalive:true,credentials:"same-origin"}).catch(()=>{});
+  }catch(e){ /* private mode with storage disabled — the app still works, we just can't count */ }
+}
 let syncTimer=null,syncing=false;
 async function pushBooks(){
   syncing=true;
@@ -754,6 +770,8 @@ function renderStats(){
   $("st-notes").textContent=state.books.reduce((s,b)=>s+(b.notes?b.notes.length:0),0);
 }
 function renderLibrary(){
+  /* The screen every reader who stopped, stopped on. */
+  if(!state.books.length) step("empty_shelf");
   renderStats();
   const list=$("book-list");
   if(!state.books.length){list.innerHTML='<div class="empty">No books yet. Add one above — then log the thoughts it sparks.</div>';syncFind();return;}
@@ -1272,6 +1290,7 @@ function openBook(id){
     const page=parseInt($("n-page").value,10);
     const bk=state.books.find(x=>x.id===id); bk.notes=bk.notes||[];
     bk.notes.push({text,page:isNaN(page)?null:page,ts:Date.now()}); bk.updated=Date.now(); save();
+    step("thought_saved");
     openBook(id); toast("Thought added"); maybeOfferInstall();
   };
   /* ---- Share one thought, the moment it lands ----
@@ -1290,6 +1309,7 @@ function openBook(id){
     bt.disabled=true; bt.textContent="…";
     let url=null;
     try{
+      step("share_made");
       const r=await api("/api/share",{method:"POST",headers:{"Content-Type":"application/json"},
         body:JSON.stringify({title:bk.title,author:bk.author||"",
           thoughts:[{text:flowText(n.text),page:n.page}],score:null,verdict:""})});
@@ -1436,6 +1456,7 @@ async function startExam(id){
     if(!r.ok)throw 0;
     const ex=await r.json();
     if(ex.error){ btn.disabled=false;btn.textContent="🎓 Test my knowledge";toast(ex.message||"Try again tomorrow");return; }
+    step("exam_started");
     btn.hidden=true;
     area.innerHTML=`<p class="sub" style="margin:8px 0 4px;color:var(--muted)">${ex.resumed
         ? "Your answers were saved — here they are again. Edit anything, then send it for marking."
@@ -1464,6 +1485,7 @@ async function startExam(id){
           toast("Your answers are saved — the marking failed. Press again.");
           return;
         }
+        step("exam_graded");
         patch(id,{exam:{score:res.overall,ts:Date.now(),verdict:res.verdict||""}});
         area.innerHTML=examResultHtml(res,ex.questions,answers)+
           `<div style="margin-top:12px"><button class="btn ghost" id="exam-done">Done</button></div>`;
@@ -1501,6 +1523,7 @@ function needsAccount(what, why){
 
 /* One gate, so no paid call can slip out unauthenticated by being forgotten later. */
 function guestBlocked(what, why){
+  step("wall_hit");
   if(!GUEST) return false;
   needsAccount(what, why);
   return true;
@@ -1635,6 +1658,7 @@ function shareBook(id){
       .filter(n=>chosen.has(n.i)).map(({text,page})=>({text,page}));
     let url=null;
     try{
+      step("share_made");
       const r=await api("/api/share",{method:"POST",headers:{"Content-Type":"application/json"},
         body:JSON.stringify({title:b.title,author:b.author||"",thoughts,
           score:withScore&&b.exam?b.exam.score:null,
@@ -2034,6 +2058,7 @@ function newTask(bookId,prefillWhy,prefillPage){
       listOf(b,"tasks").push({id:uid(),title:v.title.trim().slice(0,200),why:v.why.trim().slice(0,1000),
         page:parseInt(v.page,10)||null,steps:[],status:"open",due:null,partners:[],share:null,ts:Date.now(),doneAt:null});
       touchBook(b); rerender();
+      step("task_added");
       toast("Added to Do");
     },
   });
@@ -2127,6 +2152,7 @@ function newQuestion(bookId,prefillText,prefillPage){
       listOf(b,"questions").push({id:uid(),text:v.text.trim().slice(0,1000),
         page:parseInt(v.page,10)||null,ts:Date.now(),share:null,threads:[],answer:""});
       touchBook(b); rerender();
+      step("question_added");
       toast("Kept — now go ask it");
     },
   });
@@ -2258,6 +2284,7 @@ $("add-toggle").onclick=()=>{const f=$("addbook");f.hidden=!f.hidden;if(!f.hidde
 $("ab-save").onclick=()=>{
   const title=$("ab-title").value.trim(); if(!title){toast("A title, at least");return;}
   const total=parseInt($("ab-total").value,10);
+  step("book_added");
   state.books.push({id:uid(),title,author:$("ab-author").value.trim(),total:isNaN(total)?null:total,page:0,
     status:$("ab-status").value,rating:0,notes:[],cover:pickedCover,started:Date.now(),updated:Date.now()});
   save();
@@ -2696,6 +2723,7 @@ window.addEventListener("appinstalled",stopAsking);
 
 renderLibrary();
 loadBooks();
+step("opened");
 /* A guest gets the app, plus one honest line about the only thing they're missing. */
 if(GUEST) $("guestbar").hidden=false;
 
@@ -3070,6 +3098,7 @@ async function loadRecs(refresh){
     list.querySelectorAll(".rec-add").forEach(b=>b.onclick=()=>{
       const x=recData[+b.dataset.i]; if(!x) return;
       if(state.books.some(bk=>bk.title.toLowerCase()===x.title.toLowerCase())){toast("Already in your library");return;}
+      step("book_added");
       state.books.push({id:uid(),title:x.title,author:x.author||"",total:null,page:0,status:"want",rating:0,notes:[],started:Date.now(),updated:Date.now()});
       save();renderStats();renderLibrary();toast("Added to Want to read");
     });

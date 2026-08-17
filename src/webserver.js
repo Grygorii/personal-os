@@ -169,6 +169,47 @@ async function ownerId() {
  *   inapp   inside LinkedIn/Facebook's browser   <- could not sign in even if they wanted
  *   bots    crawlers and link-preview scrapers   <- proves a link was shared, not clicked
  */
+/* ---- WAVE 1: where do people actually fall? ----
+   Four hundred app opens have happened and we could not say what a single one of those people
+   did. Page counts answer "did anyone arrive"; they cannot answer "did anyone get anywhere",
+   and those have opposite fixes — the whole reason the funnel has been guesswork.
+   So: one integer per beat per day. No cookie, no identifier, nothing per-person written down;
+   the privacy page's promise holds exactly as before. The client fires each beat at most once
+   per browser session (sessionStorage, which dies with the tab), so ten thoughts saved in one
+   sitting count as one person reaching "saved a thought" — which is the question being asked.
+   Order matters: this is a funnel, and the list IS the order it renders in. */
+const STEPS = [
+  ['opened', 'Opened the app'],
+  ['empty_shelf', 'Landed on an empty shelf'],
+  ['book_added', 'Added a book'],
+  ['thought_saved', 'Saved a thought'],
+  ['task_added', 'Wrote down something to do'],
+  ['question_added', 'Wrote a question'],
+  ['exam_started', 'Started an exam'],
+  ['exam_graded', 'Finished an exam'],
+  ['share_made', 'Shared something'],
+  ['wall_hit', 'Hit a sign-in wall'],
+  ['signed_in', 'Signed in'],
+];
+const STEP_IDS = new Set(STEPS.map(([id]) => id));
+
+function countStep(name, req) {
+  if (!STEP_IDS.has(name)) return Promise.resolve();
+  const day = new Date().toISOString().slice(0, 10);
+  const s = String(req?.headers?.['user-agent'] || '');
+  // The same classification the visit counter uses. Written once there and reused here rather
+  // than copied, because the last time these drifted apart his own deploy checks were being
+  // filed as visitors and the number he was steering by was his own.
+  if (UA_BOT.test(s) || UA_TOOL.test(s)) return Promise.resolve();
+  const bump = (kind) =>
+    rawCol('meta')
+      .updateOne({ _id: `steps:${day}` }, { $inc: { [`${name}.${kind}`]: 1 } }, { upsert: true })
+      .catch(() => {});
+  const sid = readSession(parseCookies(req?.headers?.cookie).kept_session);
+  if (!sid) return bump('people');
+  return ownerId().then((id) => bump(sid === id ? 'owner' : 'people'));
+}
+
 function countVisit(page, req) {
   const day = new Date().toISOString().slice(0, 10);
   const s = String(req?.headers?.['user-agent'] || '');
@@ -527,12 +568,13 @@ async function saveBooks(books) {
 // Deliberately one page of facts, not a dashboard: who joined, how they arrived, and the
 // only number that matters — did they add a book.
 async function adminPage() {
-  const [people, shares, stats, invites, visits, threads] = await Promise.all([
+  const [people, shares, stats, invites, visits, steps, threads] = await Promise.all([
     rawCol('users').find().sort({ createdAt: -1 }).limit(200).toArray(),
     rawCol('shares').find().sort({ createdAt: -1 }).limit(20).toArray(),
     dbStats().catch(() => null),
     users.listInvites(),
     rawCol('meta').find({ _id: { $regex: '^visits:' } }).sort({ _id: -1 }).limit(90).toArray(),
+    rawCol('meta').find({ _id: { $regex: '^steps:' } }).sort({ _id: -1 }).limit(90).toArray(),
     contact.allThreads().catch(() => []),
   ]);
   const waiting = threads.reduce((n, t) => n + (t.unreadOwner ? 1 : 0), 0);
@@ -596,6 +638,29 @@ async function adminPage() {
       <td class="dim">${drops[i] == null ? '' : `−${drops[i]}%`}${i === worst ? ' <span class="tag">biggest drop</span>' : ''}</td>
       <td class="dim">${esc(why)}</td></tr>`)
     .join('');
+  /* The funnel above is built from page counts and accounts, so between "opened the app" and
+     "signed up" it can see nothing at all — and that gap is where 400 app opens turned into no
+     accounts. This one is built from the step beats: what a person actually did in there,
+     whether or not they ever made an account. His own use is counted separately and excluded,
+     the way visits already are. */
+  const stepWeek = steps.filter((d) => d._id.slice(6) >= sinceDay);
+  const stepSum = (id) => stepWeek.reduce((n, d) => n + (d[id]?.people || 0), 0);
+  const inApp = STEPS.map(([id, label]) => [id, label, stepSum(id)]);
+  const opened = inApp[0][2];
+  const inAppRows = inApp
+    .map(([id, label, n]) => {
+      // Share of everyone who opened the app, which is the only honest denominator here —
+      // these are not strictly sequential steps and pretending they are would invent a story.
+      const pct = opened ? Math.round((n / opened) * 100) : null;
+      const bad = id !== 'wall_hit' && id !== 'empty_shelf';
+      return `<tr>
+      <td>${esc(label)}</td>
+      <td class="${n ? (bad ? 'good' : 'dim') : 'bad'}" style="font-weight:700">${n}</td>
+      <td class="dim">${pct == null || id === 'opened' ? '' : `${pct}% of opens`}</td></tr>`;
+    })
+    .join('');
+  const noSteps = !stepWeek.length;
+
   const joined = (d) => (d ? new Date(d).toISOString().slice(0, 10) : '—');
   const via = (u) => (u.referredBy ? 'share' : String(u._id).startsWith('g:') ? 'google' : 'telegram');
 
@@ -758,6 +823,19 @@ async function adminPage() {
 <tr><th>Step</th><th>People</th><th>Drop</th><th>What it means</th></tr>
 ${funnelRows}
 </table></div>
+
+<h2 style="margin-top:28px">Inside the app · last 7 days</h2>
+<p class="dim" style="font-size:.86rem;margin:0 0 10px">The table above stops seeing anyone
+  between "opened the app" and "signed up" — and that gap is where four hundred app opens
+  became no accounts. This is what people actually did in there, account or not. Counted once
+  per person per visit, no cookie and no identifier; you and scripts are excluded.</p>
+<div class="scroll"><table>
+<tr><th>What they did</th><th>People</th><th>Share</th></tr>
+${inAppRows}
+</table></div>
+${noSteps ? `<p class="dim" style="font-size:.86rem;margin:10px 0 0">Nothing recorded yet —
+  this starts filling the moment someone opens the app on the new build.</p>` : ''}
+
 <div class="cards" style="margin-top:24px">
   <div class="card"><div class="n">${people.length}</div><div class="l">People</div></div>
   <div class="card"><div class="n">${people.filter((u) => u.status === 'active').length}</div><div class="l">Active</div></div>
@@ -1622,6 +1700,7 @@ export function startServer(port = process.env.PORT || 8080, build = 'dev') {
         res.end();
         return;
       }
+      countStep('signed_in', req);
       res.writeHead(302, { Location: '/app', 'Set-Cookie': sessionCookie(createSession(acct._id)) });
       res.end();
       return;
@@ -1651,6 +1730,7 @@ export function startServer(port = process.env.PORT || 8080, build = 'dev') {
       // They may have arrived from someone's shared page before they had an account.
       const ref = parseCookies(req.headers.cookie).kept_ref;
       if (ref && REF_CODE.test(ref)) await attributeReferral(ref, acct);
+      countStep('signed_in', req);
       res.writeHead(200, {
         'Content-Type': 'application/json',
         'Set-Cookie': [sessionCookie(createSession(acct._id)), clearedRefCookie],
@@ -1696,6 +1776,7 @@ export function startServer(port = process.env.PORT || 8080, build = 'dev') {
       const ref = cookies.kept_ref;
       if (ref && REF_CODE.test(ref)) await attributeReferral(ref, acct);
       console.log(`[auth] ${acct._id} signed in (redirect)`);
+      countStep('signed_in', req);
       res.writeHead(302, {
         Location: '/app',
         'Set-Cookie': [sessionCookie(createSession(acct._id)), clearedRefCookie],
@@ -1882,6 +1963,26 @@ export function startServer(port = process.env.PORT || 8080, build = 'dev') {
         ok: true,
         kinds: push.KINDS.map((k) => ({ id: k.id, label: k.label, note: k.note, on: push.wants(fresh, k.id) })),
       });
+    }
+
+    /* One beat of the funnel. Outside the authenticated block on purpose: the people we most
+       need to see are the ones with no account, and they are exactly who an auth gate would
+       hide. Nothing is read, nothing is returned, and the only thing that can be written is a
+       name from a fixed list — so the worst a hostile caller can do is inflate a counter he
+       reads himself, which the rate limit already makes tedious. */
+    if (path === '/api/step') {
+      if (req.method !== 'POST') {
+        res.writeHead(405, { 'Content-Type': 'text/plain' });
+        res.end('POST');
+        return;
+      }
+      if (users.rateLimit(`step:${clientIp(req)}`, 40)) {
+        const body = await readJson(req, 400);
+        await countStep(String(body?.name || ''), req);
+      }
+      res.writeHead(204, { 'Cache-Control': 'no-store' });
+      res.end();
+      return;
     }
 
     // ---- the page behind a task or a question, and the replies on it ----

@@ -130,6 +130,22 @@ console.log('\nevery page is the same product');
   }
 }
 
+// Wave 1: the funnel can see inside the app. 400 app opens produced no accounts and nothing
+// could say what those people did — every fix after that was guesswork.
+console.log('\nwe can see where people fall');
+for (const beat of ['opened', 'empty_shelf', 'book_added', 'thought_saved', 'exam_graded', 'wall_hit'])
+  ok(app.body.includes(`step("${beat}")`), `/app reports "${beat}"`);
+ok(app.body.includes('sessionStorage.getItem'), 'each beat counts once per visit, not once per tap');
+{
+  // Open to guests on purpose — the people we most need to see are the ones with no account.
+  const s = await grab('/api/step', { headers: { 'Content-Type': 'application/json' } });
+  ok(s.status === 405, '/api/step refuses anything but POST', `got ${s.status}`);
+  // And the privacy page has to keep describing what is actually counted.
+  ok(/reached each step/i.test(privacy.body), '/privacy says the steps are counted');
+  ok(/no cookie/i.test(privacy.body) && /identifier/i.test(privacy.body),
+    'and that no cookie or identifier is involved');
+}
+
 // Almost everyone opens this on a phone, so the tap-target floor is a product rule, not a
 // preference. It is declared once as --tap; these check the token exists and that no component
 // has quietly gone back under it.
