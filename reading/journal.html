@@ -206,6 +206,59 @@
   .cap:disabled{opacity:.55}
   .cap[hidden]{display:none}
   .caphint{color:var(--faint);font-size:.76rem;margin:7px 2px 0}
+  /* ---- what you decided to do, and what you want to ask ----
+     Both lists are the same card shape as a thought, because they are the same kind of thing:
+     something you wrote down while reading. What differs is what sits under them — steps and
+     a progress bar for a task, the places you asked it for a question. */
+  .item{border:1px solid var(--line);border-radius:12px;padding:13px 14px;margin-top:10px;background:var(--surface)}
+  .item.done{opacity:.62}
+  .item .h{font-weight:600;line-height:1.35}
+  .item.done .h{text-decoration:line-through}
+  .item .q{font-family:var(--serif);font-size:1.06rem;line-height:1.45}
+  .item .why{color:var(--muted);font-size:.88rem;margin-top:5px;white-space:pre-wrap}
+  .item .meta{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px;
+    color:var(--faint);font-size:.76rem}
+  .bar{height:7px;border-radius:99px;background:var(--line);overflow:hidden;margin:10px 0 0}
+  .bar i{display:block;height:100%;background:var(--good);transition:width .2s}
+  .steps{list-style:none;padding:0;margin:9px 0 0;display:flex;flex-direction:column;gap:2px}
+  .steps li{display:flex;gap:9px;align-items:flex-start}
+  /* The whole row is the target, not a 14px box — this is a checklist used with a thumb. */
+  .steps button.s{flex:1;display:flex;gap:9px;align-items:flex-start;text-align:left;
+    background:none;border:0;padding:7px 2px;min-height:38px;color:var(--ink);
+    font-family:var(--sans);font-size:.92rem;line-height:1.4;cursor:pointer}
+  .steps .bx{flex:0 0 19px;height:19px;margin-top:1px;border:2px solid var(--line);border-radius:5px;
+    display:flex;align-items:center;justify-content:center;font-size:.72rem;font-weight:700;color:transparent}
+  .steps button.s.d .bx{background:var(--good);border-color:var(--good);color:#fff}
+  .steps button.s.d span.t{color:var(--faint);text-decoration:line-through}
+  .steps .rm{flex:0 0 auto;background:none;border:0;color:var(--faint);font-size:.76rem;
+    padding:7px 6px;cursor:pointer}
+  /* Where this was asked. A row of real links, because the point is to get back to them. */
+  .places{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}
+  .places a,.places button{display:inline-flex;align-items:center;gap:5px;text-decoration:none;
+    border:1px solid var(--line);border-radius:99px;padding:6px 11px;min-height:32px;
+    background:var(--raise);color:var(--ink);font-family:var(--sans);font-size:.78rem;
+    font-weight:600;cursor:pointer}
+  .pill{display:inline-block;font-size:.7rem;font-weight:700;padding:3px 8px;border-radius:99px;
+    background:var(--accent-tint);color:var(--accent-strong)}
+  .pill.new{background:var(--good);color:#fff}
+  .item .act{display:flex;gap:12px;margin-top:10px}
+  .item .act button{background:none;border:0;color:var(--muted);font-family:var(--sans);
+    font-size:.8rem;font-weight:600;padding:6px 0;min-height:34px;cursor:pointer}
+  .addrow{display:flex;gap:8px;margin-top:10px}
+  .addrow input{flex:1}
+  .addrow button{flex:0 0 auto;padding:0 16px}
+  /* The rule that keeps getting relearned: `hidden` is only a default, and any author
+     `display` beats it. Every class above that sets one gets its guard here, whether or not it
+     is hidden today — the next person to add a `hidden` to one of these should not have to
+     rediscover why nothing happened.
+     Written out one per line rather than as one grouped selector, because smoke.mjs looks for
+     exactly this string per class. A guard the test cannot see is a guard that stops being
+     true the moment somebody tidies it away. */
+  .bar[hidden]{display:none}
+  .steps[hidden]{display:none}
+  .places[hidden]{display:none}
+  .addrow[hidden]{display:none}
+  .item[hidden]{display:none}
   /* choosing the part of the page to read */
   /* Room around the picture, so the frame has somewhere to be. The corner brackets are drawn
      slightly OUTSIDE the selection, and with the photo flush against the container they were
@@ -532,8 +585,22 @@
 
   <section id="view-book" hidden></section>
 
+  <!-- What reading was for. Tasks and questions are both authored inside a book, so this tab
+       is where they are gathered across the whole shelf — a task is useless in the book it
+       came from and useful on the morning you act on it. -->
+  <section id="view-do" hidden aria-label="Do">
+    <h2 class="h1">Do</h2>
+    <p class="sub" id="do-sub">What you decided to do about what you read.</p>
+    <div class="segs" id="do-segs">
+      <button data-seg="tasks" class="on">Tasks</button>
+      <button data-seg="questions">Questions</button>
+    </div>
+    <div id="do-body"></div>
+  </section>
+
   <nav class="tabbar" role="tablist">
     <button class="tb on" id="tab-library" role="tab" aria-selected="true"><span class="i">📚</span>Library</button>
+    <button class="tb" id="tab-do" role="tab" aria-selected="false"><span class="i">✅</span>Do</button>
     <button class="tb" id="tab-quiz" role="tab" aria-selected="false"><span class="i">🧠</span>Quiz</button>
     <button class="tb" id="tab-chat" role="tab" aria-selected="false"><span class="i">💬</span>Mentor</button>
   </nav>
@@ -799,6 +866,21 @@ function openBook(id){
         }).join(""):'<div class="empty" style="padding:10px">No thoughts yet.</div>'}
       </div>
     </div>
+    <!-- The motto, made into a control. A thought is what the book said; these two are what
+         you are going to do about it and what you still want to ask. -->
+    <div class="sec">
+      <h3>What you'll do about it</h3>
+      <p class="sub" style="margin:0 0 6px">One thing you'll actually do because of this book.</p>
+      <div id="tasks-list"></div>
+      <div style="margin-top:12px"><button class="btn ghost" id="t-add">＋ Add something to do</button></div>
+    </div>
+    <div class="sec">
+      <h3>Questions</h3>
+      <p class="sub" style="margin:0 0 6px">Something you'd put to someone else who read it — then
+      ask around and keep the replies.</p>
+      <div id="qs-list"></div>
+      <div style="margin-top:12px"><button class="btn ghost" id="q-add">＋ Add a question</button></div>
+    </div>
     <div class="sec">
       <h3>Knowledge exam</h3>
       ${b.exam
@@ -814,7 +896,25 @@ function openBook(id){
     </div>
     <div style="margin-top:16px"><button class="btn danger" id="b-del">Delete this book</button></div>`;
 
-  $("b-back").onclick=()=>{openId=null;$("view-book").hidden=true;$("view-library").hidden=false;renderLibrary();};
+  /* Both lists, and the buttons that make one. Drawn after the template so the cards can be
+     redrawn on their own without rebuilding the whole book page under the reader's finger. */
+  const drawItems=()=>{
+    const ts=listOf(b,"tasks").slice().sort((p,q)=>(p.status==="done"?1:0)-(q.status==="done"?1:0)||(q.ts||0)-(p.ts||0));
+    $("tasks-list").innerHTML=ts.length?ts.map(t=>taskCard(t,b,false)).join("")
+      :'<div class="empty" style="padding:10px">Nothing yet.</div>';
+    const qs=listOf(b,"questions").slice().sort((p,q)=>(q.ts||0)-(p.ts||0));
+    $("qs-list").innerHTML=qs.length?qs.map(q=>questionCard(q,b,false)).join("")
+      :'<div class="empty" style="padding:10px">Nothing yet.</div>';
+  };
+  drawItems();
+  redrawBook=drawItems;
+  wireItems($("tasks-list")); wireItems($("qs-list"));
+  /* A task written while reading page 34 almost always comes from what you just wrote down, so
+     the thought box seeds the reason and the page carries over. */
+  $("t-add").onclick=()=>newTask(id,$("n-text")?.value.trim()||"",$("n-page")?.value||b.page||"");
+  $("q-add").onclick=()=>newQuestion(id,$("n-text")?.value.trim()||"",$("n-page")?.value||b.page||"");
+  loadReplies().then(()=>{ if(openId===id&&$("tasks-list")) drawItems(); });
+  $("b-back").onclick=()=>{openId=null;redrawBook=null;$("view-book").hidden=true;$("view-library").hidden=false;renderLibrary();};
   $("b-rate").querySelectorAll("button").forEach(bt=>bt.onclick=()=>{patch(id,{rating:+bt.dataset.r});openBook(id);});
   $("b-status").querySelectorAll("button").forEach(bt=>bt.onclick=()=>{
     const s=bt.dataset.s; const p={status:s}; if(s==="finished"&&!b.finished)p.finished=Date.now();
@@ -1009,17 +1109,30 @@ function openBook(id){
         const sw=stage.offsetWidth, sh=stage.offsetHeight;
         if(!bw||!bh||!sw||!sh) return;
         const z=Math.max(1,Math.min(1.9, Math.min(bw/rect.w, bh/rect.h)*0.82));
-        let tx=bw/2-(rect.x+rect.w/2)*z;
-        let ty=bh/2-(rect.y+rect.h/2)*z;
+        /* THE STAGE DOES NOT START WHERE THE BOX STARTS. .cropbox centres it with flexbox and
+           pads it by 16px, so the stage already sits at an offset before any transform — and
+           for a portrait book photo (max-height:46vh, so the picture is far narrower than the
+           box) that offset is most of the empty space on either side, not a rounding error.
+           Measuring the selection in the stage's pixels and then clamping the pan as though
+           0 meant "the box's left edge" is a whole coordinate space out. The frame drifted
+           right and overflow:hidden took the right-hand side off — which is exactly what he
+           saw whenever he dragged the LEFT handle, because that is when the pan lands on the
+           clamp. offsetLeft/offsetTop are immune to transforms, so they can be read while the
+           stage is already scaled. */
+        const ox=stage.offsetLeft, oy=stage.offsetTop;
+        let tx=bw/2-ox-(rect.x+rect.w/2)*z;
+        let ty=bh/2-oy-(rect.y+rect.h/2)*z;
         /* Centring on the selection is right in the middle of a photo and wrong at its edges:
            it slides the picture out of the frame, so the part you were framing is the part
            that gets cut. Pan is clamped so the photo always covers the box — and if the
-           scaled photo is smaller than the box, it sits in the middle instead. */
-        const pin=(t,boxLen,scaledLen)=>scaledLen<=boxLen
-          ? (boxLen-scaledLen)/2
-          : Math.min(0, Math.max(boxLen-scaledLen, t));
-        tx=pin(tx,bw,sw*z);
-        ty=pin(ty,bh,sh*z);
+           scaled photo is smaller than the box, it sits in the middle instead. Every bound
+           carries the offset, because the number we are choosing is a translation FROM that
+           offset, not a position in the box. */
+        const pin=(t,off,boxLen,scaledLen)=>scaledLen<=boxLen
+          ? (boxLen-scaledLen)/2-off
+          : Math.min(-off, Math.max(boxLen-off-scaledLen, t));
+        tx=pin(tx,ox,bw,sw*z);
+        ty=pin(ty,oy,bh,sh*z);
         stage.style.transformOrigin="0 0";
         stage.style.transform=`translate(${tx}px, ${ty}px) scale(${z})`;
       };
@@ -1379,7 +1492,7 @@ function teaser(txt,bk,page){
 — ${bk.title}${bk.author?`, ${bk.author}`:""}${page?`, p.${page}`:""}`;
 }
 
-function openShareSheet({title,text,url,quote,attribution}){
+function openShareSheet({title,text,url,quote,attribution,hint}){
   const full=`${text}\n\n${url}`;
   const e=encodeURIComponent;
   /* Reddit is not a link-sharing site, it is a posting site. A LINK post titled with the book
@@ -1410,6 +1523,7 @@ function openShareSheet({title,text,url,quote,attribution}){
   ];
   const { bg, close } = openSheet(`
     <div class="sheet-head">Send it to</div>
+    ${hint?`<p class="sheet-note">${esc(hint)}</p>`:""}
     <div class="sheet-preview">${esc(text)}<br><span class="sheet-url">${esc(url)}</span></div>
     ${navigator.share?`<button class="btn sheet-native" id="sh-native">Share to any app →</button>
     <p class="sheet-note" style="margin:8px 0 12px;text-align:center">Carries the words with it. The list below is for a nudge in one place.</p>`:""}
@@ -1461,6 +1575,449 @@ function openShareSheet({title,text,url,quote,attribution}){
 }
 
 function patch(id,p){const b=state.books.find(x=>x.id===id);if(!b)return;Object.assign(b,p,{updated:Date.now()});save();}
+
+/* ================= what you decided to do, and what you want to ask =================
+   The motto says "use what you read". Until now the app could hold what you read and test
+   whether you kept it — it had nowhere to put what you were going to DO about it, so the
+   sentence was true about memory and silent about action. A task carries the line that caused
+   it, so the reason survives the week; a question carries every place you asked it, so the
+   conversation survives the app you happened to ask in.
+   Both live on the book document and ride the same sync as thoughts. */
+const bookOf=id=>state.books.find(x=>x.id===id);
+const listOf=(b,kind)=>{ const k=kind==="tasks"?"tasks":"questions"; b[k]=Array.isArray(b[k])?b[k]:[]; return b[k]; };
+const stepsDone=t=>(t.steps||[]).filter(s=>s.done).length;
+const pctOf=t=>(t.steps||[]).length?Math.round(stepsDone(t)/t.steps.length*100):(t.status==="done"?100:0);
+/* Every task and question with the book it came from, newest first — what the Do tab draws. */
+function allOf(kind){
+  const out=[];
+  for(const b of state.books) for(const x of listOf(b,kind)) out.push({x,b});
+  return out.sort((p,q)=>(q.x.ts||0)-(p.x.ts||0));
+}
+function itemById(kind,id){
+  for(const b of state.books){ const x=listOf(b,kind).find(y=>y.id===id); if(x) return {x,b}; }
+  return null;
+}
+function touchBook(b){ b.updated=Date.now(); save(); }
+
+/* ---- the page a friend opens ----
+   Opened lazily, the first time he actually shares — a code minted for every task would
+   litter the shares collection with pages nobody was ever sent. */
+async function convoOpen(kind,x,b){
+  const payload=kind==="tasks"
+    ? { kind:"task", title:x.title, body:x.why||"", book:b.title, author:b.author||"", page:x.page||null, steps:x.steps||[] }
+    : { kind:"question", title:x.text, body:"", book:b.title, author:b.author||"", page:x.page||null };
+  const r=await api("/api/convo",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+  if(!r.ok) return null;
+  const d=await r.json();
+  if(d.code){ x.share=d.code; touchBook(b); }
+  return d.code||null;
+}
+/* Keep the live page honest after a step is ticked or the wording changes. Failure is
+   deliberately silent: the task itself is saved either way, and a friend seeing yesterday's
+   progress is a smaller problem than an edit that refuses to save because a page didn't update. */
+function convoSync(kind,x){
+  if(!x.share) return;
+  const payload=kind==="tasks"
+    ? { code:x.share, title:x.title, body:x.why||"", steps:x.steps||[], status:x.status }
+    : { code:x.share, title:x.text };
+  api("/api/convo",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)}).catch(()=>{});
+}
+const convoUrl=code=>`${location.origin}/c/${code}`;
+
+/* Replies live on the server, so the app asks for the ones belonging to codes it holds. Kept
+   in memory only — this is a view of someone else's writing, not our data to cache. */
+let replies={};
+async function loadReplies(){
+  const codes=[...allOf("tasks"),...allOf("questions")].map(({x})=>x.share).filter(Boolean);
+  if(!codes.length){ replies={}; return; }
+  try{
+    const r=await api(`/api/convo?codes=${encodeURIComponent(codes.slice(0,60).join(","))}`);
+    if(!r.ok) return;
+    const d=await r.json();
+    replies={};
+    for(const c of d.convos||[]) replies[c.code]=c.replies||[];
+  }catch(e){}
+}
+const replyCount=x=>(x.share&&replies[x.share]?replies[x.share].length:0);
+
+/* ---- steps ---- */
+function toggleStep(kind,id,i){
+  const f=itemById(kind,id); if(!f) return;
+  const s=(f.x.steps||[])[i]; if(!s) return;
+  s.done=!s.done;
+  /* Finishing the last step is finishing the task. Making him tick the steps AND then find a
+     separate "done" button is asking twice for the same answer — and the two would drift. */
+  if(kind==="tasks"&&f.x.steps.length){
+    const all=f.x.steps.every(z=>z.done);
+    f.x.status=all?"done":"open";
+    f.x.doneAt=all?(f.x.doneAt||Date.now()):null;
+  }
+  touchBook(f.b); convoSync(kind,f.x);
+  rerender();
+}
+function addStep(kind,id,text){
+  const f=itemById(kind,id); if(!f||!String(text||"").trim()) return;
+  f.x.steps=Array.isArray(f.x.steps)?f.x.steps:[];
+  if(f.x.steps.length>=20){ toast("Twenty steps is plenty"); return; }
+  f.x.steps.push({text:String(text).trim().slice(0,200),done:false});
+  if(f.x.status==="done"){ f.x.status="open"; f.x.doneAt=null; }   // a new step reopens it
+  touchBook(f.b); convoSync(kind,f.x); rerender();
+}
+function removeStep(kind,id,i){
+  const f=itemById(kind,id); if(!f) return;
+  (f.x.steps||[]).splice(i,1);
+  touchBook(f.b); convoSync(kind,f.x); rerender();
+}
+function toggleDone(id){
+  const f=itemById("tasks",id); if(!f) return;
+  const now=f.x.status!=="done";
+  f.x.status=now?"done":"open"; f.x.doneAt=now?Date.now():null;
+  // Ticking the task ticks its steps, or the bar would say 40% under the word "done".
+  (f.x.steps||[]).forEach(s=>{ s.done=now; });
+  touchBook(f.b); convoSync("tasks",f.x); rerender();
+  if(now) toast("Done — that's one you actually used");
+}
+function removeItem(kind,id){
+  const f=itemById(kind,id); if(!f) return;
+  const arr=listOf(f.b,kind);
+  arr.splice(arr.findIndex(y=>y.id===id),1);
+  touchBook(f.b); rerender();
+}
+/* Redraw wherever we happen to be standing — and only the lists. Rebuilding the whole book
+   page on every ticked step threw away the scroll position and the half-typed thought in the
+   box above, which made a checklist feel like it was fighting back. */
+let redrawBook=null;
+function rerender(){
+  if(!$("view-do").hidden) renderDo();
+  else if(openId!==null&&redrawBook) redrawBook();
+  else if(openId!==null) openBook(openId);
+}
+
+/* ---- one card, drawn the same in the book and in the Do tab ----
+   `showBook` is the only difference: inside a book you already know which book it is. */
+const WHERE={reddit:"Reddit",x:"X",whatsapp:"WhatsApp",telegram:"Telegram",facebook:"Facebook",
+  linkedin:"LinkedIn",email:"Email",link:"Link"};
+function taskCard(t,b,showBook){
+  const n=(t.steps||[]).length, d=stepsDone(t), reps=replyCount(t);
+  return `<div class="item${t.status==="done"?" done":""}">
+    <div class="h">${esc(t.title)}</div>
+    ${t.why?`<div class="why">${esc(t.why)}</div>`:""}
+    <div class="meta">
+      ${showBook?`<span>${esc(b.title)}</span>`:""}
+      ${t.page?`<span class="npage">p.${esc(String(t.page))}</span>`:""}
+      ${t.due?`<span>by ${fmtDate(t.due)}</span>`:""}
+      ${(t.partners||[]).length?`<span>with ${esc((t.partners||[]).map(p=>p.name).join(", "))}</span>`:""}
+      ${reps?`<span class="pill new">${reps} ${reps===1?"reply":"replies"}</span>`:""}
+    </div>
+    ${n?`<div class="bar"><i style="width:${pctOf(t)}%"></i></div>
+    <ul class="steps">${t.steps.map((s,i)=>`<li>
+      <button class="s${s.done?" d":""}" data-step="${i}" data-id="${t.id}" data-kind="tasks"
+        aria-pressed="${s.done?"true":"false"}"><span class="bx">✓</span><span class="t">${esc(s.text)}</span></button>
+      <button class="rm" data-rmstep="${i}" data-id="${t.id}" data-kind="tasks" aria-label="Remove step">✕</button>
+    </li>`).join("")}</ul>`:""}
+    <div class="addrow">
+      <input type="text" placeholder="Add a step…" data-addstep="${t.id}" maxlength="200">
+    </div>
+    <div class="act">
+      <button data-done="${t.id}">${t.status==="done"?"reopen":"mark done"}</button>
+      <button data-edit-task="${t.id}">edit</button>
+      <button data-invite="${t.id}">${t.share?"link & replies":"add a friend"}</button>
+      <button data-rm="${t.id}" data-kind="tasks">remove</button>
+    </div>
+  </div>`;
+}
+function questionCard(q,b,showBook){
+  const reps=replyCount(q);
+  return `<div class="item">
+    <div class="q">${esc(q.text)}</div>
+    <div class="meta">
+      ${showBook?`<span>${esc(b.title)}</span>`:""}
+      ${q.page?`<span class="npage">p.${esc(String(q.page))}</span>`:""}
+      <span>${fmtDate(q.ts)}</span>
+      ${reps?`<span class="pill new">${reps} ${reps===1?"reply":"replies"}</span>`:""}
+    </div>
+    ${q.answer?`<div class="why"><b>Where you landed:</b> ${esc(q.answer)}</div>`:""}
+    ${(q.threads||[]).length||q.share?`<div class="places">
+      ${q.share?`<a href="${convoUrl(q.share)}" target="_blank" rel="noopener">Kept page${reps?` · ${reps}`:""}</a>`:""}
+      ${(q.threads||[]).map((th,i)=>`<a href="${th.url}" target="_blank" rel="noopener"
+        >${esc(WHERE[th.where]||"Link")}${th.note?` · ${esc(th.note)}`:""}</a>`).join("")}
+    </div>`:""}
+    <div class="act">
+      <button data-ask="${q.id}">ask around</button>
+      <button data-place="${q.id}">+ where I asked</button>
+      <button data-answered="${q.id}">${q.answer?"edit answer":"I found an answer"}</button>
+      <button data-rm="${q.id}" data-kind="questions">remove</button>
+    </div>
+  </div>`;
+}
+const cardFor=(kind,x,b,showBook)=>kind==="tasks"?taskCard(x,b,showBook):questionCard(x,b,showBook);
+
+/* ---- the Do tab ---- */
+let doSeg="tasks";
+function renderDo(){
+  $("do-sub").textContent=doSeg==="tasks"
+    ? "What you decided to do about what you read."
+    : "What you want to ask someone about — and everywhere you asked it.";
+  $("do-segs").querySelectorAll("button").forEach(bt=>{
+    const on=bt.dataset.seg===doSeg;
+    bt.classList.toggle("on",on);
+  });
+  const rows=allOf(doSeg);
+  // Open work first: a list that buries today's step under last month's finished ones is a
+  // list you stop opening.
+  if(doSeg==="tasks") rows.sort((p,q)=>(p.x.status==="done"?1:0)-(q.x.status==="done"?1:0)||(q.x.ts||0)-(p.x.ts||0));
+  const open=doSeg==="tasks"?rows.filter(r=>r.x.status!=="done").length:rows.length;
+  $("do-body").innerHTML=rows.length
+    ? `<p class="sub" style="margin:14px 0 0">${open} ${doSeg==="tasks"?(open===1?"still open":"still open"):(open===1?"question":"questions")}</p>
+       ${rows.map(({x,b})=>cardFor(doSeg,x,b,true)).join("")}`
+    : `<div class="empty" style="margin-top:16px">
+         ${doSeg==="tasks"
+           ? "Nothing yet. Open a book and write down one thing you'll actually do because of it."
+           : "Nothing yet. Open a book and write down something you'd want to ask another reader."}
+         <div style="margin-top:12px"><button class="btn ghost" id="do-lib">Go to my books</button></div>
+       </div>`;
+  if($("do-lib")) $("do-lib").onclick=()=>{ $("tab-library").click(); };
+}
+$("do-segs").addEventListener("click",e=>{
+  const bt=e.target.closest("button[data-seg]"); if(!bt) return;
+  doSeg=bt.dataset.seg; renderDo();
+});
+
+/* One listener for every card on the page, wherever it was drawn. Ids come from uid() so they
+   are safe in an attribute, and nothing user-written is ever put in one. */
+function wireItems(root){
+  if(!root||root.dataset.wired) return;
+  root.dataset.wired="1";
+  root.addEventListener("click",e=>{
+    const t=e.target.closest("button, a"); if(!t) return;
+    const d=t.dataset;
+    if(d.step!==undefined) return toggleStep(d.kind,d.id,+d.step);
+    if(d.rmstep!==undefined) return removeStep(d.kind,d.id,+d.rmstep);
+    if(d.done) return toggleDone(d.done);
+    if(d.editTask) return editTask(d.editTask);
+    if(d.invite) return inviteSheet(d.invite);
+    if(d.ask) return askSheet(d.ask);
+    if(d.place) return placeSheet(d.place);
+    if(d.answered) return answerSheet(d.answered);
+    if(d.rm){
+      const f=itemById(d.kind,d.rm);
+      if(f&&confirm(d.kind==="tasks"?"Remove this task?":"Remove this question?")) removeItem(d.kind,d.rm);
+      return;
+    }
+  });
+  root.addEventListener("keydown",e=>{
+    const inp=e.target.closest("input[data-addstep]");
+    if(inp&&e.key==="Enter"){ e.preventDefault(); addStep("tasks",inp.dataset.addstep,inp.value); inp.value=""; }
+  });
+}
+
+/* ---- the sheets ----
+   Values are assigned in JS, never interpolated into a value="" attribute: the client esc()
+   does not escape quotes, so a title with a quote mark in it would break out of the attribute.
+   Setting .value sidesteps the question entirely. */
+function fieldSheet({head,note,fields,save,label,danger}){
+  const { bg, close }=openSheet(`
+    <div class="sheet-head">${esc(head)}</div>
+    ${note?`<p class="sheet-note">${esc(note)}</p>`:""}
+    ${fields.map(f=>`<label for="f-${f.k}">${esc(f.label)}</label>
+      ${f.big?`<textarea id="f-${f.k}" maxlength="${f.max||2000}"></textarea>`
+             :`<input id="f-${f.k}" type="${f.type||"text"}" ${f.type==="number"?'inputmode="numeric"':""} maxlength="${f.max||200}">`}`).join("")}
+    <button class="btn" id="f-save" style="margin-top:14px">${esc(label||"Save")}</button>
+    ${danger?`<button class="btn ghost" id="f-del" style="margin-top:8px">${esc(danger)}</button>`:""}
+    <button class="btn ghost" id="f-cancel" style="margin-top:8px">Cancel</button>`, head);
+  for(const f of fields){ const el=$("f-"+f.k); if(f.value!=null) el.value=f.value; if(f.placeholder) el.placeholder=f.placeholder; }
+  $("f-"+fields[0].k).focus();
+  const read=()=>Object.fromEntries(fields.map(f=>[f.k,$("f-"+f.k).value]));
+  $("f-save").onclick=()=>{ if(save(read(),close)!==false) close(); };
+  $("f-cancel").onclick=close;
+  return { bg, close, read };
+}
+
+/* A task starts from the book, and the "why" is prefilled from the thought that caused it when
+   there is one — the reason is the part that goes stale first. */
+function newTask(bookId,prefillWhy,prefillPage){
+  const b=bookOf(bookId); if(!b) return;
+  fieldSheet({
+    head:"What will you do about it?", label:"Add it",
+    note:"One thing you'll actually do because of this book. Steps come after.",
+    fields:[
+      {k:"title",label:"The thing to do",placeholder:"e.g. Rewrite my pitch around one market",max:200},
+      {k:"why",label:"Why — the bit from the book",big:true,value:prefillWhy||"",max:1000,
+       placeholder:"The line or idea that caused it."},
+      {k:"page",label:"Page (optional)",type:"number",value:prefillPage||"",max:6},
+    ],
+    save:(v)=>{
+      if(!v.title.trim()){ toast("It needs a title"); return false; }
+      listOf(b,"tasks").push({id:uid(),title:v.title.trim().slice(0,200),why:v.why.trim().slice(0,1000),
+        page:parseInt(v.page,10)||null,steps:[],status:"open",due:null,partners:[],share:null,ts:Date.now(),doneAt:null});
+      touchBook(b); rerender();
+      toast("Added to Do");
+    },
+  });
+}
+function editTask(id){
+  const f=itemById("tasks",id); if(!f) return;
+  const sh=fieldSheet({
+    head:"Edit task", label:"Save", danger:"Remove this task",
+    fields:[
+      {k:"title",label:"The thing to do",value:f.x.title,max:200},
+      {k:"why",label:"Why — the bit from the book",big:true,value:f.x.why||"",max:1000},
+      {k:"page",label:"Page (optional)",type:"number",value:f.x.page||"",max:6},
+      {k:"due",label:"Do it by (optional)",type:"date",
+       value:f.x.due?new Date(f.x.due).toISOString().slice(0,10):""},
+    ],
+    save:(v)=>{
+      if(!v.title.trim()){ toast("It needs a title"); return false; }
+      f.x.title=v.title.trim().slice(0,200);
+      f.x.why=v.why.trim().slice(0,1000);
+      f.x.page=parseInt(v.page,10)||null;
+      f.x.due=v.due?new Date(v.due+"T12:00:00").getTime():null;
+      touchBook(f.b); convoSync("tasks",f.x); rerender();
+    },
+  });
+  $("f-del").onclick=()=>{ if(confirm("Remove this task?")){ sh.close(); removeItem("tasks",id); } };
+}
+
+/* ---- a friend on a task ----
+   Honest about what this is: there is no friend graph here, so a partner is a name he writes
+   down plus a link they can open. They can watch the steps move and say something back without
+   an account, which is a real conversation today; when accounts exist, the same document holds
+   a real partner. */
+async function inviteSheet(id){
+  const f=itemById("tasks",id); if(!f) return;
+  if(!f.x.share){
+    toast("Making the page…");
+    const code=await convoOpen("tasks",f.x,f.b);
+    if(!code){ toast("Couldn't make the page — are you signed in?"); return; }
+  }
+  const url=convoUrl(f.x.share);
+  const reps=replies[f.x.share]||[];
+  const { bg, close }=openSheet(`
+    <div class="sheet-head">Do it with someone</div>
+    <p class="sheet-note">Send this link. They can see your steps move and write back — no account needed.</p>
+    <div class="sheet-preview">${esc(f.x.title)}<br><span class="sheet-url">${esc(url)}</span></div>
+    <label for="iv-name">Who's on it with you?</label>
+    <div class="addrow"><input id="iv-name" type="text" maxlength="60" placeholder="Their name">
+      <button class="btn" id="iv-add" style="min-width:76px">Add</button></div>
+    ${(f.x.partners||[]).length?`<div class="places" style="margin-top:10px">${
+      f.x.partners.map((p,i)=>`<button data-rmp="${i}">${esc(p.name)} ✕</button>`).join("")}</div>`:""}
+    ${reps.length?`<h3 style="font-size:.95rem;margin:18px 0 0">${reps.length} ${reps.length===1?"reply":"replies"}</h3>
+      ${reps.map(r=>`<div class="note"><div class="ntop"><span>${esc(r.name)}</span>
+        <span class="ndate">${fmtDate(r.at)}</span></div>
+        <div class="ntext">${esc(r.text)}</div></div>`).join("")}`:""}
+    <button class="btn" id="iv-share" style="margin-top:14px">Send the link →</button>
+    <a class="btn ghost" id="iv-open" href="${url}" target="_blank" rel="noopener" style="margin-top:8px">Open the page</a>
+    <button class="btn ghost" id="iv-close" style="margin-top:8px">Close</button>`, "Do it with someone");
+  $("iv-close").onclick=close;
+  const addPartner=()=>{
+    const n=$("iv-name").value.trim(); if(!n) return;
+    f.x.partners=Array.isArray(f.x.partners)?f.x.partners:[];
+    if(f.x.partners.length>=8){ toast("Eight is plenty"); return; }
+    f.x.partners.push({name:n.slice(0,60),at:Date.now()});
+    touchBook(f.b); rerender(); close(); inviteSheet(id);
+  };
+  $("iv-add").onclick=addPartner;
+  $("iv-name").addEventListener("keydown",e=>{ if(e.key==="Enter"){ e.preventDefault(); addPartner(); } });
+  bg.querySelectorAll("[data-rmp]").forEach(btn=>btn.onclick=()=>{
+    f.x.partners.splice(+btn.dataset.rmp,1); touchBook(f.b); rerender(); close(); inviteSheet(id);
+  });
+  $("iv-share").onclick=()=>{
+    close();
+    openShareSheet({ title:f.x.title, text:`I'm working on this, from ${f.b.title}: ${f.x.title}`, url,
+      quote:f.x.why||f.x.title, attribution:`— from ${f.b.title}${f.b.author?` by ${f.b.author}`:""}` });
+  };
+}
+
+/* ---- a question ---- */
+function newQuestion(bookId,prefillText,prefillPage){
+  const b=bookOf(bookId); if(!b) return;
+  fieldSheet({
+    head:"What do you want to ask?", label:"Keep the question",
+    note:"Not a thought — a real question you'd put to someone who read it too.",
+    fields:[
+      {k:"text",label:"Your question",big:true,value:prefillText||"",max:1000,
+       placeholder:"e.g. Is a niche monopoly actually reachable for one person?"},
+      {k:"page",label:"Page (optional)",type:"number",value:prefillPage||"",max:6},
+    ],
+    save:(v)=>{
+      if(!v.text.trim()){ toast("Write the question first"); return false; }
+      listOf(b,"questions").push({id:uid(),text:v.text.trim().slice(0,1000),
+        page:parseInt(v.page,10)||null,ts:Date.now(),share:null,threads:[],answer:""});
+      touchBook(b); rerender();
+      toast("Kept — now go ask it");
+    },
+  });
+}
+async function askSheet(id){
+  const f=itemById("questions",id); if(!f) return;
+  if(!f.x.share){
+    toast("Making the page…");
+    const code=await convoOpen("questions",f.x,f.b);
+    if(!code){ toast("Couldn't make the page — are you signed in?"); return; }
+  }
+  openShareSheet({
+    title:f.x.text.slice(0,120),
+    text:f.x.text,
+    url:convoUrl(f.x.share),
+    quote:f.x.text,
+    attribution:`Reading ${f.b.title}${f.b.author?` by ${f.b.author}`:""}${f.x.page?`, p.${f.x.page}`:""}`,
+    hint:"After you post it, come back and press “+ where I asked” to keep the link.",
+  });
+}
+/* The part he actually asked for: the thread does not live in Reddit, it lives on the question.
+   Paste the permalink back and the conversation stays reachable from the thing that started it.
+   Deliberately manual — Reddit blocks unauthenticated reads from cloud hosts often enough that
+   fetching replies would work on his phone and not on the server, and a feature that works
+   sometimes is worse than one that is plainly his to do. */
+function placeSheet(id){
+  const f=itemById("questions",id); if(!f) return;
+  const opts=Object.keys(WHERE);
+  const { bg, close }=openSheet(`
+    <div class="sheet-head">Where did you ask it?</div>
+    <p class="sheet-note">Paste the link to the post or the chat. It stays on this question, so
+    you can come back and read the replies.</p>
+    <label for="pl-where">Where</label>
+    <div class="segs" id="pl-where" style="flex-wrap:wrap">${opts.map((k,i)=>
+      `<button data-w="${k}" class="${i===0?"on":""}" style="flex:0 0 auto;padding:10px 13px">${WHERE[k]}</button>`).join("")}</div>
+    <label for="pl-url" style="margin-top:12px">Link</label>
+    <input id="pl-url" type="url" inputmode="url" placeholder="https://…">
+    <label for="pl-note">Note (optional)</label>
+    <input id="pl-note" type="text" maxlength="200" placeholder="e.g. r/books">
+    ${(f.x.threads||[]).length?`<h3 style="font-size:.95rem;margin:18px 0 6px">Already asked in</h3>
+      <div class="places">${f.x.threads.map((th,i)=>
+        `<button data-rmt="${i}">${esc(WHERE[th.where]||"Link")}${th.note?` · ${esc(th.note)}`:""} ✕</button>`).join("")}</div>`:""}
+    <button class="btn" id="pl-save" style="margin-top:14px">Keep the link</button>
+    <button class="btn ghost" id="pl-close" style="margin-top:8px">Close</button>`, "Where did you ask it?");
+  let where=opts[0];
+  bg.querySelectorAll("#pl-where button").forEach(btn=>btn.onclick=()=>{
+    where=btn.dataset.w;
+    bg.querySelectorAll("#pl-where button").forEach(o=>o.classList.toggle("on",o===btn));
+  });
+  bg.querySelectorAll("[data-rmt]").forEach(btn=>btn.onclick=()=>{
+    f.x.threads.splice(+btn.dataset.rmt,1); touchBook(f.b); rerender(); close(); placeSheet(id);
+  });
+  $("pl-close").onclick=close;
+  $("pl-save").onclick=()=>{
+    const raw=$("pl-url").value.trim();
+    let url=null;
+    try{ const u=new URL(raw); if(u.protocol==="http:"||u.protocol==="https:") url=u.href; }catch(e){}
+    if(!url){ toast("That doesn't look like a link"); return; }
+    f.x.threads=Array.isArray(f.x.threads)?f.x.threads:[];
+    if(f.x.threads.length>=12){ toast("Twelve places is plenty"); return; }
+    f.x.threads.push({where,url,note:$("pl-note").value.trim().slice(0,200),at:Date.now()});
+    touchBook(f.b); rerender(); close();
+    toast("Kept — it's on the question now");
+  };
+}
+function answerSheet(id){
+  const f=itemById("questions",id); if(!f) return;
+  fieldSheet({
+    head:"Where did you land?", label:"Save it",
+    note:"The reason to ask was to end up somewhere. Write what you concluded.",
+    fields:[{k:"answer",label:"Your answer",big:true,value:f.x.answer||"",max:2000}],
+    save:(v)=>{ f.x.answer=v.answer.trim().slice(0,2000); touchBook(f.b); rerender(); },
+  });
+}
 
 /* ---- Finding the book instead of typing it ----
    Adding the first book is where every reader so far has stopped, and the landing page has
@@ -2209,14 +2766,24 @@ function endRound(){
      rubber-band underneath. Remember where they were and put them back. */
   let parkedScroll=0;
   function tab(which){
-    const isChat=which==="chat", isQuiz=which==="quiz", isLib=which==="library";
-    [['tab-library',isLib],['tab-quiz',isQuiz],['tab-chat',isChat]].forEach(([id,on])=>{
+    const isChat=which==="chat", isQuiz=which==="quiz", isLib=which==="library", isDo=which==="do";
+    [['tab-library',isLib],['tab-do',isDo],['tab-quiz',isQuiz],['tab-chat',isChat]].forEach(([id,on])=>{
       $(id).classList.toggle("on",on); $(id).setAttribute("aria-selected",String(on));
     });
     $("view-chat").hidden=!isChat;
     $("view-quiz").hidden=!isQuiz;
+    $("view-do").hidden=!isDo;
     $("view-library").hidden=!isLib||openId!==null;
     if(!isLib) $("view-book").hidden=true;
+
+    if(isDo){
+      renderDo();
+      wireItems($("do-body"));
+      /* Ask for replies as the tab opens, then draw again if any arrived. Not on a timer:
+         this is a reading app, not an inbox, and a poll would spend a request a minute
+         forever to tell him nothing changed. */
+      loadReplies().then(()=>{ if(!$("view-do").hidden) renderDo(); });
+    }
 
     if(isChat){
       parkedScroll=window.scrollY;
@@ -2240,6 +2807,7 @@ function endRound(){
     tab("chat");
   };
   $("tab-quiz").onclick=()=>{ openId=null; tab("quiz"); };
+  $("tab-do").onclick=()=>{ openId=null; tab("do"); };
   $("tab-library").onclick=()=>{ openId=null; tab("library"); };
 
   /* ---- making it sit right on a phone ----

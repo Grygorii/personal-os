@@ -86,11 +86,24 @@ ok(app.body.includes('id="find"'), '/app has the thought search the landing page
 ok(app.body.includes('function findThoughts'), 'and the search actually runs');
 ok(landing.body.includes('Everything worth keeping'), 'the landing page leads with the gain');
 
+// The other half of the motto. "Use what you read" was a claim about memory only — the app
+// could hold what you read and test whether you kept it, and had nowhere to put what you were
+// going to DO about it. These check the surfaces exist, because a tab that isn't in the served
+// bytes is a tab nobody has.
+console.log('\nwhat you do about what you read');
+ok(app.body.includes('id="tab-do"'), '/app has the Do tab');
+ok(app.body.includes('id="view-do"'), 'and the panel it opens');
+ok(app.body.includes('function renderDo'), 'and the code that draws it');
+ok(app.body.includes('id="t-add"') && app.body.includes('id="q-add"'),
+  'a book can start a task and a question');
+ok(app.body.includes('function placeSheet'), 'and a question can keep the link to where it was asked');
+ok(app.body.includes('/api/convo'), 'and the app knows where the shared page lives');
+
 // ---- 4. the hidden attribute is not defeated by a display rule ----
 // This is the guestbar bug as a rule rather than a memory. Any selector that sets a display
 // on an element the app also hides with [hidden] needs an explicit [hidden] guard.
 console.log('\nhidden means hidden');
-for (const cls of ['guestbar', 'form', 'cropsel']) {
+for (const cls of ['guestbar', 'form', 'cropsel', 'bar', 'steps', 'places', 'addrow']) {
   const hasDisplay = new RegExp(`\\.${cls}\\{[^}]*display:`).test(app.body);
   const guarded = app.body.includes(`.${cls}[hidden]{display:none}`);
   ok(!hasDisplay || guarded, `.${cls} — no display rule, or an [hidden] guard exists`);
@@ -116,6 +129,12 @@ for (const p of ['/hub', '/home', '/deck', '/body', '/routine', '/dashboard']) {
 const personal = await grab('/api/personal?key=body');
 ok(personal.status === 401 || personal.status === 403,
   '/api/personal refuses a stranger', `got ${personal.status}`);
+// A shared task or question is a page anyone may READ and reply to — that's the point — but
+// opening one, rewriting one, or reading its replies belongs to whoever made it.
+const convo = await grab('/api/convo');
+ok(convo.status === 401, '/api/convo refuses a guest', `got ${convo.status}`);
+const ghostConvo = await grab('/c/deadbeefdeadbeef');
+ok(ghostConvo.status === 404, '/c/<unknown> is a clean 404', `got ${ghostConvo.status}`);
 const reading = await grab('/reading');
 ok(reading.status === 301 && reading.loc === '/app', '/reading redirects to /app',
   `got ${reading.status} ${reading.loc}`);

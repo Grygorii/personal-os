@@ -6,6 +6,7 @@ import { col, rawCol, getProfile, logEvent, dbStats } from './db.js';
 import { config } from './config.js';
 import { chat } from './llm.js';
 import { reflow, looksWrapped } from './text.js';
+import { safeUrl, rid, cleanSteps, cleanTasks, cleanQuestions } from './shape.js';
 import { LANGUAGES, isLanguage } from './ctx.js';
 import { sendPings, send as sendTelegram } from './telegram.js';
 import * as system from './system.js';
@@ -30,6 +31,27 @@ function readJson(req, cap = 200000) {
     });
     req.on('end', () => {
       try { resolve(JSON.parse(data || '{}')); } catch { resolve({}); }
+    });
+    req.on('error', () => resolve({}));
+  });
+}
+
+// The reply form on a shared page posts as a plain HTML form, so the body arrives
+// urlencoded rather than as JSON. Kept deliberately dumb: URLSearchParams does the parsing,
+// and only the fields the caller asks for are ever read out of it.
+function readForm(req, cap = 8000) {
+  return new Promise((resolve) => {
+    let data = '';
+    req.on('data', (c) => {
+      data += c;
+      if (data.length > cap) req.destroy();
+    });
+    req.on('end', () => {
+      const out = {};
+      try {
+        for (const [k, v] of new URLSearchParams(data)) if (!(k in out)) out[k] = v;
+      } catch { /* a malformed body is an empty one */ }
+      resolve(out);
     });
     req.on('error', () => resolve({}));
   });
@@ -451,6 +473,18 @@ async function getBooks() {
 async function saveBooks(books) {
   if (!Array.isArray(books)) throw new Error('books must be an array');
   if (books.length > 500) throw new Error('too many books');
+  // What the server already holds, so a client that has never heard of a field cannot delete
+  // it. An old tab left open on a second phone PUTs the whole shelf on its next sync; without
+  // this, that tab silently wipes every task and question, and the loss looks like a bug in
+  // the feature rather than in the sync. `undefined` means "didn't mention it" — an empty
+  // ARRAY still means "I deleted them all", which must be obeyed.
+  const before = await col('books').findOne({ _id: 'library' });
+  const held = new Map((before?.books || []).map((b) => [String(b.id), b]));
+  const keep = (b, field, fallback) => {
+    if (b[field] !== undefined) return fallback(b[field]);
+    const prev = held.get(String(b.id));
+    return prev ? fallback(prev[field]) : fallback(undefined);
+  };
   const clean = books.slice(0, 500).map((b) => ({
     id: String(b.id || Date.now().toString(36)),
     title: String(b.title || '').slice(0, 300),
@@ -475,6 +509,12 @@ async function saveBooks(books) {
         }
       : null,
     exam: b.exam ? { score: Number(b.exam.score) || 0, ts: Number(b.exam.ts) || Date.now(), verdict: String(b.exam.verdict || '').slice(0, 600) } : null,
+    // What he decided to DO about the book, and what he wants to ASK about it. Both live here
+    // rather than in their own collections because both are only ever about one book, and
+    // riding this document means export, backup, GDPR delete and per-user scoping already
+    // cover them — none of that had to be written twice.
+    tasks: keep(b, 'tasks', cleanTasks),
+    questions: keep(b, 'questions', cleanQuestions),
     started: Number(b.started) || Date.now(),
     updated: Number(b.updated) || Date.now(),
   }));
@@ -886,6 +926,74 @@ async function createShare({ title, author, score, verdict, thoughts, thought, n
 const MAX_SHARED_THOUGHTS = 6;
 const REF_CODE = /^[a-z0-9]{4,24}$/i;
 
+// ---- one conversation, two features ----
+// A task he wants a friend on and a question he wants answered are the same shape of problem:
+// something of his own has to become a page someone else can open, and whatever they say back
+// has to arrive somewhere he will actually look. Building that twice would have meant two
+// half-versions, so it is built once and told which kind it is holding.
+//
+// It also settles "add a friend" honestly. There is no friend graph here — five accounts, all
+// family — so an invite flow would be scaffolding around an empty room. A link a friend can
+// open and reply to needs no account on their side and is a real conversation today; when
+// accounts do exist, a partner slots into the same document.
+const CONVO_KINDS = ['task', 'question'];
+const MAX_REPLIES = 200;
+
+async function createConvo({ kind, title, body, book, author, page, steps }) {
+  if (!CONVO_KINDS.includes(kind)) throw new Error('unknown kind');
+  const code = shareCode();
+  await rawCol('shares').insertOne({
+    _id: code,
+    userId: uid(),
+    kind,
+    title: String(title || '').trim().slice(0, 200),
+    body: String(body || '').trim().slice(0, 1000),
+    book: String(book || '').slice(0, 300),
+    author: String(author || '').slice(0, 200),
+    page: page == null ? null : Number(page) || null,
+    steps: cleanSteps(steps),
+    replies: [],
+    createdAt: new Date(),
+    views: 0,
+  });
+  return { code, url: `${config.appUrl}/c/${code}` };
+}
+
+// The page is live, not a snapshot: he ticks a step off in the app and the friend watching the
+// link sees it move. A frozen copy would have made the progress bar a lie within a day.
+async function refreshConvo(code, { title, body, page, steps, status }) {
+  const set = {};
+  if (title != null) set.title = String(title).trim().slice(0, 200);
+  if (body != null) set.body = String(body).trim().slice(0, 1000);
+  if (page !== undefined) set.page = page == null ? null : Number(page) || null;
+  if (steps !== undefined) set.steps = cleanSteps(steps);
+  if (status != null) set.status = ['open', 'done'].includes(status) ? status : 'open';
+  if (!Object.keys(set).length) return { ok: true };
+  // Scoped by userId as well as code: holding a link must never be enough to rewrite the page.
+  const r = await rawCol('shares').updateOne({ _id: code, userId: uid() }, { $set: set });
+  return { ok: !!r.matchedCount };
+}
+
+// Anyone holding the link may answer, with no account — that is the point of sending it. So
+// the limits are the ones that apply to a stranger: a cap on length, a cap on how many any one
+// place may leave in a day, and no way to make the page say something it wasn't given.
+async function addReply(code, { text, name, bucket }) {
+  const body = String(text || '').trim().slice(0, 2000);
+  if (!body) return { ok: false, error: 'empty' };
+  const doc = await rawCol('shares').findOne({ _id: code }, { projection: { replies: 1, kind: 1 } });
+  if (!doc || !CONVO_KINDS.includes(doc.kind)) return { ok: false, error: 'not_found' };
+  if ((doc.replies || []).length >= MAX_REPLIES) return { ok: false, error: 'full' };
+  const reply = {
+    id: rid(),
+    text: body,
+    name: String(name || '').trim().slice(0, 40) || 'Someone',
+    at: new Date(),
+    from: bucket, // hashed, so he can see two replies are the same person without knowing who
+  };
+  await rawCol('shares').updateOne({ _id: code }, { $push: { replies: reply } });
+  return { ok: true, reply: { ...reply, from: undefined } };
+}
+
 // Someone arrived from a shared page and has just signed in. Credit the person whose share
 // brought them, and put THAT BOOK on their shelf — they came for a specific book, and an
 // empty library is exactly where new readers stop.
@@ -967,6 +1075,115 @@ function shareCard(s) {
     : ''}
   <text x="80" y="592" fill="#6E695C" font-family="Georgia,serif" font-size="26">readkept.com — read it, prove you kept it</text>
 </svg>`;
+}
+
+// The page a friend opens. Same cream/white/black as everything else, and the reply box is a
+// plain <form method="post"> on purpose: no script, so it needs no CSP hole, it works in an
+// in-app browser with JS disabled, and there is no state to lose if the network drops halfway.
+function convoPage(s, { sent = false, error = '' } = {}) {
+  const isTask = s.kind === 'task';
+  const steps = Array.isArray(s.steps) ? s.steps : [];
+  const done = steps.filter((x) => x.done).length;
+  const pct = steps.length ? Math.round((done / steps.length) * 100) : null;
+  const replies = Array.isArray(s.replies) ? s.replies : [];
+  const who = s.name || 'A reader';
+  const lead = isTask
+    ? `${s.title}${steps.length ? ` — ${done} of ${steps.length} steps done` : ''}`
+    : s.title;
+  const kicker = isTask ? 'Something they took from a book' : 'A reader is asking';
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>${esc(isTask ? s.title : `“${s.title}”`)}${s.book ? ` — ${esc(s.book)}` : ''}</title>
+<meta name="theme-color" content="#FCFAF5">
+<meta property="og:title" content="${esc(isTask ? s.title : s.title)}">
+<meta property="og:description" content="${esc(lead)}">
+<meta property="og:image" content="${config.appUrl}/og.png">
+<meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+<meta property="og:url" content="${config.appUrl}/c/${s._id}"><meta property="og:type" content="article">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="${esc(s.title)}">
+<meta name="twitter:description" content="${esc(lead)}">
+<meta name="twitter:image" content="${config.appUrl}/og.png">
+<!-- Someone answering a friend's question has not agreed to that answer being searchable. -->
+<meta name="robots" content="noindex, nofollow">
+<style>
+ :root{color-scheme:light dark;
+   --paper:#FCFAF5;--surface:#FFFFFF;--ink:#191713;--muted:#55514A;--faint:#6C6759;
+   --line:#E6E0D3;--mark:#FFF176;--mark-ink:#191713;--good:#2E7D52;--shadow:rgba(70,58,34,.10)}
+ @media (prefers-color-scheme:dark){:root{
+   --paper:#14130F;--surface:#1D1B16;--ink:#ECE8DF;--muted:#9C9686;--faint:#8A8478;
+   --line:#2C2A22;--mark:#E8CB48;--mark-ink:#14130F;--good:#6FBF8E;--shadow:rgba(0,0,0,.45)}}
+ *{box-sizing:border-box} body{margin:0;background:var(--paper);color:var(--ink);
+   font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;line-height:1.6;
+   display:flex;align-items:flex-start;justify-content:center;min-height:100vh;padding:24px}
+ .card{max-width:560px;width:100%;background:var(--surface);border:1px solid var(--line);
+   border-radius:20px;padding:30px 26px;box-shadow:0 18px 50px var(--shadow)}
+ .kicker{color:var(--faint);font-size:.76rem;letter-spacing:.16em;text-transform:uppercase;font-weight:600}
+ h1{font-family:Georgia,serif;font-size:1.6rem;margin:.5rem 0 .3rem;line-height:1.25}
+ .q{font-family:Georgia,serif;font-size:1.3rem;line-height:1.5;margin:.5rem 0 .2rem}
+ .from{color:var(--muted);font-size:.92rem;margin:0 0 4px}
+ .p{display:inline-block;font-size:.7rem;font-weight:700;color:var(--mark-ink);
+   background:var(--mark);border-radius:20px;padding:3px 9px}
+ .why{border-left:3px solid var(--line);padding-left:14px;margin:18px 0;color:var(--muted);
+   font-family:Georgia,serif;font-size:1.04rem;white-space:pre-wrap}
+ .bar{height:8px;border-radius:99px;background:var(--line);overflow:hidden;margin:16px 0 8px}
+ .bar i{display:block;height:100%;background:var(--good)}
+ .steps{list-style:none;padding:0;margin:14px 0 0;display:flex;flex-direction:column;gap:9px}
+ .steps li{display:flex;gap:10px;align-items:flex-start;color:var(--ink)}
+ .steps .bx{flex:0 0 18px;height:18px;margin-top:3px;border:2px solid var(--line);border-radius:5px;
+   text-align:center;line-height:15px;font-size:.7rem;font-weight:700}
+ .steps li.d .bx{background:var(--good);border-color:var(--good);color:#fff}
+ .steps li.d span{color:var(--faint);text-decoration:line-through}
+ h2{font-size:.95rem;margin:28px 0 10px;color:var(--ink)}
+ .rep{border-top:1px solid var(--line);padding-top:14px;margin-top:14px}
+ .rep .n{font-weight:600;font-size:.9rem}
+ .rep .w{color:var(--faint);font-size:.76rem}
+ .rep .t{white-space:pre-wrap;margin-top:5px}
+ form{margin-top:18px;display:flex;flex-direction:column;gap:10px}
+ input,textarea{width:100%;padding:12px 13px;border-radius:12px;border:1px solid var(--line);
+   background:var(--paper);color:var(--ink);font-family:inherit;font-size:1rem}
+ textarea{min-height:96px;resize:vertical}
+ button{background:var(--ink);color:var(--paper);border:0;font-weight:600;padding:14px;
+   border-radius:12px;font-size:1rem;cursor:pointer}
+ .ok{background:var(--mark);color:var(--mark-ink);border-radius:12px;padding:12px 14px;
+   font-weight:600;margin-top:16px}
+ .err{color:#B3261E;font-size:.9rem}
+ a.cta{display:block;background:var(--paper);color:var(--ink);border:1px solid var(--line);
+   text-decoration:none;font-weight:600;padding:13px;border-radius:12px;text-align:center;margin-top:18px}
+ .foot{color:var(--faint);font-size:.78rem;margin-top:16px;text-align:center}
+</style></head><body>
+<div class="card">
+  <div class="kicker">${kicker}</div>
+  ${isTask
+    ? `<h1>${esc(s.title)}</h1>`
+    : `<div class="q">${esc(s.title)}</div>`}
+  ${s.book ? `<p class="from">from <b>${esc(s.book)}</b>${s.author ? ` · ${esc(s.author)}` : ''}${s.page ? ' ' : ''}${s.page ? `<span class="p">p.${esc(String(s.page))}</span>` : ''}</p>` : ''}
+  ${s.body ? `<div class="why">${esc(s.body)}</div>` : ''}
+  ${isTask && steps.length
+    ? `<div class="bar"><i style="width:${pct}%"></i></div>
+  <p class="from">${done} of ${steps.length} done</p>
+  <ul class="steps">${steps
+    .map((x) => `<li class="${x.done ? 'd' : ''}"><span class="bx">${x.done ? '✓' : ''}</span><span>${esc(x.text)}</span></li>`)
+    .join('')}</ul>`
+    : ''}
+
+  <h2>${replies.length ? `${replies.length} ${replies.length === 1 ? 'reply' : 'replies'}` : isTask ? 'Cheer them on' : 'Answer it'}</h2>
+  ${replies
+    .map(
+      (r) => `<div class="rep"><div class="n">${esc(r.name)} <span class="w">· ${new Date(r.at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span></div>
+    <div class="t">${esc(r.text)}</div></div>`
+    )
+    .join('')}
+  ${sent ? '<div class="ok">Sent — thank you. They will see it in the app.</div>' : ''}
+  ${error ? `<p class="err">${esc(error)}</p>` : ''}
+  <form method="post" action="/c/${s._id}">
+    <input name="name" maxlength="40" placeholder="Your name" autocomplete="name">
+    <textarea name="text" maxlength="2000" required placeholder="${isTask ? 'Say something useful — or offer to do a step with them.' : 'What do you think?'}"></textarea>
+    <button type="submit">Send${isTask ? '' : ' my answer'}</button>
+  </form>
+  <a class="cta" href="${config.appUrl}/app">Keep what you read, too →</a>
+  <div class="foot">For people who use what they read — not just finish it.</div>
+</div></body></html>`;
 }
 
 function sharePage(s) {
@@ -1227,7 +1444,7 @@ export function startServer(port = process.env.PORT || 8080, build = 'dev') {
       res.writeHead(200, { 'Content-Type': 'text/plain', 'Cache-Control': 'public, max-age=86400' });
       res.end(
         `User-agent: *\nAllow: /$\nAllow: /privacy\n` +
-          `Disallow: /app\nDisallow: /admin\nDisallow: /api/\nDisallow: /r/\nDisallow: /auth/\n` +
+          `Disallow: /app\nDisallow: /admin\nDisallow: /api/\nDisallow: /r/\nDisallow: /c/\nDisallow: /auth/\n` +
           `Disallow: /hub\nDisallow: /deck\nDisallow: /body\nDisallow: /reading\nDisallow: /routine\nDisallow: /dashboard\n\n` +
           `Sitemap: ${config.appUrl}/sitemap.xml\n`
       );
@@ -1542,6 +1759,53 @@ export function startServer(port = process.env.PORT || 8080, build = 'dev') {
       });
     }
 
+    // ---- the page behind a task or a question, and the replies on it ----
+    // POST with no code opens one; POST with a code keeps it current; GET reads the replies
+    // back so they land in the app rather than only on a page he has to remember to visit.
+    if (path === '/api/convo') {
+      const sid = readSession(parseCookies(req.headers.cookie).kept_session);
+      const acct = sid ? await rawCol('users').findOne({ _id: sid }) : null;
+      if (!acct || !users.isAllowed(acct)) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'sign_in' }));
+        return;
+      }
+      const out = await runAs(acct, async () => {
+        if (req.method === 'GET') {
+          // Only the codes this account owns, and only what the app needs to draw: the reply
+          // count, and the replies themselves. `from` is the hashed bucket and never leaves.
+          const codes = String(new URL(req.url, 'http://x').searchParams.get('codes') || '')
+            .split(',').map((c) => c.trim()).filter((c) => REF_CODE.test(c)).slice(0, 60);
+          if (!codes.length) return { convos: [] };
+          const rows = await rawCol('shares')
+            .find({ _id: { $in: codes }, userId: uid(), kind: { $in: CONVO_KINDS } })
+            .project({ kind: 1, replies: 1, views: 1 })
+            .toArray();
+          return {
+            convos: rows.map((r) => ({
+              code: r._id,
+              kind: r.kind,
+              views: r.views || 0,
+              replies: (r.replies || []).map((x) => ({ name: x.name, text: x.text, at: x.at })),
+            })),
+          };
+        }
+        if (req.method !== 'POST') return { error: 'method' };
+        const body = await readJson(req, 20000);
+        if (body.code) {
+          if (!REF_CODE.test(String(body.code))) return { error: 'bad_code' };
+          const r = await refreshConvo(String(body.code), body);
+          return r.ok ? { ok: true, code: String(body.code) } : { error: 'not_found' };
+        }
+        if (!String(body.title || '').trim()) return { error: 'empty' };
+        return await createConvo(body);
+      });
+      const code = out.error ? (out.error === 'method' ? 405 : out.error === 'not_found' ? 404 : 400) : 200;
+      res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+      res.end(JSON.stringify(out));
+      return;
+    }
+
     // ---- writing to the person who made it ----
     // Deliberately outside the block below that demands an account. Everything else here is
     // work we do on a reader's behalf and have to bill to somebody; a message is the one
@@ -1769,6 +2033,44 @@ export function startServer(port = process.env.PORT || 8080, build = 'dev') {
       rawCol('shares').updateOne({ _id: doc._id }, { $inc: { views: 1 } }).catch(() => {});
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       res.end(sharePage(doc));
+      return;
+    }
+
+    // A task someone was invited onto, or a question someone was asked — and the reply coming
+    // back. Also unauthenticated by design: needing an account to answer a friend's question
+    // would lose the answer, and the answer is the entire point of having asked.
+    const convo = path.match(/^\/c\/([a-z0-9]{6,20})$/i);
+    if (convo) {
+      const doc = await rawCol('shares').findOne({ _id: convo[1] });
+      if (!doc || !CONVO_KINDS.includes(doc.kind)) {
+        res.writeHead(404, { 'Content-Type': 'text/plain' });
+        res.end('This page has expired or was removed.');
+        return;
+      }
+      if (req.method === 'POST') {
+        // Hashed and per-process, the same handle the contact form uses: enough to slow one
+        // person down, never enough to identify them later.
+        const bucket = `ip:${clientIp(req)}`;
+        if (!users.rateLimit(`convo:${bucket}`, 6)) {
+          res.writeHead(429, { 'Content-Type': 'text/html; charset=utf-8' });
+          res.end(convoPage(doc, { error: 'That is a lot of replies at once — try again in a minute.' }));
+          return;
+        }
+        const form = await readForm(req, 8000);
+        const out = await addReply(doc._id, { text: form.text, name: form.name, bucket });
+        // See your own reply on the page, and a refresh doesn't post it twice.
+        if (out.ok) {
+          res.writeHead(303, { Location: `/c/${doc._id}?sent=1` });
+          res.end();
+          return;
+        }
+        res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(convoPage(doc, { error: out.error === 'full' ? 'This page has all the replies it can hold.' : 'Write something first.' }));
+        return;
+      }
+      rawCol('shares').updateOne({ _id: doc._id }, { $inc: { views: 1 } }).catch(() => {});
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+      res.end(convoPage(doc, { sent: String(req.url || '').includes('sent=1') }));
       return;
     }
 
