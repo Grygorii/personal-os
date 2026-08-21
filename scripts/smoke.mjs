@@ -224,11 +224,28 @@ ok(app.body.includes('--tap:44px'), '/app declares the 44px tap floor in one pla
 // This is the guestbar bug as a rule rather than a memory. Any selector that sets a display
 // on an element the app also hides with [hidden] needs an explicit [hidden] guard.
 console.log('\nhidden means hidden');
-for (const cls of ['guestbar', 'form', 'cropsel', 'bar', 'steps', 'places', 'addrow']) {
+// .reader and .rdsel are the reader's two layers, and both are flex containers the app hides
+// with the attribute — exactly the shape the guestbar bug had.
+for (const cls of ['guestbar', 'form', 'cropsel', 'bar', 'steps', 'places', 'addrow', 'reader', 'rdsel']) {
   const hasDisplay = new RegExp(`\\.${cls}\\{[^}]*display:`).test(app.body);
   const guarded = app.body.includes(`.${cls}[hidden]{display:none}`);
   ok(!hasDisplay || guarded, `.${cls} — no display rule, or an [hidden] guard exists`);
 }
+
+// ---- 4b. the reader ships whole ----
+// The reader is one block of markup and one block of script inside the same file as the rest
+// of the app, so the failure to guard against is a partial deploy: the button arrives, the
+// code behind it does not, and tapping Read does nothing at all. These check both halves are
+// present, and that the file is still never uploaded — the promise the feature is built on.
+console.log('\nthe reader');
+ok(app.body.includes('id="reader"'), 'the reading layer is in the page');
+ok(app.body.includes('id="rd-sel"'), 'the selection bar that turns a line into a thought');
+ok(/function rdOpen\b/.test(app.body), 'rdOpen is defined, so the Read button has something to call');
+ok(/DecompressionStream/.test(app.body), 'the EPUB is unpacked in the browser');
+ok(/indexedDB\.open/.test(app.body), 'the book is stored on the device');
+// If a request body ever carries the file, this is the line that catches it.
+ok(!/api\/(upload|book(file|s\/file))/.test(app.body), 'no upload endpoint — the file stays on the phone');
+ok(app.body.includes('<meta charset="utf-8">'), 'the page declares its own encoding');
 
 // ---- 5. gating ----
 console.log('\ngating');

@@ -182,6 +182,11 @@ const STEPS = [
   ['opened', 'Opened the app'],
   ['empty_shelf', 'Landed on an empty shelf'],
   ['book_added', 'Added a book'],
+  // The two beats of reading in the app. They sit here rather than at the end because that is
+  // where they fall in a person's evening: the file is attached just after the book is added,
+  // and the thoughts that follow are the ones this whole product is waiting for.
+  ['book_file_added', 'Attached a book file'],
+  ['read_opened', 'Opened a book to read'],
   ['thought_saved', 'Saved a thought'],
   ['task_added', 'Wrote down something to do'],
   ['question_added', 'Wrote a question'],

@@ -1,3 +1,10 @@
+<meta charset="utf-8">
+<!-- The page has always relied on the HTTP header alone for this, and the server does send it.
+     But the app script holds real combining-mark characters in a regex range, so a single
+     response that ever loses the header does not garble an accent somewhere — it makes that
+     regex invalid, kills the whole script at parse time, and serves a dead page. One line to
+     make the file say what it is on its own. Found by rendering the app in a browser through a
+     stub server that omitted the header, which is exactly how it would happen for real. -->
 <title>Reading journal</title>
 <!-- Who is looking, injected by the server. Deliberately its own <script>: if the
      substitution ever fails, the error is trapped in these three lines, window.__me stays
@@ -213,6 +220,14 @@
   .bs b{font-family:var(--serif);font-size:.95rem;font-weight:600;color:var(--ink)}
   .bs.good b{color:var(--good)}
   .bs.idle{color:var(--faint)} .bs.idle b{color:var(--faint)}
+  /* The one control on a card. It carries the app's ink rather than the muted grey the other
+     two use, because those two are readouts and this one is a door. */
+  .bs.read{border:0;font-family:var(--sans);font-weight:700;cursor:pointer;
+    background:var(--accent);color:var(--on-accent);margin-left:auto;
+    /* Below the 44px tap floor on purpose, and the only control here that is. It is a shortcut
+       to something the whole card already reaches, sitting inside a stat row 4px tall — at
+       44px it becomes the card. 36 stays comfortably hittable with a thumb. */
+    min-height:36px;padding:0 11px;align-items:center}
   .empty{text-align:center;color:var(--faint);font-size:.9rem;padding:26px 10px}
   /* detail */
   .back{background:transparent;border:0;color:var(--accent-strong);font-weight:600;font-size:.95rem;cursor:pointer;padding:11px 2px;min-height:44px;font-family:var(--sans)}
@@ -536,6 +551,73 @@
   .sh:hover{border-color:var(--accent)}
   .sh-i{font-size:1.25rem;line-height:1;font-weight:700;color:var(--ink)}
   @media(min-width:560px){.sheet-bg{align-items:center}.sheet{border-radius:20px}}
+
+  /* ---- The reader ----
+     A full-screen layer over the app. `position:fixed` with all four insets rather than a
+     height: on Android the address bar shrinks and grows as you scroll, so any height we
+     write down is wrong within one swipe. Let the browser own the box.
+     EVERY class below that carries a `display` also states what it does when [hidden] — the
+     rule that once showed "Not signed in" to the owner, and the one the smoke test checks. */
+  .reader{position:fixed;inset:0;z-index:90;background:var(--paper);
+    display:flex;flex-direction:column}
+  .reader[hidden]{display:none}
+  /* The tab bar is a way to stop reading. While a book is open it is gone. */
+  html.reading .tabbar{display:none}
+  html.reading body{overflow:hidden}
+  .rdtop{flex:none;display:flex;align-items:center;gap:4px;padding:6px 6px;
+    padding-top:calc(6px + env(safe-area-inset-top));
+    border-bottom:1px solid var(--line);background:var(--surface)}
+  .rdtitle{flex:1;min-width:0;font-family:var(--serif);font-size:.9rem;color:var(--muted);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 4px}
+  .rdbtn{flex:none;min-width:38px;height:38px;border:0;background:none;color:var(--ink);
+    font-family:var(--sans);font-size:1rem;cursor:pointer;border-radius:9px}
+  .rdbtn:active{background:var(--raise)}
+  .rdscroll{flex:1;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+  /* Measured in ch, not px: the comfortable line is a number of CHARACTERS, and it should stay
+     comfortable when the reader makes the type bigger. A max-width in px gets wider in
+     characters every time they tap A－. */
+  .rdbody{max-width:38ch;margin:0 auto;padding:22px 16px 8px;
+    font-family:var(--serif);font-size:18px;line-height:1.62;color:var(--ink);
+    hyphens:auto;-webkit-hyphens:auto}
+  /* Justified with hyphenation, the way the printed page he reads from does it. Justified text
+     WITHOUT hyphenation is the worst of both — it opens rivers of white space between words on
+     a narrow phone column — so the two settings travel together or not at all. */
+  .rdbody p{margin:0 0 1em;text-align:justify}
+  /* A paragraph that follows another is indented instead of spaced, again like the book. The
+     first one after a heading or a break starts flush, because there is nothing to separate
+     it from. */
+  .rdbody p + p{margin-top:-1em;text-indent:1.3em}
+  .rdbody h1,.rdbody h2,.rdbody h3,.rdbody h4{font-family:var(--serif);line-height:1.25;
+    margin:1.6em 0 .7em;font-weight:700}
+  .rdbody h1{font-size:1.5em}.rdbody h2{font-size:1.3em}.rdbody h3{font-size:1.12em}
+  .rdbody img{max-width:100%;height:auto;display:block;margin:1.2em auto;border-radius:8px}
+  .rdbody blockquote{margin:1.2em 0;padding-left:14px;border-left:2px solid var(--line);
+    color:var(--muted);font-style:italic}
+  .rdbody a{color:var(--ink);text-decoration:underline;text-underline-offset:2px}
+  .rdbody hr{border:0;border-top:1px solid var(--line);margin:1.8em auto;width:40%}
+  .rdbody table{max-width:100%;display:block;overflow-x:auto}
+  /* The one place yellow is allowed, and it is exactly where a highlighter would go. */
+  .rdbody ::selection{background:var(--mark);color:var(--mark-ink)}
+  .rdwait{color:var(--faint);text-align:center;padding:32px 0;font-family:var(--sans);font-size:.9rem}
+  .rdnav{display:flex;gap:10px;max-width:38ch;margin:0 auto;padding:8px 20px 30px}
+  .rdnav .btn{flex:1}
+  .rdbot{flex:none;display:flex;align-items:center;justify-content:space-between;gap:10px;
+    padding:7px 14px;padding-bottom:calc(7px + env(safe-area-inset-bottom));
+    border-top:1px solid var(--line);background:var(--surface)}
+  .rdpos{font-family:var(--sans);font-size:.78rem;color:var(--muted);letter-spacing:.02em}
+  .rdkeep{border:1px solid var(--line);background:var(--raise);color:var(--ink);
+    border-radius:10px;padding:0 14px;height:36px;min-height:36px;
+    font-family:var(--sans);font-size:.82rem;font-weight:600;cursor:pointer}
+  /* Sits above the footer, not over the words being selected. */
+  .rdsel{position:absolute;left:0;right:0;bottom:calc(52px + env(safe-area-inset-bottom));
+    display:flex;gap:8px;justify-content:center;padding:0 12px;z-index:2}
+  .rdsel[hidden]{display:none}
+  .rdsel button{background:var(--accent);color:var(--on-accent);border:0;border-radius:11px;
+    padding:0 16px;height:42px;font-family:var(--sans);font-size:.85rem;font-weight:700;
+    cursor:pointer;box-shadow:0 6px 20px rgba(0,0,0,.22)}
+  .rdsel button.alt{background:var(--surface);color:var(--ink);border:1px solid var(--line)}
+  /* Reading is the one screen that should get roomier on a big display, not wider. */
+  @media(min-width:560px){.rdbody{max-width:42ch;padding-top:34px}.rdnav{max-width:42ch}}
   /* Floats above the tab bar wherever you are — including on the mentor screen. */
   .toast{position:fixed;left:50%;transform:translateX(-50%);z-index:80;
     bottom:calc(var(--navh,60px) + 16px);width:max-content;max-width:calc(100% - 40px);text-align:center;
@@ -690,6 +772,37 @@
     <div id="do-body"></div>
   </section>
 
+  <!-- The book itself. Deliberately a full-screen layer rather than another tab: reading is
+       the one thing here that wants the whole phone, and a tab bar along the bottom of a page
+       of prose is a standing invitation to stop reading. The way out is the same ‹ everything
+       else in the app uses. -->
+  <div class="reader" id="reader" hidden>
+    <header class="rdtop">
+      <button class="rdbtn" id="rd-close" aria-label="Close the book">‹</button>
+      <div class="rdtitle" id="rd-title"></div>
+      <button class="rdbtn" id="rd-smaller" aria-label="Smaller type">A－</button>
+      <button class="rdbtn" id="rd-bigger" aria-label="Larger type">A＋</button>
+      <button class="rdbtn" id="rd-toc" aria-label="Contents">☰</button>
+    </header>
+    <div class="rdscroll" id="rd-scroll">
+      <article class="rdbody" id="rd-body"></article>
+      <div class="rdnav">
+        <button class="btn ghost" id="rd-prev">‹ Back</button>
+        <button class="btn ghost" id="rd-next">Next ›</button>
+      </div>
+    </div>
+    <footer class="rdbot">
+      <span class="rdpos" id="rd-pos"></span>
+      <button class="rdkeep" id="rd-note">＋ Thought</button>
+    </footer>
+    <!-- Appears only while something is selected. This is the feature: the line you just read
+         becomes a thought without leaving the page, and the page number comes with it. -->
+    <div class="rdsel" id="rd-sel" hidden>
+      <button id="rd-save">Keep as a thought</button>
+      <button id="rd-ask" class="alt">＋ Note</button>
+    </div>
+  </div>
+
   <nav class="tabbar" role="tablist">
     <button class="tb on" id="tab-library" role="tab" aria-selected="true"><span class="i">📚</span>Library</button>
     <button class="tb" id="tab-do" role="tab" aria-selected="false"><span class="i">✅</span>Do</button>
@@ -788,6 +901,16 @@ function flowText(s){
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
 const STATUS={reading:"Reading",finished:"Finished",want:"Want to read"};
 let openId=null;
+/* Which books on this device have a file, so the shelf can offer "Read" without opening every
+   record. IndexedDB is async and rendering is not, so it is filled in once at boot and read
+   synchronously after that; an empty set is the honest answer while that is still in flight,
+   and the honest answer for good in private mode where there is no storage at all.
+   DECLARED HERE, at the top, and not beside the reader code that owns it. `let` bindings are
+   in a temporal dead zone until the line that creates them runs, so declaring it down there
+   and touching it from renderLibrary up here throws a ReferenceError — which does not fail
+   softly, it kills the entire app script and serves a blank page. That exact failure has
+   happened in this file before. */
+let hasFile=new Set();
 /* Which pane of the book card is showing, and which book it was chosen for. */
 let bookSeg="notes", bookSegFor=null;
 
@@ -838,9 +961,16 @@ function renderLibrary(){
           ${b.exam
             ? `<span class="bs good"><b>${b.exam.score}%</b> exam</span>`
             : `<span class="bs idle"><b>&times;</b> not tested</span>`}
+          ${hasFile.has(b.id)?`<button class="bs read" data-read="${b.id}">📖 Read</button>`:""}
         </div>
       </div></div>`;
   }).join("");
+  /* Only books with a file on this device get the button, and it resumes rather than starting
+     over — the thing you want from a shelf is to carry on where you stopped, in one tap. The
+     card behind it still opens the book, so the button has to swallow the tap. */
+  list.querySelectorAll("[data-read]").forEach(bt=>bt.onclick=ev=>{
+    ev.stopPropagation(); openId=bt.dataset.read; rdOpen(bt.dataset.read);
+  });
   list.querySelectorAll(".book").forEach(el=>el.onclick=()=>openBook(el.dataset.id));
   syncFind();
 }
@@ -957,6 +1087,19 @@ function openBook(id){
         <div><label for="b-total">Total pages</label><input id="b-total" type="number" inputmode="numeric" value="${b.total||""}" placeholder="—"></div>
       </div>
       <div style="margin-top:12px"><button class="btn ghost" id="b-savep">Save progress</button></div>
+    </div>
+    <!-- Reading it here. The file is picked from the phone and stays on the phone; what that
+         buys and what it costs are both said on screen rather than left to be discovered when
+         the book fails to appear on a laptop. -->
+    <div class="sec">
+      <h3>Read it here</h3>
+      ${hasFile.has(b.id)
+        ? `<p class="sub" style="margin:0 0 12px">The file is on this device. Select any line while you read and it becomes a thought, with the page already filled in.</p>
+           <button class="btn" id="b-read">📖 Continue reading</button>
+           <div style="margin-top:10px"><button class="nrm" id="b-unfile">Remove the file from this device</button></div>`
+        : `<p class="sub" style="margin:0 0 12px">Add an EPUB and read it here — selecting a line keeps it as a thought, tagged to the page. The file stays on this phone: it is never uploaded, so it will not appear on your other devices.</p>
+           <button class="btn ghost" id="b-file-pick">Choose an EPUB…</button>`}
+      <input id="b-file" type="file" accept=".epub,application/epub+zip" hidden>
     </div>
     <!-- The three things you write while reading, in one card you switch between rather than
          three stacked boxes you scroll past. They are the same kind of act — something you put
@@ -1098,6 +1241,26 @@ function openBook(id){
   $("b-savep").onclick=()=>{
     const page=parseInt($("b-page").value,10); const total=parseInt($("b-total").value,10);
     patch(id,{page:isNaN(page)?0:page, total:isNaN(total)?null:total}); toast("Progress saved");
+  };
+  /* ---- The book's own file ----
+     No guestBlocked here, and that is deliberate. Nothing about this touches the server, so
+     an account buys the reader exactly nothing — asking for one would be a toll booth in
+     front of an open road, which is the pattern Wave 2 spent its whole time removing. */
+  if($("b-file-pick")) $("b-file-pick").onclick=()=>$("b-file").click();
+  if($("b-file")) $("b-file").onchange=async(ev)=>{
+    const f=ev.target.files&&ev.target.files[0]; ev.target.value="";
+    if(!f) return;
+    toast("Opening the file…");
+    if(await rdAttach(id,f)){ openBook(id); rdOpen(id); }
+  };
+  if($("b-read")) $("b-read").onclick=()=>rdOpen(id);
+  if($("b-unfile")) $("b-unfile").onclick=async()=>{
+    /* The thoughts are the valuable part and they are not in the file, so removing it loses
+       nothing but the text — worth saying, because "remove" next to a book reads like it
+       might take the notes with it. */
+    if(!confirm("Remove the book file from this device? Your thoughts, tasks and questions all stay.")) return;
+    try{ await fileDel(id); hasFile.delete(id); }catch(e){}
+    openBook(id); toast("File removed from this device");
   };
   /* ---- Getting a thought in without typing it ----
      Both of these END in the same editable box rather than saving anything: a model guessing
@@ -3272,4 +3435,583 @@ $("recs-refresh").onclick=()=>{
 if(GUEST){
   $("recs-list").innerHTML='<div class="recs-loading">Sign in and Kept will pick your next four books.</div>';
 }else loadRecs(false);
+
+/* ================================================================
+   READING THE BOOK ITSELF
+
+   Until now Kept held everything ABOUT a book and never the book. So the loop had a hole in
+   the middle of it: read on paper or in another app, stop, come back here, photograph the
+   page, crop it, wait for the transcription. Every thought cost a context switch, and the
+   switch is where the habit dies — it is almost certainly why 47 thoughts exist and no exam
+   ever ran. Reading here removes the switch: select a line, it is a thought, and the page it
+   came from is already known.
+
+   THE FILE NEVER LEAVES THE PHONE. It is held in IndexedDB on the device that opened it and
+   is never uploaded, never sent to the model, never written to Mongo. That is not squeamish-
+   ness, it is the only shape that works here:
+     - the cluster is a 512 MB M0 SHARED WITH HIS LIVE STRIPE STORE. One 800 KB book per
+       reader would eat it, and a full one takes his shop down with it.
+     - Railway's disk is ephemeral, so "just write a file" loses the book on the next deploy.
+     - the privacy page promises no third parties, which rules out an S3 bucket without
+       rewriting that promise first.
+     - hosting other people's book files would put us in the business of moderating them.
+   Keeping it local costs one real thing — the book does not follow you to a second device —
+   and that is said plainly in the UI rather than discovered.
+
+   No new dependency. An EPUB is a ZIP of XHTML, and the platform can now open both:
+   DecompressionStream('deflate-raw') for the archive, DOMParser for the contents. */
+
+const RD_KEY = 'kept-reader-v1';           // per-book position + type size, this device
+const RD_DB = 'kept-books';
+
+/* ---- Where the book itself lives ---- */
+function idbOpen() {
+  return new Promise((res, rej) => {
+    const r = indexedDB.open(RD_DB, 1);
+    r.onupgradeneeded = () => {
+      if (!r.result.objectStoreNames.contains('files')) r.result.createObjectStore('files');
+    };
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error || new Error('indexeddb'));
+  });
+}
+function idbDo(mode, fn) {
+  return idbOpen().then((db) => new Promise((res, rej) => {
+    const st = db.transaction('files', mode).objectStore('files');
+    const rq = fn(st);
+    rq.onsuccess = () => res(rq.result);
+    rq.onerror = () => rej(rq.error || new Error('indexeddb'));
+  }));
+}
+const fileGet = (id) => idbDo('readonly', (st) => st.get('b:' + id));
+const filePut = (id, val) => idbDo('readwrite', (st) => st.put(val, 'b:' + id));
+const fileDel = (id) => idbDo('readwrite', (st) => st.delete('b:' + id));
+const fileKeys = () => idbDo('readonly', (st) => st.getAllKeys());
+
+async function refreshHasFile() {
+  try {
+    const keys = await fileKeys();
+    hasFile = new Set((keys || []).map((k) => String(k).slice(2)));
+  } catch (e) { hasFile = new Set(); }
+}
+
+/* ---- ZIP ----
+   Read the central directory at the end, not the local headers front-to-back: only the
+   central directory is authoritative about sizes, and streaming from the front means
+   inflating everything to reach the one file we want. */
+async function unzip(buf) {
+  const dv = new DataView(buf), u8 = new Uint8Array(buf);
+  let eocd = -1;
+  const floor = Math.max(0, buf.byteLength - 22 - 65535);
+  for (let i = buf.byteLength - 22; i >= floor; i--) {
+    if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+  }
+  if (eocd < 0) throw new Error('That file is not a valid EPUB.');
+  const count = dv.getUint16(eocd + 10, true);
+  let p = dv.getUint32(eocd + 16, true);
+  const entries = new Map();
+  const dec = new TextDecoder();
+  for (let i = 0; i < count; i++) {
+    if (p + 46 > buf.byteLength || dv.getUint32(p, true) !== 0x02014b50) break;
+    const method = dv.getUint16(p + 10, true);
+    const csize = dv.getUint32(p + 20, true);
+    const nameLen = dv.getUint16(p + 28, true);
+    const extraLen = dv.getUint16(p + 30, true);
+    const cmtLen = dv.getUint16(p + 32, true);
+    const lho = dv.getUint32(p + 42, true);
+    const name = dec.decode(u8.subarray(p + 46, p + 46 + nameLen));
+    entries.set(name, { method, csize, lho });
+    p += 46 + nameLen + extraLen + cmtLen;
+  }
+  const bytes = async (name) => {
+    const e = entries.get(name);
+    if (!e) return null;
+    /* The local header repeats the name and carries its OWN extra field, which is routinely a
+       different length from the central one. Trusting the central directory's extra length
+       here reads from the wrong offset and produces garbage. */
+    const lNameLen = dv.getUint16(e.lho + 26, true);
+    const lExtraLen = dv.getUint16(e.lho + 28, true);
+    const start = e.lho + 30 + lNameLen + lExtraLen;
+    const raw = u8.subarray(start, start + e.csize);
+    if (e.method === 0) return raw;
+    if (e.method !== 8) throw new Error('Unsupported compression in this EPUB.');
+    const stream = new Blob([raw]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+    return new Uint8Array(await new Response(stream).arrayBuffer());
+  };
+  return {
+    names: () => [...entries.keys()],
+    has: (n) => entries.has(n),
+    bytes,
+    text: async (n) => { const b = await bytes(n); return b ? new TextDecoder().decode(b) : null; },
+  };
+}
+
+/* ---- Paths inside the archive ----
+   Hrefs in an EPUB are relative to the file that names them, and ZIP entry names are absolute
+   within the archive. Resolving by string concatenation leaves "OEBPS/../images/x.jpg" in the
+   key and the lookup silently misses. */
+function zipPath(base, href) {
+  const clean = String(href || '').split('#')[0].split('?')[0];
+  if (!clean) return '';
+  const parts = (base + clean).split('/');
+  const out = [];
+  for (const part of parts) {
+    if (!part || part === '.') continue;
+    if (part === '..') out.pop();
+    else out.push(part);
+  }
+  try { return decodeURIComponent(out.join('/')); } catch (e) { return out.join('/'); }
+}
+const dirOf = (p) => (p.includes('/') ? p.slice(0, p.lastIndexOf('/') + 1) : '');
+
+/* Namespaced XML: dc:title lives in the Dublin Core namespace, so a plain tag selector misses
+   it in some books and matches the wrong element in others. Match on local name. */
+function byLocal(doc, name) {
+  return [...doc.getElementsByTagName('*')].filter((el) => el.localName === name);
+}
+
+async function parseEpub(buf) {
+  const zip = await unzip(buf);
+  const parse = (s) => new DOMParser().parseFromString(s, 'application/xml');
+  const containerXml = await zip.text('META-INF/container.xml');
+  if (!containerXml) throw new Error('That file is not a valid EPUB.');
+  const rootfile = byLocal(parse(containerXml), 'rootfile')[0];
+  const opfPath = rootfile && rootfile.getAttribute('full-path');
+  if (!opfPath) throw new Error('That EPUB has no readable index.');
+  const opfText = await zip.text(opfPath);
+  if (!opfText) throw new Error('That EPUB has no readable index.');
+  const opf = parse(opfText);
+  const base = dirOf(opfPath);
+
+  const meta = (n) => (byLocal(opf, n)[0] || {}).textContent || '';
+  const items = new Map();
+  byLocal(opf, 'item').forEach((it) => {
+    const id = it.getAttribute('id');
+    if (id) items.set(id, { href: it.getAttribute('href') || '', type: it.getAttribute('media-type') || '', props: it.getAttribute('properties') || '' });
+  });
+  const spine = byLocal(opf, 'itemref')
+    .map((r) => items.get(r.getAttribute('idref')))
+    .filter((x) => x && x.href)
+    .map((x) => ({ path: zipPath(base, x.href), type: x.type }))
+    /* The cover image page and the publisher's newsletter advert are spine items, but nobody
+       counts them as pages of the book, and leaving them in skews every page number. */
+    .filter((x) => zip.has(x.path));
+  if (!spine.length) throw new Error('That EPUB has no readable chapters.');
+
+  return {
+    zip, base, spine,
+    title: (meta('title') || '').trim(),
+    author: (meta('creator') || '').trim(),
+    /* Carried out of the OPF purely so the text can be hyphenated. `hyphens:auto` does nothing
+       at all unless the element declares what language it is in — the browser will not guess —
+       and unhyphenated justified text in a phone-width column opens rivers of white space
+       between the words. Two settings, one effect: this is half of it. */
+    lang: (byLocal(opf, 'language')[0] || {}).textContent || '',
+    navPath: (() => {
+      const navItem = [...items.values()].find((i) => (i.props || '').includes('nav'));
+      if (navItem) return zipPath(base, navItem.href);
+      const ncx = [...items.values()].find((i) => (i.type || '').includes('ncx'));
+      return ncx ? zipPath(base, ncx.href) : '';
+    })(),
+  };
+}
+
+/* ---- Making a chapter safe to show ----
+   This is the one genuine security surface of the whole feature. The file is chosen by the
+   reader, but "the user chose it" is not the same as "the user wrote it" — a book downloaded
+   from anywhere at all is a document from a stranger, and it is about to be rendered inside
+   the app's own origin, next to the session cookie. So: no script, no imported CSS, no frames,
+   no event handlers, and no javascript: URLs, ever. */
+const SAFE_KILL = 'script,style,link,iframe,object,embed,meta,base,form,input,button,audio,video,source,track';
+function sanitizeInto(doc) {
+  doc.querySelectorAll(SAFE_KILL).forEach((el) => el.remove());
+  doc.querySelectorAll('*').forEach((el) => {
+    [...el.attributes].forEach((at) => {
+      const n = at.name.toLowerCase();
+      const v = String(at.value || '');
+      if (n.startsWith('on')) el.removeAttribute(at.name);
+      /* The book's own styling goes too, not only for safety. It is typeset for a different
+         screen in fixed points and absolute colours — keeping it means black text on white
+         inside a dark app, and 8pt type on a phone. Our typography is the point. */
+      else if (n === 'style' || n === 'class' || n === 'width' || n === 'height' || n === 'align' || n === 'bgcolor') el.removeAttribute(at.name);
+      else if ((n === 'href' || n === 'src' || n === 'xlink:href') && /^\s*(javascript|data\s*:\s*text\/html|vbscript)/i.test(v)) el.removeAttribute(at.name);
+    });
+  });
+  return doc;
+}
+
+/* ---- The reader ---- */
+let rd = null;   // the open book: {id, book, epub, lens, chars, idx, blobs, toc}
+
+function rdPrefs() {
+  try { return JSON.parse(localStorage.getItem(RD_KEY) || '{}'); } catch (e) { return {}; }
+}
+function rdSavePrefs(p) {
+  try { localStorage.setItem(RD_KEY, JSON.stringify(p)); } catch (e) {}
+}
+
+/* How long each chapter is, in characters, so a scroll position anywhere in the book can be
+   turned into a page number. Measured once per book and cached: it costs inflating the whole
+   archive, which is fine once and wrong on every open.
+   NEVER GUESS A SIZE — MEASURE IT. An early version estimated chapters as equal-length and
+   put page 150 of Deep Work in the endnotes. */
+async function chapterLengths(id, epub) {
+  const prefs = rdPrefs();
+  const cached = prefs['len:' + id];
+  if (cached && cached.n === epub.spine.length) return cached.lens;
+  const lens = [];
+  for (const s of epub.spine) {
+    const txt = await epub.zip.text(s.path);
+    const doc = new DOMParser().parseFromString(txt || '', 'application/xhtml+xml');
+    const body = doc.body || doc.documentElement;
+    lens.push(Math.max(1, ((body && body.textContent) || '').replace(/\s+/g, ' ').trim().length));
+  }
+  prefs['len:' + id] = { n: epub.spine.length, lens };
+  rdSavePrefs(prefs);
+  return lens;
+}
+
+/* Where we are, as the printed book counts it.
+   The book already has a page count — 303 for Deep Work — and three thoughts tagged to real
+   paper pages. So position maps onto THAT scale rather than inventing a private one: a thought
+   saved from the screen at page 8 and one saved from the paperback at page 8 land together,
+   the shelf's "p.8/303" keeps meaning what it meant, and the quiz, the exam and the mentor go
+   on working with no idea any of this happened.
+   Without a page count we fall back to a typical trade-paperback density. */
+const CHARS_PER_PAGE = 1900;
+function rdPage() {
+  if (!rd) return null;
+  const before = rd.lens.slice(0, rd.idx).reduce((a, b) => a + b, 0);
+  const sc = $('rd-scroll');
+  const inner = sc && sc.scrollHeight > sc.clientHeight
+    ? Math.min(1, sc.scrollTop / (sc.scrollHeight - sc.clientHeight)) : 0;
+  const pos = before + rd.lens[rd.idx] * inner;
+  const total = Number(rd.book.total) || 0;
+  if (total > 0) return Math.max(1, Math.min(total, Math.round((pos / rd.chars) * total)));
+  return Math.max(1, Math.round(pos / CHARS_PER_PAGE));
+}
+
+function rdSyncMeta() {
+  const page = rdPage();
+  const total = Number(rd.book.total) || 0;
+  $('rd-pos').textContent = total ? `p.${page} of ${total}` : `p.${page}`;
+  /* Progress belongs to the book, not to the reader, so everything already built keeps
+     working: the shelf shows it, the exam unlocks on it, the mentor sees it. */
+  const b = state.books.find((x) => x.id === rd.id);
+  if (b && page && b.page !== page) { b.page = page; b.updated = Date.now(); save(); }
+  const prefs = rdPrefs();
+  prefs['pos:' + rd.id] = { idx: rd.idx, top: $('rd-scroll').scrollTop };
+  rdSavePrefs(prefs);
+}
+
+async function rdShow(idx, anchor) {
+  if (!rd) return;
+  rd.idx = Math.max(0, Math.min(rd.spineLen - 1, idx));
+  const body = $('rd-body');
+  body.innerHTML = '<p class="rdwait">…</p>';
+  (rd.blobs || []).forEach((u) => URL.revokeObjectURL(u));
+  rd.blobs = [];
+
+  const txt = await rd.epub.zip.text(rd.epub.spine[rd.idx].path);
+  const doc = new DOMParser().parseFromString(txt || '', 'application/xhtml+xml');
+  /* A malformed chapter parses to a <parsererror> document rather than throwing. Rendering it
+     shows the reader a wall of XML diagnostics where their book should be. */
+  if (doc.getElementsByTagName('parsererror').length) {
+    const loose = new DOMParser().parseFromString(txt || '', 'text/html');
+    doc.replaceChild(doc.importNode(loose.documentElement, true), doc.documentElement);
+  }
+  sanitizeInto(doc);
+
+  const chapBase = dirOf(rd.epub.spine[rd.idx].path);
+  const src = doc.body || doc.documentElement;
+  /* Images come out of the archive as blob URLs. Done one chapter at a time and revoked on the
+     way out, so a long book does not hold every illustration it has ever shown in memory. */
+  const imgs = [...src.querySelectorAll('img,image')];
+  for (const im of imgs) {
+    const href = im.getAttribute('src') || im.getAttribute('xlink:href') || '';
+    const p = zipPath(chapBase, href);
+    try {
+      const bytes = p && await rd.epub.zip.bytes(p);
+      if (!bytes) { im.remove(); continue; }
+      const ext = (p.split('.').pop() || '').toLowerCase();
+      const mime = ext === 'png' ? 'image/png' : ext === 'gif' ? 'image/gif'
+        : ext === 'svg' ? 'image/svg+xml' : 'image/jpeg';
+      const url = URL.createObjectURL(new Blob([bytes], { type: mime }));
+      rd.blobs.push(url);
+      const tag = document.createElement('img');
+      tag.src = url;
+      tag.alt = im.getAttribute('alt') || '';
+      tag.loading = 'lazy';
+      im.replaceWith(tag);
+    } catch (e) { im.remove(); }
+  }
+
+  body.innerHTML = '';
+  [...src.childNodes].forEach((n) => body.appendChild(document.importNode(n, true)));
+
+  /* Links inside the book — cross-references, footnotes — should move the reader, not leave
+     the app. Anything genuinely external opens away from us, and never with a referrer. */
+  body.querySelectorAll('a[href]').forEach((a) => {
+    const href = a.getAttribute('href') || '';
+    if (/^(https?:)?\/\//i.test(href) || href.startsWith('mailto:')) {
+      a.target = '_blank'; a.rel = 'noopener noreferrer';
+      return;
+    }
+    const target = zipPath(chapBase, href);
+    const at = rd.epub.spine.findIndex((s) => s.path === target);
+    a.onclick = (ev) => {
+      ev.preventDefault();
+      if (at >= 0) rdShow(at, (href.split('#')[1] || ''));
+      else if (href.startsWith('#')) rdGoAnchor(href.slice(1));
+    };
+  });
+
+  const sc = $('rd-scroll');
+  sc.scrollTop = 0;
+  if (anchor) rdGoAnchor(anchor);
+  $('rd-prev').disabled = rd.idx === 0;
+  $('rd-next').disabled = rd.idx === rd.spineLen - 1;
+  rdSyncMeta();
+}
+function rdGoAnchor(id) {
+  if (!id) return;
+  let el = null;
+  try { el = $('rd-body').querySelector('#' + CSS.escape(id) + ',[id="' + CSS.escape(id) + '"]'); } catch (e) {}
+  if (el) el.scrollIntoView({ block: 'start' });
+}
+
+/* ---- Selecting a line and keeping it ----
+   The whole reason to read here rather than anywhere else. On paper this is: stop, unlock the
+   phone, open Kept, photograph, crop, wait, correct the transcription. Here it is one tap, and
+   the page comes with it because we already know where we are. */
+function rdSelection() {
+  const sel = window.getSelection();
+  if (!sel || sel.isCollapsed || !sel.rangeCount) return '';
+  const node = sel.getRangeAt(0).commonAncestorContainer;
+  const el = node.nodeType === 1 ? node : node.parentElement;
+  if (!el || !$('rd-body').contains(el)) return '';
+  return String(sel).replace(/\s+/g, ' ').trim();
+}
+function rdSelBar() {
+  const bar = $('rd-sel');
+  const text = rdSelection();
+  bar.hidden = text.length < 2;
+}
+function rdKeep(text, page) {
+  const b = state.books.find((x) => x.id === rd.id);
+  if (!b) return;
+  b.notes = b.notes || [];
+  b.notes.push({ text, page: page == null ? null : page, ts: Date.now() });
+  b.updated = Date.now();
+  save();
+  step('thought_saved');
+  toast(page ? `Kept from p.${page}` : 'Thought kept');
+}
+
+async function rdOpen(id) {
+  const book = state.books.find((x) => x.id === id);
+  if (!book) return;
+  const buf = await fileGet(id).catch(() => null);
+  if (!buf) { toast('No file on this device'); return; }
+  $('reader').hidden = false;
+  document.documentElement.classList.add('reading');
+  $('rd-title').textContent = book.title || 'Reading';
+  $('rd-body').innerHTML = '<p class="rdwait">Opening…</p>';
+  try {
+    const epub = await parseEpub(buf);
+    const lens = await chapterLengths(id, epub);
+    rd = {
+      id, book, epub, lens,
+      spineLen: epub.spine.length,
+      chars: lens.reduce((a, b2) => a + b2, 0) || 1,
+      idx: 0, blobs: [],
+    };
+    /* Only the primary subtag: a browser has a hyphenation dictionary for "en", and "en-US"
+       resolves to it, but a malformed or unknown tag silently switches hyphenation back off. */
+    $('rd-body').lang = (epub.lang || 'en').trim().slice(0, 8) || 'en';
+    const prefs = rdPrefs();
+    rdApplySize(prefs.size || 18);
+    /* Opening a book for the first time should start it, not show its cover. The first few
+       spine items are routinely the cover image, the title page and a copyright notice — all
+       of them real sections with almost no words in them — so a reader who taps Read gets a
+       picture and a Next button rather than a first sentence. Resuming always wins over this;
+       it only decides where a book with no history begins. */
+    const at = prefs['pos:' + id];
+    /* 2,500 characters, about a page and a half. A copyright notice and a newsletter advert
+       clear a few hundred and would still be chosen by a smaller number; a real chapter or
+       introduction runs to tens of thousands. If nothing clears it — a book of very short
+       sections — findIndex gives -1 and we start at the beginning, which is right. */
+    const firstReal = Math.max(0, lens.findIndex((n) => n >= 2500));
+    await rdShow(at ? at.idx : firstReal);
+    if (at && at.top) $('rd-scroll').scrollTop = at.top;
+    rdSyncMeta();
+    step('read_opened');
+  } catch (e) {
+    $('rd-body').innerHTML = '<p class="rdwait">' + esc(e.message || 'Could not open that file.') + '</p>';
+  }
+}
+function rdClose() {
+  if (rd) { rdSyncMeta(); (rd.blobs || []).forEach((u) => URL.revokeObjectURL(u)); }
+  rd = null;
+  $('reader').hidden = true;
+  $('rd-sel').hidden = true;
+  document.documentElement.classList.remove('reading');
+  if (openId) openBook(openId); else renderLibrary();
+}
+function rdApplySize(px) {
+  const n = Math.max(14, Math.min(28, Number(px) || 18));
+  $('rd-body').style.fontSize = n + 'px';
+  const prefs = rdPrefs(); prefs.size = n; rdSavePrefs(prefs);
+  return n;
+}
+
+/* ---- Attaching a file to a book ---- */
+const MAX_BOOK_BYTES = 40 * 1024 * 1024;
+async function rdAttach(id, file) {
+  if (!file) return false;
+  if (!/\.epub$/i.test(file.name || '') && file.type !== 'application/epub+zip') {
+    toast('Choose an .epub file'); return false;
+  }
+  if (file.size > MAX_BOOK_BYTES) { toast('That file is too large'); return false; }
+  if (typeof DecompressionStream === 'undefined') {
+    toast('This browser is too old to open EPUBs'); return false;
+  }
+  try {
+    const buf = await file.arrayBuffer();
+    const epub = await parseEpub(buf);            // fail before storing, not on first open
+    await filePut(id, buf);
+    hasFile.add(id);
+    /* A book added by search already knows its title, author and page count, and those are
+       better than the file's own metadata — Open Library knows the paperback is 303 pages and
+       the EPUB does not know it is a paperback at all. So the file only fills in blanks. */
+    const b = state.books.find((x) => x.id === id);
+    if (b) {
+      if (!b.title && epub.title) b.title = epub.title.slice(0, 300);
+      if (!b.author && epub.author) b.author = epub.author.slice(0, 200);
+      b.updated = Date.now();
+      save();
+    }
+    step('book_file_added');
+    return true;
+  } catch (e) {
+    toast(e.message || 'Could not read that file');
+    return false;
+  }
+}
+
+/* ---- Table of contents ---- */
+async function rdToc() {
+  if (!rd) return;
+  let items = [];
+  try {
+    const navText = rd.epub.navPath && await rd.epub.zip.text(rd.epub.navPath);
+    if (navText) {
+      const nav = new DOMParser().parseFromString(navText, 'application/xml');
+      const navBase = dirOf(rd.epub.navPath);
+      /* EPUB 3 ships an XHTML nav document; EPUB 2 ships an NCX. Both are common in the wild
+         and a reader that handles only one shows an empty contents list on half of all books. */
+      const points = byLocal(nav, 'navPoint');
+      if (points.length) {
+        items = points.map((pt) => ({
+          label: (byLocal(pt, 'text')[0] || {}).textContent || '',
+          href: (byLocal(pt, 'content')[0] || { getAttribute: () => '' }).getAttribute('src') || '',
+        }));
+      } else {
+        items = [...nav.getElementsByTagName('*')]
+          .filter((el) => el.localName === 'a' && el.getAttribute('href'))
+          .map((a) => ({ label: a.textContent || '', href: a.getAttribute('href') }));
+      }
+      items = items
+        .map((it) => {
+          const full = zipPath(navBase, it.href);
+          return { label: String(it.label).trim(), at: rd.epub.spine.findIndex((s) => s.path === full), hash: (it.href.split('#')[1] || '') };
+        })
+        .filter((it) => it.label && it.at >= 0);
+    }
+  } catch (e) { items = []; }
+  if (!items.length) items = rd.epub.spine.map((s, i) => ({ label: 'Section ' + (i + 1), at: i, hash: '' }));
+
+  const { bg, close } = openSheet(
+    '<b class="sheet-title">Contents</b><div class="sheet-scroll" id="toc-list">'
+    + items.map((it, i) => `<button class="pick toc" data-at="${it.at}" data-hash="${esc(it.hash)}"><span class="pt">${esc(it.label)}</span></button>`).join('')
+    + '</div>', 'Contents');
+  bg.querySelectorAll('.toc').forEach((bt) => {
+    bt.onclick = () => { close(); rdShow(+bt.dataset.at, bt.dataset.hash); };
+  });
+}
+
+/* ---- Wiring ---- */
+function rdWire() {
+  $('rd-close').onclick = rdClose;
+  $('rd-toc').onclick = rdToc;
+  $('rd-prev').onclick = () => rdShow(rd.idx - 1);
+  $('rd-next').onclick = () => rdShow(rd.idx + 1);
+  $('rd-smaller').onclick = () => rdApplySize(rdPrefs().size - 1);
+  $('rd-bigger').onclick = () => rdApplySize(rdPrefs().size + 1);
+
+  /* Position is written on a settle, not on every scroll event: a phone fires those by the
+     hundred and each one wrote to localStorage and queued a sync. */
+  let settle = null;
+  $('rd-scroll').addEventListener('scroll', () => {
+    clearTimeout(settle);
+    settle = setTimeout(() => { if (rd) rdSyncMeta(); }, 220);
+  }, { passive: true });
+
+  document.addEventListener('selectionchange', () => { if (rd) rdSelBar(); });
+
+  $('rd-save').onclick = () => {
+    const text = rdSelection();
+    if (!text) return;
+    rdKeep(text, rdPage());
+    window.getSelection().removeAllRanges();
+    $('rd-sel').hidden = true;
+  };
+  $('rd-ask').onclick = () => {
+    const text = rdSelection();
+    if (!text) return;
+    window.getSelection().removeAllRanges();
+    $('rd-sel').hidden = true;
+    rdNoteSheet(text);
+  };
+  $('rd-note').onclick = () => rdNoteSheet('');
+}
+
+/* Writing a thought without leaving the page — the same act as the Thoughts pane, at the
+   moment it actually occurs. The page is filled in and editable: the mapping is good to a page
+   or so, and the reader with the paperback open knows better than we do. */
+function rdNoteSheet(seed) {
+  const page = rdPage();
+  const { bg, close } = openSheet(
+    '<b class="sheet-title">Keep a thought</b>'
+    + '<p class="sheet-note">From ' + esc(rd.book.title || 'this book') + '</p>'
+    + '<textarea id="rn-text" placeholder="What struck you?"></textarea>'
+    + '<div class="two" style="margin-top:6px;align-items:flex-end">'
+    + '<div style="max-width:120px"><label for="rn-page">Page</label>'
+    + '<input id="rn-page" type="number" inputmode="numeric" value="' + (page || '') + '"></div>'
+    + '<div><button class="btn" id="rn-add">Keep it</button></div></div>', 'Keep a thought');
+  const ta = bg.querySelector('#rn-text');
+  if (seed) ta.value = '"' + seed + '"\n\n';
+  ta.focus();
+  ta.setSelectionRange(ta.value.length, ta.value.length);
+  bg.querySelector('#rn-add').onclick = () => {
+    const text = ta.value.trim();
+    if (!text) { toast('Write a thought first'); return; }
+    const p = parseInt(bg.querySelector('#rn-page').value, 10);
+    rdKeep(text, isNaN(p) ? null : p);
+    close();
+  };
+}
+
+/* Started here, at the very END of the script, and not up with the other boot calls. Both of
+   these reach into the reader's own bindings, and a `let` is unreachable until its line has
+   run — calling them earlier throws before the app has finished defining itself.
+   Which books have a file is an IndexedDB read, so the shelf has already been drawn by the
+   time it lands; re-draw once it does and the Read buttons appear with no reload. If storage
+   is unavailable the promise rejects, we keep the empty set, and the cost is the shortcut
+   button — never the shelf. */
+rdWire();
+refreshHasFile()
+  .then(() => { if (hasFile.size) { if (openId) openBook(openId); else renderLibrary(); } })
+  .catch(() => {});
+
 </script>
