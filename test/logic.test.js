@@ -10,7 +10,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { safeName, isLanguage, LANGUAGES } from '../src/ctx.js';
 import { isAllowed, trustLevel, can, visibleLogTypes, MODULES } from '../src/users.js';
-import { safeUrl, cleanSteps, cleanTasks, cleanQuestions } from '../src/shape.js';
+import { safeUrl, cleanSteps, cleanTasks, cleanQuestions, cleanWord } from '../src/shape.js';
 import { parseGrades, gradedAny, bandFor } from '../src/grade.js';
 import { reflow, looksWrapped } from '../src/text.js';
 import { parseResponse } from '../src/coach.js';
@@ -362,4 +362,44 @@ test('parseGrades: a reply with nothing readable says so instead of inventing a 
   assert.equal(g.grades[0].score, null);
   assert.equal(g.grades[0].landed, 'Good.');
   assert.equal(gradedAny(g), true, 'a note with no number is still worth showing');
+});
+
+// ---- Looking a word up while reading ----
+// The reader is mid-sentence in a book when this runs. Every shape below is something a model
+// actually returns when asked for bare JSON, and each one used to be a card full of blanks or
+// an exception thrown into somebody's reading.
+test('cleanWord: finds the JSON even when the model wraps or introduces it', () => {
+  const good = '{"word":"boredom","phonetic":"/ˈbɔː.dəm/","say":"BOR-duhm",'
+    + '"meaning":"The feeling of being tired because nothing interesting is happening.",'
+    + '"example":"He felt a growing boredom.","translation":"нудьга"}';
+  for (const wrapper of [good, '```json\n' + good + '\n```', 'Here you go:\n' + good, good + '\n\nHope that helps!']) {
+    const w = cleanWord(wrapper, 'boredom');
+    assert.ok(w, 'should have parsed: ' + wrapper.slice(0, 24));
+    assert.equal(w.say, 'BOR-duhm');
+    assert.equal(w.translation, 'нудьга');
+  }
+});
+
+test('cleanWord: nothing readable is null, never a card of empty rows', () => {
+  for (const junk of ['', null, undefined, 'I cannot help with that.', '[]', '{}', '{"word":"x"}', 'not json {oops']) {
+    assert.equal(cleanWord(junk, 'x'), null, JSON.stringify(junk));
+  }
+});
+
+test('cleanWord: a meaning is enough — the rest of the card is optional', () => {
+  const w = cleanWord('{"meaning":"To put something off."}', 'procrastinate');
+  assert.equal(w.meaning, 'To put something off.');
+  // With no word echoed back, the term the reader selected stands in — never an empty title.
+  assert.equal(w.word, 'procrastinate');
+  assert.equal(w.phonetic, '');
+  assert.equal(w.example, '');
+});
+
+test('cleanWord: values are flattened and bounded before they reach a card or a saved thought', () => {
+  const w = cleanWord('{"word":"deep\\n work","meaning":"Line one.\\nLine two.","example":"' + 'x'.repeat(900) + '"}', 'deep work');
+  assert.equal(w.word, 'deep work', 'a newline in a value becomes a break in a saved thought');
+  assert.equal(w.meaning, 'Line one. Line two.');
+  assert.ok(w.example.length <= 400, 'bounded, so one odd reply cannot blow up the sheet');
+  // An object where a string was asked for must not stringify to "[object Object]" on screen.
+  assert.equal(cleanWord('{"meaning":"Fine.","phonetic":{"ipa":"/x/"}}', 'x').phonetic, '');
 });

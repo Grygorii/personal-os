@@ -264,6 +264,15 @@ ok(/indexedDB\.open\('kept-books'/.test(sw.body), 'and puts the book straight in
 const recv = await grab('/app/receive');
 ok(recv.status === 303 || recv.status === 302, 'a share that outruns the worker lands on the app, not a 404');
 
+// Looking a word up without leaving the page.
+ok(app.body.includes('id="rd-mean"'), 'the Meaning button is in the selection bar');
+ok(/function rdMeaning\b/.test(app.body), 'and something behind it to call');
+// Free to try, like tidying — a guest meets the value before the ask, not the other way round.
+const word = await grab('/api/word', { headers: { 'Content-Type': 'application/json' } });
+ok(word.status !== 404, '/api/word is served');
+ok(app.body.includes('The book file stays on your phone'),
+  'and the card says what was sent, rather than leaving it to be assumed');
+
 // ---- 5. gating ----
 console.log('\ngating');
 const admin = await grab('/admin');

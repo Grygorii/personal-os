@@ -222,16 +222,24 @@
   .bs.idle{color:var(--faint)} .bs.idle b{color:var(--faint)}
   /* The one control on a card. It carries the app's ink rather than the muted grey the other
      two use, because those two are readouts and this one is a door. */
-  /* Sits on the status line, hard right, opposite "Reading p.8/303" — where the eye already
-     is once it has read the title and wants to get on with it. `margin-left:auto` inside the
-     wrapping flex row, so on a narrow phone it keeps the right edge instead of dropping to a
-     line of its own.
-     Below the 44px tap floor on purpose, and the only control on the shelf that is: it is a
-     shortcut to something the whole card already opens, sharing a row with 12px type. At 44px
-     it stops being a detail on the card and becomes the card. 36 is comfortably thumbable. */
-  .bread{border:0;font-family:var(--sans);font-size:.78rem;font-weight:700;cursor:pointer;
-    background:var(--accent);color:var(--on-accent);border-radius:9px;
-    margin-left:auto;min-height:36px;padding:0 13px;white-space:nowrap}
+  /* A block down the right-hand side of the card, the full height of the title and status
+     above the thought counts — where he drew it. It is a third column of .book, not something
+     tucked into a text row, so it reads as the card's one action rather than as another chip
+     among the readouts.
+     `align-self:stretch` on a flex child means it matches the tallest column, so it grows with
+     a two-line title instead of floating beside one. A fixed width rather than a proportion:
+     the middle column is what should absorb a narrow phone, and a percentage here would eat
+     the title on exactly the screens with least room for that. */
+  .bread{flex:none;width:88px;align-self:stretch;min-height:66px;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;
+    border:0;border-radius:11px;cursor:pointer;padding:8px 6px;
+    background:var(--accent);color:var(--on-accent);
+    font-family:var(--sans);font-size:.8rem;font-weight:700;line-height:1}
+  .bread .bi{font-size:1.3rem;line-height:1}
+  .bread:active{opacity:.85}
+  /* Under about 360px the cover, the text and this together leave the title two words a line.
+     The block keeps the right edge and gives back its width first. */
+  @media(max-width:359px){.bread{width:64px;font-size:.72rem}.bread .bi{font-size:1.1rem}}
   .empty{text-align:center;color:var(--faint);font-size:.9rem;padding:26px 10px}
   /* detail */
   .back{background:transparent;border:0;color:var(--accent-strong);font-weight:600;font-size:.95rem;cursor:pointer;padding:11px 2px;min-height:44px;font-family:var(--sans)}
@@ -622,6 +630,23 @@
   .rdsel button.alt{background:var(--surface);color:var(--ink);border:1px solid var(--line)}
   /* Reading is the one screen that should get roomier on a big display, not wider. */
   @media(min-width:560px){.rdbody{max-width:42ch;padding-top:34px}.rdnav{max-width:42ch}}
+
+  /* ---- What a word means ---- */
+  .wd-wait{color:var(--faint);font-size:.9rem;padding:18px 2px;text-align:center}
+  .wd-say{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:baseline;margin-bottom:12px}
+  .wd-ipa{font-family:var(--serif);font-size:1rem;color:var(--muted)}
+  /* The spoken form is the one he asked for by name, so it is the one that looks like a
+     pronunciation guide rather than a footnote. */
+  .wd-plain{font-family:var(--sans);font-size:.78rem;font-weight:700;letter-spacing:.06em;
+    background:var(--accent-tint);color:var(--accent-strong);border-radius:7px;padding:3px 9px}
+  .wd-lemma{font-size:.82rem;color:var(--muted);margin:-6px 0 10px}
+  .wd-mean{font-family:var(--serif);font-size:1.02rem;line-height:1.5;margin:0 0 12px}
+  .wd-tr{font-size:.95rem;color:var(--accent-strong);margin:0 0 12px;font-weight:600}
+  /* The example is the book's own voice answering, so it is set like a quotation from one. */
+  .wd-eg{font-family:var(--serif);font-style:italic;color:var(--muted);line-height:1.5;
+    margin:0 0 14px;padding-left:12px;border-left:2px solid var(--line)}
+  .wd-acts{margin-bottom:10px}
+  .wd-fine{font-size:.72rem;color:var(--faint);line-height:1.45;margin:0}
   /* Floats above the tab bar wherever you are — including on the mentor screen. */
   .toast{position:fixed;left:50%;transform:translateX(-50%);z-index:80;
     bottom:calc(var(--navh,60px) + 16px);width:max-content;max-width:calc(100% - 40px);text-align:center;
@@ -802,6 +827,7 @@
     <!-- Appears only while something is selected. This is the feature: the line you just read
          becomes a thought without leaving the page, and the page number comes with it. -->
     <div class="rdsel" id="rd-sel" hidden>
+      <button id="rd-mean" class="alt" hidden>Meaning</button>
       <button id="rd-save">Keep as a thought</button>
       <button id="rd-ask" class="alt">＋ Note</button>
     </div>
@@ -959,15 +985,16 @@ function renderLibrary(){
         ${b.author?`<div class="bauthor">${esc(b.author)}</div>`:""}
         <div class="bmeta"><span class="pill ${b.status}">${STATUS[b.status]}</span>
           ${b.rating?`<span class="stars">${stars(b.rating)}</span>`:""}
-          ${prog?`<span>${prog}</span>`:""}
-          ${hasFile.has(b.id)?`<button class="bread" data-read="${b.id}">📖 Read</button>`:""}</div>
+          ${prog?`<span>${prog}</span>`:""}</div>
         <div class="bstats">
           <span class="bs ${nc?"":"idle"}"><b>${nc}</b> thought${nc===1?"":"s"}</span>
           ${b.exam
             ? `<span class="bs good"><b>${b.exam.score}%</b> exam</span>`
             : `<span class="bs idle"><b>&times;</b> not tested</span>`}
         </div>
-      </div></div>`;
+      </div>
+      ${hasFile.has(b.id)?`<button class="bread" data-read="${b.id}" aria-label="Read ${esc(b.title)}">
+        <span class="bi">📖</span>Read</button>`:""}</div>`;
   }).join("");
   /* Only books with a file on this device get the button, and it resumes rather than starting
      over — the thing you want from a shelf is to carry on where you stopped, in one tap. The
@@ -3815,10 +3842,96 @@ function rdSelection() {
   if (!el || !$('rd-body').contains(el)) return '';
   return String(sel).replace(/\s+/g, ' ').trim();
 }
+/* A word, or a short idiom — "attention residue", "at bay". Beyond about six words it stops
+   being a lookup and becomes a passage, and "Meaning" would be promising something it cannot
+   do, so the button leaves rather than answering badly. */
+const rdIsTerm = (t) => {
+  const words = t.split(/\s+/).filter(Boolean);
+  return words.length >= 1 && words.length <= 6 && t.length <= 90;
+};
 function rdSelBar() {
   const bar = $('rd-sel');
   const text = rdSelection();
   bar.hidden = text.length < 2;
+  $('rd-mean').hidden = !rdIsTerm(text);
+}
+
+/* ---- What does this word mean, here? ----
+   The lookup he was leaving the book for. Reading in a second language, a word you don't know
+   costs the mentor tab, a typed question and the sentence you were in the middle of — and
+   whatever the page was about is gone by the time you come back.
+   The sentence around the word goes with it, because "bore" in "embrace boredom" and "bore a
+   hole" are different words and a lookup that cannot see the sentence gets it wrong precisely
+   when it matters. That is a short quotation leaving the phone, deliberately, and the card
+   says so — the BOOK still never does. */
+const WORDS_KEY = 'kept-words-v1';
+function wordCache() {
+  try { return JSON.parse(localStorage.getItem(WORDS_KEY) || '{}'); } catch (e) { return {}; }
+}
+function wordCachePut(key, val) {
+  try {
+    const all = wordCache();
+    all[key] = val;
+    /* Keep the last 300. Unbounded, this is a localStorage quota error months from now, in
+       the middle of a save, on the one device holding an unsynced thought. */
+    const keys = Object.keys(all);
+    if (keys.length > 300) keys.slice(0, keys.length - 300).forEach((k) => delete all[k]);
+    localStorage.setItem(WORDS_KEY, JSON.stringify(all));
+  } catch (e) {}
+}
+
+/* The sentence the word sits in, taken from the rendered page rather than from the selection —
+   the reader selected a word, and the surrounding prose is what gives it its sense. */
+function rdContextFor(term) {
+  const all = ($('rd-body').textContent || '').replace(/\s+/g, ' ');
+  const at = all.indexOf(term);
+  if (at < 0) return '';
+  return all.slice(Math.max(0, at - 160), Math.min(all.length, at + term.length + 160)).trim();
+}
+
+async function rdMeaning(term) {
+  const key = foldText(term);
+  const { bg, close } = openSheet(
+    '<div class="sheet-head">' + esc(term) + '</div><div id="wd-body" class="wd-wait">Looking it up…</div>',
+    'What this word means');
+  const draw = (d) => {
+    bg.querySelector('#wd-body').className = '';
+    bg.querySelector('#wd-body').innerHTML =
+      (d.phonetic || d.say
+        ? `<div class="wd-say">${d.phonetic ? `<span class="wd-ipa">${esc(d.phonetic)}</span>` : ''}${d.say ? `<span class="wd-plain">${esc(d.say)}</span>` : ''}</div>` : '')
+      + (d.word && foldText(d.word) !== key ? `<div class="wd-lemma">from <b>${esc(d.word)}</b></div>` : '')
+      + `<p class="wd-mean">${esc(d.meaning)}</p>`
+      + (d.translation ? `<p class="wd-tr">${esc(d.translation)}</p>` : '')
+      + (d.example ? `<p class="wd-eg">${esc(d.example)}</p>` : '')
+      + '<div class="wd-acts"><button class="btn ghost" id="wd-keep">Keep as a thought</button></div>'
+      + '<p class="wd-fine">Only this word and the sentence around it were sent. The book file stays on your phone.</p>';
+    bg.querySelector('#wd-keep').onclick = () => {
+      const bits = [d.word || term, d.phonetic, d.say].filter(Boolean).join(' · ');
+      rdKeep(bits + '\n' + d.meaning + (d.example ? '\n\n' + d.example : ''), rdPage());
+      close();
+    };
+  };
+
+  const hit = wordCache()[key];
+  if (hit) { draw(hit); return; }
+  try {
+    const r = await api('/api/word', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ word: term, context: rdContextFor(term) }),
+    });
+    if (!r.ok) throw new Error(r.status === 429 ? 'slow' : 'failed');
+    const d = await r.json();
+    if (!d || !d.meaning) throw new Error('failed');
+    wordCachePut(key, d);
+    draw(d);
+  } catch (e) {
+    const el = bg.querySelector('#wd-body');
+    if (!el) return;                       // they swiped the sheet away while it was thinking
+    el.className = 'wd-wait';
+    el.textContent = e.message === 'slow'
+      ? 'One moment — too many lookups just now. Try again in a minute.'
+      : "Couldn't look that one up. Check your connection and try again.";
+  }
 }
 function rdKeep(text, page) {
   const b = state.books.find((x) => x.id === rd.id);
@@ -4010,6 +4123,15 @@ function rdWire() {
     window.getSelection().removeAllRanges();
     $('rd-sel').hidden = true;
     rdNoteSheet(text);
+  };
+  $('rd-mean').onclick = () => {
+    const text = rdSelection();
+    if (!text || !rdIsTerm(text)) return;
+    /* Read the word BEFORE clearing the selection — the sheet takes focus and on some Android
+       builds that collapses it, so asking afterwards looks up an empty string. */
+    window.getSelection().removeAllRanges();
+    $('rd-sel').hidden = true;
+    rdMeaning(text.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '') || text);
   };
   $('rd-note').onclick = () => rdNoteSheet('');
 }

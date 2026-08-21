@@ -6,7 +6,7 @@ import { col, rawCol, getProfile, logEvent, dbStats } from './db.js';
 import { config } from './config.js';
 import { chat } from './llm.js';
 import { reflow, looksWrapped } from './text.js';
-import { safeUrl, rid, cleanSteps, cleanTasks, cleanQuestions } from './shape.js';
+import { safeUrl, rid, cleanSteps, cleanTasks, cleanQuestions, cleanWord } from './shape.js';
 import { parseGrades, gradedAny, RUBRIC } from './grade.js';
 import { LANGUAGES, isLanguage } from './ctx.js';
 import { sendPings, send as sendTelegram } from './telegram.js';
@@ -14,7 +14,7 @@ import * as system from './system.js';
 import * as users from './users.js';
 import * as coach from './coach.js';
 import * as moderation from './moderation.js';
-import { runAs, uid, personName, languageRule } from './ctx.js';
+import { runAs, uid, personName, languageRule, currentUser } from './ctx.js';
 import { verifyTelegramLogin, verifyGoogleToken, createSession, readSession, parseCookies, sessionCookie, clearedCookie, refCookie, clearedRefCookie, mailCookie } from './auth.js';
 import * as contact from './contact.js';
 import * as push from './push.js';
@@ -435,6 +435,57 @@ Reply with ONLY JSON, no fences: {"recs":[{"title":"...","author":"...","why":".
 // note — so tidying a photographed page deleted everything past the halfway mark. Two
 // limits on the same value, set months apart, and the smaller one won in silence.
 const NOTE_MAX = 4000;
+
+// ---- What does this word mean, here? ----
+// Reading in a second language, the lookup is the interruption that ends the reading session:
+// leave the page, open the mentor, type the word, lose the sentence. This answers it in place.
+//
+// CONTEXT IS THE WHOLE POINT. "Bore" in "embrace boredom" and "bore a hole" are different
+// words, and a dictionary that cannot see the sentence gets it wrong exactly when the reader
+// most needs it right. So one sentence's worth of the page travels with the word — and
+// nothing more. The book file itself still never leaves the phone; this is a short quotation,
+// sent deliberately, and the app says so on screen rather than leaving it to be assumed.
+const WORD_MAX = 90;          // a word or a short idiom, never a paragraph
+const WORD_CONTEXT_MAX = 320; // roughly one sentence either side
+
+async function wordMeaning({ word, context }) {
+  const term = String(word || '').replace(/\s+/g, ' ').trim().slice(0, WORD_MAX);
+  if (term.length < 1) throw new Error('no word');
+  const around = String(context || '').replace(/\s+/g, ' ').trim().slice(0, WORD_CONTEXT_MAX);
+
+  // The reader's chosen language, re-checked against the closed list on the way OUT as well as
+  // on the way in. This string is interpolated into a system prompt, and a stored value that
+  // predates the check — or one written by any other path — must not be able to add
+  // instructions to it. Never a pattern, always the list.
+  const chosen = currentUser()?.language;
+  const lang = isLanguage(chosen) && chosen !== 'auto' ? chosen : null;
+  const wantsTranslation = lang && lang !== 'English';
+
+  const sys = `You explain one word or phrase for someone reading a book in a language that is not their first.
+Reply with ONLY a JSON object, no markdown fence and no commentary, with exactly these keys:
+"word": the dictionary form of the term (the infinitive, or the singular).
+"phonetic": its pronunciation in IPA, including the slashes.
+"say": how to say it written out in plain English syllables for someone who cannot read IPA, with the stressed syllable in CAPITALS. Example for "boredom": "BOR-duhm".
+"meaning": one or two plain sentences. Explain the sense IT CARRIES IN THE SENTENCE THEY ARE READING, not every sense the word has.
+"example": one natural sentence that uses the term in that same sense. Not the sentence from the book.
+${wantsTranslation ? `"translation": the term in ${lang}, just the word or short phrase, nothing else.` : '"translation": "".'}
+Keep "meaning" and "example" in English — they are reading in English and simple English is what builds the language. Every other key as specified.
+If the term is a proper name, say whose name it is in "meaning".`;
+
+  const user = around
+    ? `Word: ${term}\n\nThe sentence it appears in: ${around}`
+    : `Word: ${term}`;
+
+  const out = await chat({
+    system: sys,
+    messages: [{ role: 'user', content: user }],
+    maxTokens: 400,
+  });
+
+  const result = cleanWord(out, term);
+  if (!result) throw new Error('nothing readable in reply');
+  return result;
+}
 
 async function tidyText(raw) {
   const source = String(raw || '').trim().slice(0, NOTE_MAX);
@@ -2461,7 +2512,10 @@ export function startServer(port = process.env.PORT || 8080, build = 'dev') {
         }
         return;
       }
-      const FREE_TO_TRY = path === '/api/readpage' || path === '/api/tidy';
+      // Looking a word up is free to try for the same reason tidying is: it is the cheapest
+      // possible demonstration that this app is worth having open while you read, and putting
+      // a sign-in in front of it would be a wall before any value — the thing Wave 2 removed.
+      const FREE_TO_TRY = path === '/api/readpage' || path === '/api/tidy' || path === '/api/word';
       if (!acct && FREE_TO_TRY && req.method === 'POST') {
         const t = await freeTryLeft(req);
         if (!t.ok) {
@@ -2472,7 +2526,9 @@ export function startServer(port = process.env.PORT || 8080, build = 'dev') {
         try {
           const body = await readJson(req, path === '/api/readpage' ? 2_000_000 : 200000);
           // Same arguments the signed-in path uses: the field, not the envelope.
-          const data = path === '/api/readpage' ? await readPage(body?.image) : await tidyText(body?.text);
+          const data = path === '/api/readpage' ? await readPage(body?.image)
+            : path === '/api/word' ? await wordMeaning({ word: body?.word, context: body?.context })
+              : await tidyText(body?.text);
           res.writeHead(200, {
             'Content-Type': 'application/json',
             'Cache-Control': 'no-store',
@@ -2508,6 +2564,7 @@ export function startServer(port = process.env.PORT || 8080, build = 'dev') {
         const needsBody =
           path === '/api/bookexam' || path === '/api/bookexam/grade' || path === '/api/share' ||
           path === '/api/chat' || path === '/api/tidy' || path === '/api/readpage' ||
+          path === '/api/word' ||
           (path === '/api/books' && req.method === 'PUT');
         // Only the photo endpoint may send more than 200KB, and only because it carries an
         // image the client has already downscaled.
@@ -2549,6 +2606,9 @@ export function startServer(port = process.env.PORT || 8080, build = 'dev') {
             }));
           }
           if (path === '/api/tidy') return tidyText(body?.text);
+          // Inside runAs, so the reader's chosen language is available and the translation
+          // line comes back in it.
+          if (path === '/api/word') return wordMeaning({ word: body?.word, context: body?.context });
           if (path === '/api/readpage') {
             // A photograph costs far more than a message, so it draws on the same daily
             // allowance the exams do rather than being free to loop.
