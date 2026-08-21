@@ -2178,6 +2178,23 @@ export function startServer(port = process.env.PORT || 8080, build = 'dev') {
     // the quiz all run on the device and cost nothing, so they need no account at all. The
     // account is asked for at the moment it starts to mean something — when the work would
     // otherwise be lost, or when an action costs real money.
+    // ---- A shared book that arrived before the service worker was ready ----
+    // Normally this never reaches the server at all: the worker answers the share POST inside
+    // the browser and the file goes straight to local storage. But the manifest can be
+    // registered while the worker is still installing, or it can have been evicted, and then
+    // the POST goes out over the network and would otherwise 404 on a file the reader was
+    // promised we would never receive.
+    // So: answer immediately, and NEVER read the body. The request is destroyed unread, which
+    // means nothing is parsed, nothing is buffered and nothing is stored. Some of the bytes
+    // will have left the phone before the socket closes — that is a fact of an HTTP POST and
+    // it is why this path exists only as a backstop — but they are dropped on arrival, and the
+    // reader is told plainly to try again rather than being left wondering.
+    if (path === '/app/receive') {
+      req.destroy();
+      res.writeHead(303, { Location: '/app?shared=retry' });
+      res.end();
+      return;
+    }
     if (path === '/app' || path === '/signin') {
       countVisit('app', req);
       // Launched from a home-screen icon: the manifest's start_url carries ?home=1, and that
@@ -2591,6 +2608,20 @@ export function startServer(port = process.env.PORT || 8080, build = 'dev') {
         ],
         // The installed app opens the LIBRARY, never the sales page.
         scope: '/',
+        // ---- Starting from the file instead of from the app ----
+        // Tapping an .epub in Downloads offers "Open with", and Kept is never in that list:
+        // file_handlers, the manifest key that puts a web app there, is implemented on desktop
+        // Chromium only and not on Android at all. The share sheet is the one that does work
+        // on a phone, so that is the door — Downloads → ⋮ → Share → Kept.
+        // BOTH the MIME type and the extension are listed on purpose. With only the extension
+        // Chrome for Android still shows the app in the sheet but the handler's formData()
+        // then fails, which is worse than not appearing: it looks like the app is broken.
+        share_target: {
+          action: '/app/receive',
+          method: 'POST',
+          enctype: 'multipart/form-data',
+          params: { files: [{ name: 'book', accept: ['application/epub+zip', '.epub'] }] },
+        },
       }));
       return;
     }
@@ -2643,7 +2674,43 @@ export function startServer(port = process.env.PORT || 8080, build = 'dev') {
       res.writeHead(200, { 'Content-Type': 'application/javascript', 'Cache-Control': 'no-cache' });
       res.end(`self.addEventListener('install',e=>self.skipWaiting());
 self.addEventListener('activate',e=>e.waitUntil(self.clients.claim()));
-self.addEventListener('fetch',()=>{});
+// A book shared into the app from the phone's share sheet. The whole point of handling it
+// HERE is that respondWith answers the POST from inside the browser, so the file is put
+// straight into local storage and never travels to us. Without this the same POST would go
+// out over the network, which is exactly the thing the reader promises never happens.
+self.addEventListener('fetch',e=>{
+  var url=new URL(e.request.url);
+  if(e.request.method==='POST'&&url.pathname==='/app/receive') e.respondWith(receiveShare(e.request));
+});
+// Every failure lands on the app with a flag rather than an error page: somebody who has just
+// shared a book should end up looking at their library, not at a stack trace.
+function receiveShare(req){
+  return req.formData().then(function(fd){
+    var f=fd.get('book');
+    if(!f||!f.size) return Response.redirect('/app?shared=none',303);
+    return f.arrayBuffer()
+      .then(function(buf){ return stashIncoming(f.name||'book.epub',buf); })
+      .then(function(){ return Response.redirect('/app?shared=1',303); })
+      .catch(function(){ return Response.redirect('/app?shared=none',303); });
+  }).catch(function(){ return Response.redirect('/app?shared=none',303); });
+}
+// Same database and store the reader uses, under a reserved key the app collects on its next
+// load. A worker cannot open a sheet and ask which book this is; it can only put the file
+// where the app will find it.
+function stashIncoming(name,buf){
+  return new Promise(function(res,rej){
+    var r=indexedDB.open('kept-books',1);
+    r.onupgradeneeded=function(){ if(!r.result.objectStoreNames.contains('files')) r.result.createObjectStore('files'); };
+    r.onsuccess=function(){
+      try{
+        var q=r.result.transaction('files','readwrite').objectStore('files').put({name:name,buf:buf,at:Date.now()},'incoming');
+        q.onsuccess=function(){ res(); };
+        q.onerror=function(){ rej(q.error); };
+      }catch(err){ rej(err); }
+    };
+    r.onerror=function(){ rej(r.error); };
+  });
+}
 self.addEventListener('push',e=>{
   let d=null; try{ d=e.data&&e.data.json(); }catch(err){}
   if(!d||!d.title) return;

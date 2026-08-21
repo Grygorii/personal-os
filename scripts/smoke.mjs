@@ -247,6 +247,23 @@ ok(/indexedDB\.open/.test(app.body), 'the book is stored on the device');
 ok(!/api\/(upload|book(file|s\/file))/.test(app.body), 'no upload endpoint — the file stays on the phone');
 ok(app.body.includes('<meta charset="utf-8">'), 'the page declares its own encoding');
 
+// Sharing a book in from the phone. "Open with" can never list a web app on Android, so the
+// share sheet is the only way in from a file manager — and it is made of three parts that have
+// to agree: the manifest advertises it, the worker answers it locally, and the server is there
+// only to catch the case where the worker was not ready.
+const manifest = await grab('/manifest.webmanifest');
+const mf = JSON.parse(manifest.body);
+ok(mf.share_target?.action === '/app/receive', 'the manifest offers Kept in the share sheet');
+ok(mf.share_target?.enctype === 'multipart/form-data', 'shared as a file, not as a link');
+const acc = mf.share_target?.params?.files?.[0]?.accept || [];
+// Extension alone makes Chrome for Android list the app and then fail to hand it the file.
+ok(acc.includes('application/epub+zip') && acc.includes('.epub'), 'both the MIME type and the extension are accepted');
+const sw = await grab('/sw.js');
+ok(/receiveShare/.test(sw.body), 'the worker answers the share POST itself');
+ok(/indexedDB\.open\('kept-books'/.test(sw.body), 'and puts the book straight into local storage');
+const recv = await grab('/app/receive');
+ok(recv.status === 303 || recv.status === 302, 'a share that outruns the worker lands on the app, not a 404');
+
 // ---- 5. gating ----
 console.log('\ngating');
 const admin = await grab('/admin');

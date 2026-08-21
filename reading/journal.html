@@ -222,12 +222,16 @@
   .bs.idle{color:var(--faint)} .bs.idle b{color:var(--faint)}
   /* The one control on a card. It carries the app's ink rather than the muted grey the other
      two use, because those two are readouts and this one is a door. */
-  .bs.read{border:0;font-family:var(--sans);font-weight:700;cursor:pointer;
-    background:var(--accent);color:var(--on-accent);margin-left:auto;
-    /* Below the 44px tap floor on purpose, and the only control here that is. It is a shortcut
-       to something the whole card already reaches, sitting inside a stat row 4px tall — at
-       44px it becomes the card. 36 stays comfortably hittable with a thumb. */
-    min-height:36px;padding:0 11px;align-items:center}
+  /* Sits on the status line, hard right, opposite "Reading p.8/303" — where the eye already
+     is once it has read the title and wants to get on with it. `margin-left:auto` inside the
+     wrapping flex row, so on a narrow phone it keeps the right edge instead of dropping to a
+     line of its own.
+     Below the 44px tap floor on purpose, and the only control on the shelf that is: it is a
+     shortcut to something the whole card already opens, sharing a row with 12px type. At 44px
+     it stops being a detail on the card and becomes the card. 36 is comfortably thumbable. */
+  .bread{border:0;font-family:var(--sans);font-size:.78rem;font-weight:700;cursor:pointer;
+    background:var(--accent);color:var(--on-accent);border-radius:9px;
+    margin-left:auto;min-height:36px;padding:0 13px;white-space:nowrap}
   .empty{text-align:center;color:var(--faint);font-size:.9rem;padding:26px 10px}
   /* detail */
   .back{background:transparent;border:0;color:var(--accent-strong);font-weight:600;font-size:.95rem;cursor:pointer;padding:11px 2px;min-height:44px;font-family:var(--sans)}
@@ -955,13 +959,13 @@ function renderLibrary(){
         ${b.author?`<div class="bauthor">${esc(b.author)}</div>`:""}
         <div class="bmeta"><span class="pill ${b.status}">${STATUS[b.status]}</span>
           ${b.rating?`<span class="stars">${stars(b.rating)}</span>`:""}
-          ${prog?`<span>${prog}</span>`:""}</div>
+          ${prog?`<span>${prog}</span>`:""}
+          ${hasFile.has(b.id)?`<button class="bread" data-read="${b.id}">📖 Read</button>`:""}</div>
         <div class="bstats">
           <span class="bs ${nc?"":"idle"}"><b>${nc}</b> thought${nc===1?"":"s"}</span>
           ${b.exam
             ? `<span class="bs good"><b>${b.exam.score}%</b> exam</span>`
             : `<span class="bs idle"><b>&times;</b> not tested</span>`}
-          ${hasFile.has(b.id)?`<button class="bs read" data-read="${b.id}">📖 Read</button>`:""}
         </div>
       </div></div>`;
   }).join("");
@@ -3691,10 +3695,29 @@ function rdPage() {
   return Math.max(1, Math.round(pos / CHARS_PER_PAGE));
 }
 
+/* The inverse of rdPage: given a printed page, where is that in the file?
+   Needed because a book almost never arrives at page one. He has read Deep Work to p.8 on
+   paper and kept three thoughts there; attaching the EPUB and landing at the Introduction
+   would not just be wrong, it would WRITE p.1 back over his real progress on the shelf. */
+function rdLocate(page) {
+  const total = Number(rd.book.total) || 0;
+  const target = total > 0 ? (page / total) * rd.chars : page * CHARS_PER_PAGE;
+  let acc = 0;
+  for (let i = 0; i < rd.lens.length; i++) {
+    if (acc + rd.lens[i] > target) return { idx: i, frac: Math.max(0, Math.min(1, (target - acc) / rd.lens[i])) };
+    acc += rd.lens[i];
+  }
+  return { idx: rd.lens.length - 1, frac: 0 };
+}
+
 function rdSyncMeta() {
   const page = rdPage();
   const total = Number(rd.book.total) || 0;
   $('rd-pos').textContent = total ? `p.${page} of ${total}` : `p.${page}`;
+  /* While a book is still being positioned it is sitting at the top of whatever chapter was
+     rendered, which is not where the reader is — writing that back would overwrite real
+     progress with an artefact of loading. The readout updates; the shelf waits. */
+  if (rd.restoring) return;
   /* Progress belongs to the book, not to the reader, so everything already built keeps
      working: the shelf shows it, the exam unlocks on it, the mentor sees it. */
   const b = state.books.find((x) => x.id === rd.id);
@@ -3824,7 +3847,7 @@ async function rdOpen(id) {
       id, book, epub, lens,
       spineLen: epub.spine.length,
       chars: lens.reduce((a, b2) => a + b2, 0) || 1,
-      idx: 0, blobs: [],
+      idx: 0, blobs: [], restoring: true,
     };
     /* Only the primary subtag: a browser has a hyphenation dictionary for "en", and "en-US"
        resolves to it, but a malformed or unknown tag silently switches hyphenation back off. */
@@ -3836,14 +3859,23 @@ async function rdOpen(id) {
        of them real sections with almost no words in them — so a reader who taps Read gets a
        picture and a Next button rather than a first sentence. Resuming always wins over this;
        it only decides where a book with no history begins. */
+    /* Where to begin, in order of what the reader would expect:
+       1. exactly where they stopped reading on this device;
+       2. the page the shelf already says they are on — from paper, or another device, or the
+          progress field — so attaching a file to a book in progress continues it;
+       3. the first section with real prose in it, for a book that is genuinely new. */
     const at = prefs['pos:' + id];
     /* 2,500 characters, about a page and a half. A copyright notice and a newsletter advert
        clear a few hundred and would still be chosen by a smaller number; a real chapter or
        introduction runs to tens of thousands. If nothing clears it — a book of very short
        sections — findIndex gives -1 and we start at the beginning, which is right. */
     const firstReal = Math.max(0, lens.findIndex((n) => n >= 2500));
-    await rdShow(at ? at.idx : firstReal);
-    if (at && at.top) $('rd-scroll').scrollTop = at.top;
+    const from = Number(book.page) > 1 ? rdLocate(Number(book.page)) : null;
+    await rdShow(at ? at.idx : (from ? from.idx : firstReal));
+    const sc = $('rd-scroll');
+    if (at && at.top) sc.scrollTop = at.top;
+    else if (from) sc.scrollTop = Math.round(from.frac * Math.max(0, sc.scrollHeight - sc.clientHeight));
+    rd.restoring = false;
     rdSyncMeta();
     step('read_opened');
   } catch (e) {
@@ -3873,11 +3905,17 @@ async function rdAttach(id, file) {
     toast('Choose an .epub file'); return false;
   }
   if (file.size > MAX_BOOK_BYTES) { toast('That file is too large'); return false; }
+  return rdAttachBuffer(id, await file.arrayBuffer());
+}
+/* The bytes, once we have them — from a file the reader picked, or from one the phone's share
+   sheet handed to the service worker. Both routes end here so there is one place that decides
+   what a valid book is. */
+async function rdAttachBuffer(id, buf) {
+  if (!buf || buf.byteLength > MAX_BOOK_BYTES) { toast('That file is too large'); return false; }
   if (typeof DecompressionStream === 'undefined') {
     toast('This browser is too old to open EPUBs'); return false;
   }
   try {
-    const buf = await file.arrayBuffer();
     const epub = await parseEpub(buf);            // fail before storing, not on first open
     await filePut(id, buf);
     hasFile.add(id);
@@ -3932,7 +3970,7 @@ async function rdToc() {
   if (!items.length) items = rd.epub.spine.map((s, i) => ({ label: 'Section ' + (i + 1), at: i, hash: '' }));
 
   const { bg, close } = openSheet(
-    '<b class="sheet-title">Contents</b><div class="sheet-scroll" id="toc-list">'
+    '<div class="sheet-head">Contents</div><div class="sheet-scroll" id="toc-list">'
     + items.map((it, i) => `<button class="pick toc" data-at="${it.at}" data-hash="${esc(it.hash)}"><span class="pt">${esc(it.label)}</span></button>`).join('')
     + '</div>', 'Contents');
   bg.querySelectorAll('.toc').forEach((bt) => {
@@ -3982,7 +4020,7 @@ function rdWire() {
 function rdNoteSheet(seed) {
   const page = rdPage();
   const { bg, close } = openSheet(
-    '<b class="sheet-title">Keep a thought</b>'
+    '<div class="sheet-head">Keep a thought</div>'
     + '<p class="sheet-note">From ' + esc(rd.book.title || 'this book') + '</p>'
     + '<textarea id="rn-text" placeholder="What struck you?"></textarea>'
     + '<div class="two" style="margin-top:6px;align-items:flex-end">'
@@ -4002,6 +4040,56 @@ function rdNoteSheet(seed) {
   };
 }
 
+/* ---- A book shared in from the phone ----
+   Downloads → ⋮ → Share → Kept. The service worker catches that POST inside the browser and
+   leaves the file under a reserved key; this collects it on the next load. The worker cannot
+   ask which book it is, so that question is asked here, once, and only when there is something
+   to ask about.
+   Collected and DELETED before anything else can fail, so a file that turns out not to be a
+   readable EPUB cannot sit in storage re-prompting on every single load. */
+async function takeIncoming() {
+  let inc = null;
+  try { inc = await idbDo('readonly', (st) => st.get('incoming')); } catch (e) { return; }
+  if (!inc || !inc.buf) return;
+  try { await idbDo('readwrite', (st) => st.delete('incoming')); } catch (e) {}
+
+  const name = String(inc.name || 'book.epub').replace(/\.epub$/i, '');
+  /* Offer the books that do not already have a file, best guess first. Somebody sharing
+     "Deep Work - C Newport.epub" almost always means the Deep Work already on their shelf, and
+     making them find it in a list is the kind of small tax that stops people bothering. */
+  const words = foldText(name).split(/[^a-z0-9]+/).filter((w) => w.length > 3);
+  const score = (b) => {
+    const hay = foldText((b.title || '') + ' ' + (b.author || ''));
+    return words.filter((w) => hay.includes(w)).length;
+  };
+  const cands = state.books.filter((b) => !hasFile.has(b.id))
+    .map((b) => ({ b, s: score(b) })).sort((x, y) => y.s - x.s);
+
+  const { bg, close } = openSheet(
+    '<div class="sheet-head">Add this book</div>'
+    + '<p class="sheet-note">' + esc(inc.name || 'book.epub') + ' — which book on your shelf is it? It stays on this phone.</p>'
+    + '<div class="sheet-scroll">'
+    + cands.map((c) => `<button class="pick inc" data-id="${c.b.id}"><span class="pt">${esc(c.b.title)}${c.b.author ? `<span class="dim"> — ${esc(c.b.author)}</span>` : ''}</span></button>`).join('')
+    + `<button class="pick inc" data-id=""><span class="pt">＋ Add "${esc(name)}" as a new book</span></button>`
+    + '</div>', 'Add this book');
+
+  bg.querySelectorAll('.inc').forEach((bt) => bt.onclick = async () => {
+    bt.disabled = true;
+    let id = bt.dataset.id;
+    if (!id) {
+      /* A new shelf entry with no page count. The reader falls back to counting characters,
+         which is why total is allowed to stay null rather than being guessed at. */
+      id = uid();
+      state.books.push({ id, title: name.slice(0, 300), author: '', total: null, page: 0,
+        status: 'reading', rating: 0, notes: [], started: Date.now(), updated: Date.now() });
+      step('book_added');
+      save();
+    }
+    close();
+    if (await rdAttachBuffer(id, inc.buf)) { openId = id; renderStats(); renderLibrary(); rdOpen(id); }
+  });
+}
+
 /* Started here, at the very END of the script, and not up with the other boot calls. Both of
    these reach into the reader's own bindings, and a `let` is unreachable until its line has
    run — calling them earlier throws before the app has finished defining itself.
@@ -4012,6 +4100,19 @@ function rdNoteSheet(seed) {
 rdWire();
 refreshHasFile()
   .then(() => { if (hasFile.size) { if (openId) openBook(openId); else renderLibrary(); } })
+  /* After the shelf knows which books already have files, so the "which book is this?" list
+     can leave out the ones that are already sorted. */
+  .then(takeIncoming)
   .catch(() => {});
+/* The share sheet redirects here with a flag. Only the failures need saying — a book that
+   arrived is about to announce itself by opening a sheet. */
+(() => {
+  const shared = new URLSearchParams(location.search).get('shared');
+  if (shared === 'retry') toast('Almost — open Kept once, then share the book again');
+  else if (shared === 'none') toast("That file couldn't be read");
+  /* Take the flag out of the URL so a refresh, or the icon's own start_url, does not replay
+     the message days later. */
+  if (shared) history.replaceState(null, '', location.pathname);
+})();
 
 </script>
