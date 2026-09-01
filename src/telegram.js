@@ -118,7 +118,9 @@ export async function sendKeyboard(text, rows, chatId = defaultChat()) {
 export async function sendInline(text, rows, chatId = defaultChat()) {
   if (!chatId) return;
   const inline_keyboard = rows.map((r) =>
-    r.map((b) => (b.url ? { text: b.text, url: b.url } : { text: b.text, callback_data: b.data }))
+    r.map((b) => (b.webApp
+      ? { text: b.text, web_app: { url: b.webApp } }
+      : b.url ? { text: b.text, url: b.url } : { text: b.text, callback_data: b.data }))
   );
   const post = (body) =>
     fetch(`${API}/sendMessage`, {
@@ -266,4 +268,26 @@ export async function poll(onMessage) {
       await new Promise((r) => setTimeout(r, 3000));
     }
   }
+}
+
+// The bot's Menu button — the one sitting beside the message box, where a person looks for
+// "the app". Set once at boot and it stays there.
+//
+// This exists because a web_app button in a REPLY KEYBOARD does not reliably carry Telegram's
+// signature on every client: on some it opens the page with an empty initData, which the server
+// correctly refuses, and the person is left staring at "not authorised" in a bot that works.
+// The menu button signs on every client, and it is also simply the right home for an app.
+export async function setMenuButton(url, text = 'Open', chatId = defaultChat()) {
+  if (!url) return;
+  const body = {
+    menu_button: { type: 'web_app', text: text.slice(0, 16), web_app: { url } },
+    ...(chatId ? { chat_id: Number(chatId) } : {}),
+  };
+  const res = await fetch(`${API}/setChatMenuButton`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) console.error('[telegram] setMenuButton failed:', await res.text());
+  else console.log(`[telegram] menu button → ${url}`);
 }

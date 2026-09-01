@@ -17,7 +17,7 @@
 
 import { connect, rawCol as col } from '../db.js';
 import { config } from '../config.js';
-import { poll, setCommands, sendKeyboard } from '../telegram.js';
+import { poll, setCommands, sendKeyboard, sendInline, setMenuButton } from '../telegram.js';
 import * as bot from './bot.js';
 import { ensureIndexes } from './store.js';
 import { startWeb } from './web.js';
@@ -64,13 +64,22 @@ async function main() {
     console.error('[pocket] web failed to start (the bot continues):', err.message);
   }
 
-  const keyboard = config.pocketUrl
-    ? [[{ text: '📊 Open Pocket', webApp: config.pocketUrl }], ...bot.KEYBOARD]
-    : bot.KEYBOARD;
-  if (!config.pocketUrl) {
-    console.warn('[pocket] no public URL yet — generate a domain in Railway, or set POCKET_URL, for the Open Pocket button.');
+  if (config.pocketUrl) {
+    // The menu button beside the message box. The reliable way in — a reply-keyboard web_app
+    // button does not carry Telegram's signature on every client, and an unsigned open is
+    // refused by the server, which reads as the app being broken when it is not.
+    await setMenuButton(config.pocketUrl, 'Pocket').catch((e) => console.error('[pocket] menu button:', e.message));
+  } else {
+    console.warn('[pocket] no public URL — generate a domain in Railway, or set POCKET_URL.');
   }
-  await sendKeyboard(`Pocket is up. Totals in ${config.baseCurrency}.`, keyboard).catch(() => {});
+
+  await sendKeyboard(`Pocket is up. Totals in ${config.baseCurrency}.`, bot.KEYBOARD).catch(() => {});
+  // And an inline button, which signs reliably everywhere, so there is a second way in that
+  // does not depend on the menu button having been picked up yet.
+  if (config.pocketUrl) {
+    await sendInline('Tap to open Pocket — or use the Menu button next to the message box.',
+      [[{ text: '📊 Open Pocket', webApp: config.pocketUrl }]]).catch(() => {});
+  }
   await poll(bot.route);
 }
 
