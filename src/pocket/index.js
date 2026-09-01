@@ -15,7 +15,7 @@
 //
 // Read docs/pocket.md before changing the deploy.
 
-import { connect, col } from '../db.js';
+import { connect, rawCol as col } from '../db.js';
 import { config } from '../config.js';
 import { poll, setCommands, sendKeyboard } from '../telegram.js';
 import * as bot from './bot.js';

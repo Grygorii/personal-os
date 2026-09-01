@@ -14,7 +14,7 @@
 // Read docs/steward.md before changing the deploy.
 
 import cron from 'node-cron';
-import { connect, col } from '../db.js';
+import { connect, rawCol as col } from '../db.js';
 import { config, warnIfNoLlmKey } from '../config.js';
 import { poll, setCommands, sendKeyboard } from '../telegram.js';
 import * as bot from './bot.js';

@@ -286,3 +286,42 @@ test('parseEntry: a rate can sit anywhere, and is optional', () => {
   // The rate and the connecting word never end up in the label.
   assert.equal(parseEntry('add loan 200000 EGP at 24% car credit').label, 'car credit');
 });
+
+// ---- The data layer these apps are allowed to use ----
+//
+// This is here because of a real deploy failure, and because a unit test could have caught it
+// and did not exist. Pocket and the Steward were written against col(), which returns a
+// per-user view whose every method calls uid() — and uid() throws when there is no user
+// context, which single-user apps never establish. It connected, then died on the first
+// createIndex; without that call it would have died later on the first save instead.
+//
+// Both are single-tenant with a database each, so rawCol() is correct AND has to stay correct.
+import { readFileSync } from 'node:fs';
+
+test('the single-user apps import rawCol, never the per-user col', () => {
+  for (const file of [
+    'src/pocket/store.js', 'src/pocket/index.js',
+    'src/steward/store.js', 'src/steward/index.js',
+  ]) {
+    const src = readFileSync(new URL('../' + file, import.meta.url), 'utf8');
+    const importLine = src.split('\n').find((l) => l.includes("from '../db.js'"));
+    assert.ok(importLine, `${file} should import from db.js`);
+    assert.match(importLine, /rawCol/, `${file} must use rawCol — col() throws without a user context`);
+    // `rawCol as col` legitimately contains the word "col", so remove the alias before
+    // checking that the scoped export is not ALSO being imported on its own.
+    const withoutAlias = importLine.replace(/rawCol\s+as\s+col/g, 'rawCol');
+    assert.doesNotMatch(withoutAlias, /[{,]\s*col\s*[,}]/, `${file} must not import the scoped col`);
+  }
+});
+
+test('the scoped col genuinely lacks what these apps need', async () => {
+  // Not a style rule — the wrapper really does not expose createIndex, which is exactly how
+  // this surfaced in production.
+  const db = await import('../src/db.js');
+  assert.equal(typeof db.rawCol, 'function');
+  assert.equal(typeof db.col, 'function');
+  // Both throw before a connection, so the shape is asserted from the module's own contract:
+  // GLOBAL_COLLECTIONS pass through raw, everything else is wrapped.
+  assert.throws(() => db.col('accounts'), /DB not connected/);
+  assert.throws(() => db.rawCol('accounts'), /DB not connected/);
+});

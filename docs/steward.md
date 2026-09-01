@@ -162,6 +162,22 @@ It is built to be able to tell him he is losing. That is the point of building i
 Under a year the number is mostly noise and the bot says so. Around year two it starts to
 mean something.
 
+## Why this app uses `rawCol()`
+
+`col()` returns a **per-user view** of a collection, and every one of its methods calls
+`uid()` — which **throws when there is no user context**. That scoping is right for Kept, where
+one database holds many people. It is wrong here: Steward is single-tenant with a database of its
+own, so a `userId` on every document would be a constant that buys nothing, and there is no
+user context to establish.
+
+So `rawCol()` is correct, and this section is the justification `CLAUDE.md` asks for whenever
+it is used.
+
+Found the hard way. Built on `col()`, it connected and then died on `createIndex`, which the
+scoped view does not expose. Had that call not been there it would have crashed later, on the
+first save, which is a far worse place to discover it. `test/pocket.test.js` now asserts both
+apps import `rawCol`.
+
 ## Not done yet
 
 - Not wired to a token or deployed — steps above.

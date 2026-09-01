@@ -8,7 +8,18 @@
 // Nothing time-series is stored. Prices are fetched, used and dropped — a row per symbol per
 // day is how a free tier fills up, and it buys nothing a journal needs.
 
-import { col } from '../db.js';
+// SINGLE-TENANT ON PURPOSE, so this file uses rawCol() and not col().
+//
+// col() returns a per-user view whose every method calls uid(), and uid() THROWS when there is
+// no user context. That scoping exists because Kept is multi-tenant and one database holds
+// many people; this app is one person's, in a database of its own, where a userId field would
+// be a constant on every document and buy nothing. rawCol() is the honest choice here, and
+// this comment is the justification CLAUDE.md asks for whenever it is used.
+//
+// Learned the hard way: built on col(), it connected, then died on the first createIndex — and
+// had that call not existed it would have crashed later on the first save instead, which is a
+// worse place to find out.
+import { rawCol as col } from '../db.js';
 import { cleanPosition } from './book.js';
 
 const POSITIONS = 'positions';
