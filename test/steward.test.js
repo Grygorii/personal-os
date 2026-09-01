@@ -175,3 +175,88 @@ test('priceFacts: the model is told what it may use and what it must not invent'
   // With nothing at all, it must still say so rather than staying silent.
   assert.match(priceFacts({ prices: {}, missing: [] }), /PRICES: none available/);
 });
+
+// ---- Rebalancing ----
+// He wants to rebalance monthly on a $1,000 book. These exist to make sure the honest answer —
+// "do nothing, the trade costs more than the drift" — is the one the arithmetic actually gives,
+// because that is the answer most months and it is the one that saves him money.
+
+import { driftOf, rebalancePlan, REBALANCE_RULES } from '../src/steward/book.js';
+
+const T = (ticker, qty, price, target) =>
+  cleanPosition({ ticker, target, entries: [{ qty, price }] });
+
+test('driftOf: actual weight against the target that was written down', () => {
+  // 600 of KO, 400 of PEP, in a 1,000 book with 50/50 targets.
+  const positions = [T('KO', 60, 10, 50), T('PEP', 40, 10, 50)];
+  const d = driftOf(positions, { KO: { price: 10 }, PEP: { price: 10 } });
+  assert.equal(d.total, 1000);
+  const ko = d.rows.find((r) => r.ticker === 'KO');
+  assert.equal(ko.actualPct, 60);
+  assert.equal(ko.drift, 10, 'ten points above target');
+  assert.equal(ko.gap, -100, 'a hundred dollars too much');
+  assert.equal(ko.outside, true, 'past the tighter of 5pts and a quarter of 50%');
+});
+
+test('driftOf: an unfinished plan is named, not silently measured against', () => {
+  const d = driftOf([T('KO', 60, 10, 30), T('PEP', 40, 10, 30)], { KO: { price: 10 }, PEP: { price: 10 } });
+  assert.equal(d.targetsSum, 60);
+  const plan = rebalancePlan({ positions: [T('KO', 60, 10, 30), T('PEP', 40, 10, 30)], prices: { KO: { price: 10 }, PEP: { price: 10 } } });
+  assert.match(plan.notes.join(' '), /add up to 60%/);
+});
+
+test('rebalancePlan: small drift on a small book means DO NOTHING, and says why', () => {
+  // 1,000 book, KO 2 points off target. Two points of a 1,000 book is $20 — less than the
+  // minimum trade, so acting on it costs more than the drift it corrects.
+  const positions = [T('KO', 52, 10, 50), T('PEP', 48, 10, 50)];
+  const plan = rebalancePlan({ positions, prices: { KO: { price: 10 }, PEP: { price: 10 } } });
+  assert.deepEqual(plan.buys, []);
+  assert.deepEqual(plan.sells, [], 'inside the band, so nothing is sold');
+  assert.match(plan.notes.join(' '), /Nothing to do/);
+  assert.match(plan.notes.join(' '), /cost more than the drift/);
+});
+
+test('rebalancePlan: new money goes to the underweight, and nothing is sold', () => {
+  const positions = [T('KO', 70, 10, 50), T('PEP', 30, 10, 50)];
+  const prices = { KO: { price: 10 }, PEP: { price: 10 } };
+  const plan = rebalancePlan({ positions, prices, contribution: 200 });
+  assert.equal(plan.sells.length, 0, 'a contribution fixes drift without realising anything');
+  assert.equal(plan.buys.length, 1);
+  assert.equal(plan.buys[0].ticker, 'PEP', 'the one furthest below target');
+  assert.equal(plan.buys[0].amount, 200, 'all of it, since the gap is larger than the cheque');
+});
+
+test('rebalancePlan: a contribution larger than the gap still gets fully allocated', () => {
+  const positions = [T('KO', 55, 10, 50), T('PEP', 45, 10, 50)];
+  const plan = rebalancePlan({ positions, prices: { KO: { price: 10 }, PEP: { price: 10 } }, contribution: 500 });
+  const total = plan.buys.reduce((n, b) => n + b.amount, 0);
+  assert.equal(total, 500, 'no money is left unallocated');
+});
+
+test('rebalancePlan: selling is a last resort — only outside the band, only with no new money', () => {
+  const positions = [T('KO', 70, 10, 50), T('PEP', 30, 10, 50)];
+  const prices = { KO: { price: 10 }, PEP: { price: 10 } };
+  const withCash = rebalancePlan({ positions, prices, contribution: 100 });
+  assert.equal(withCash.sells.length, 0, 'new money available means no sale');
+
+  const noCash = rebalancePlan({ positions, prices });
+  assert.equal(noCash.sells.length, 1, 'genuinely outside the band and no contribution');
+  assert.equal(noCash.sells[0].ticker, 'KO');
+  assert.equal(noCash.sells[0].amount, 200);
+});
+
+test('rebalancePlan: no targets means it asks for them rather than inventing any', () => {
+  const plan = rebalancePlan({ positions: [cleanPosition({ ticker: 'KO', entries: [{ qty: 10, price: 10 }] })], prices: { KO: { price: 10 } } });
+  assert.match(plan.notes.join(' '), /No targets set/);
+  assert.deepEqual(plan.buys, []);
+});
+
+test('REBALANCE_RULES: the band is the tighter of absolute and relative', () => {
+  // A 4% target: a quarter of it is 1pt, which is tighter than 5pts and so governs.
+  const small = driftOf([T('A', 6, 10, 4), T('B', 94, 10, 96)], { A: { price: 10 }, B: { price: 10 } });
+  assert.equal(small.rows.find((r) => r.ticker === 'A').band, 1);
+  // A 50% target: a quarter is 12.5pts, so the 5pt absolute band governs instead.
+  const big = driftOf([T('A', 50, 10, 50), T('B', 50, 10, 50)], { A: { price: 10 }, B: { price: 10 } });
+  assert.equal(big.rows.find((r) => r.ticker === 'A').band, 5);
+  assert.equal(REBALANCE_RULES.minTradeValue, 25);
+});

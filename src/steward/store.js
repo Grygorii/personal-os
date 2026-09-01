@@ -59,6 +59,14 @@ export async function recordCheck({ ticker, verdict, note }) {
   return savePosition(p);
 }
 
+/** What share of the book this position is meant to be. Without it "drifted" has no meaning. */
+export async function setTarget({ ticker, target }) {
+  const p = await getPosition(ticker);
+  if (!p) return null;
+  p.target = target;
+  return savePosition(p);
+}
+
 export async function setThesis({ ticker, thesis, invalidation }) {
   const p = await getPosition(ticker);
   if (!p) return null;

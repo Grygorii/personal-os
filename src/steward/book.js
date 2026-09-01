@@ -46,6 +46,10 @@ export function cleanPosition(p) {
     // The two fields the whole thing exists for.
     thesis: txt(p?.thesis, 2000),
     invalidation: txt(p?.invalidation, 1000),
+    // What share of the book this is MEANT to be. Rebalancing is meaningless without it:
+    // "drifted" is a statement about a target, and a target nobody wrote down becomes
+    // whatever the position happens to be today.
+    target: p?.target == null ? null : Math.max(0, Math.min(100, num(p.target))),
     // Every time he was asked "does the thesis still hold?" and what he said.
     checks: (Array.isArray(p?.checks) ? p.checks : []).slice(-100).map((c) => ({
       ts: num(c?.ts) || Date.now(),
@@ -257,4 +261,117 @@ export function dividendFlags(f, rules = INCOME_RULES) {
     flags.push(`dividend has SHRUNK over 5 years (${f.divGrowth5y.toFixed(1)}%/yr) — income, but not growing`);
   }
   return flags;
+}
+
+// ---- Rebalancing ----
+//
+// He wants to rebalance monthly and quarterly. On a small book, done as calendar trading, that
+// is a way of paying costs for the feeling of being busy: at £1,000 a 5% drift on a 10%
+// position is £5, and no spread, no currency conversion and no tax event is worth paying to
+// move £5. The arithmetic below exists so the bot can say DO NOTHING and show its working,
+// which is the answer most months.
+//
+// Two rules do almost all of the useful work:
+//   1. BANDS, not the calendar. Trade when a holding has actually drifted past a threshold —
+//      not because a month has ended. Checking monthly is fine; trading monthly is not.
+//   2. REBALANCE WITH NEW MONEY FIRST. Directing a contribution at whatever is underweight
+//      moves the book toward its targets while paying one spread instead of two, and without
+//      realising a gain. Selling to rebalance is the last resort, not the default.
+
+export const REBALANCE_RULES = {
+  // The 5/25 rule, adapted: act on whichever is TIGHTER — 5 absolute percentage points, or a
+  // quarter of the target's own size. A 4% target that has become 6% has moved 50% relatively
+  // and matters; a 40% target moving to 42% has not.
+  absoluteBand: 5,
+  relativeBand: 25,
+  // Below this, a trade costs more than the drift it corrects. The single most important
+  // number here, and the reason most months should end in no trade at all.
+  minTradeValue: 25,
+};
+
+/** Where each position sits against its target. Pure arithmetic — no opinion. */
+export function driftOf(positions, prices, rules = REBALANCE_RULES) {
+  const b = summarise(positions, prices);
+  const total = b.totalValue;
+  const rows = b.open
+    .filter(({ p }) => p.target != null)
+    .map(({ p, v }) => {
+      const actualPct = total > 0 && v.value != null ? (v.value / total) * 100 : null;
+      const drift = actualPct == null ? null : actualPct - p.target;
+      // Tighter of the two bands, so small targets are held to a proportionate standard.
+      const band = Math.min(rules.absoluteBand, (p.target * rules.relativeBand) / 100);
+      return {
+        ticker: p.ticker,
+        target: p.target,
+        actualPct,
+        drift,
+        band,
+        outside: drift != null && Math.abs(drift) > band,
+        value: v.value,
+        // What it would take to get back to target, in money.
+        gap: actualPct == null ? null : (p.target / 100) * total - v.value,
+      };
+    });
+  const targeted = rows.reduce((n, r) => n + r.target, 0);
+  return {
+    rows, total,
+    // Targets that do not add to 100 are not a rounding problem, they are a plan that has not
+    // been finished — and every drift below is measured against it.
+    targetsSum: targeted,
+    untargeted: b.open.filter(({ p }) => p.target == null).map(({ p }) => p.ticker),
+  };
+}
+
+/** What to actually do. `contribution` is new money about to go in; with it, the answer is
+ *  almost always "buy the underweight ones" and never "sell". */
+export function rebalancePlan({ positions, prices, contribution = 0, rules = REBALANCE_RULES }) {
+  const d = driftOf(positions, prices, rules);
+  const add = Math.max(0, Number(contribution) || 0);
+  const notes = [];
+  if (!d.rows.length) {
+    return { buys: [], sells: [], notes: ['No targets set. "target KO 8" tells me what share KO is meant to be.'], drift: d };
+  }
+  if (Math.abs(d.targetsSum - 100) > 1) {
+    notes.push(`Targets add up to ${d.targetsSum.toFixed(0)}%, not 100% — every drift below is measured against an unfinished plan.`);
+  }
+  if (d.untargeted.length) notes.push(`No target set for ${d.untargeted.join(', ')} — not counted in the plan.`);
+
+  // New money goes to whatever is furthest BELOW target, largest gap first, until it runs out.
+  const buys = [];
+  if (add > 0) {
+    let left = add;
+    const short = d.rows.filter((r) => r.gap != null && r.gap > 0).sort((a, b2) => b2.gap - a.gap);
+    for (const r of short) {
+      if (left < rules.minTradeValue) break;
+      const amount = Math.min(left, r.gap);
+      if (amount < rules.minTradeValue) continue;
+      buys.push({ ticker: r.ticker, amount, why: `${r.actualPct.toFixed(1)}% vs ${r.target}% target` });
+      left -= amount;
+    }
+    // Anything left over goes to the biggest underweight rather than being left unallocated.
+    if (left >= rules.minTradeValue && buys.length) buys[0].amount += left;
+    else if (left >= rules.minTradeValue && short.length) buys.push({ ticker: short[0].ticker, amount: left, why: 'furthest below target' });
+  }
+
+  // Selling is only ever suggested for a holding genuinely outside its band, and only when
+  // there is no contribution able to fix it — every sale is a spread and possibly a tax event.
+  const sells = [];
+  if (!add) {
+    for (const r of d.rows) {
+      if (!r.outside || r.gap == null || r.gap >= 0) continue;
+      const amount = Math.abs(r.gap);
+      if (amount < rules.minTradeValue) continue;
+      sells.push({ ticker: r.ticker, amount, why: `${r.actualPct.toFixed(1)}% vs ${r.target}% target, past its ${r.band.toFixed(1)}pt band` });
+    }
+  }
+
+  if (!buys.length && !sells.length) {
+    const worst = d.rows.filter((r) => r.drift != null).sort((a, b2) => Math.abs(b2.drift) - Math.abs(a.drift))[0];
+    notes.push(worst
+      ? `Nothing to do. Furthest off is ${worst.ticker} at ${worst.drift > 0 ? '+' : ''}${worst.drift.toFixed(1)} points, inside its ${worst.band.toFixed(1)}pt band.`
+      : 'Nothing to do.');
+    // The whole point of running this monthly is to be told this, cheaply, most of the time.
+    notes.push(`Trades under $${rules.minTradeValue} cost more than the drift they fix.`);
+  }
+  return { buys, sells, notes, drift: d };
 }

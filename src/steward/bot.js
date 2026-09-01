@@ -13,7 +13,7 @@ import { config } from '../config.js';
 import * as store from './store.js';
 import * as market from './market.js';
 import * as brain from './brain.js';
-import { parseTradeLine, positionMath, summarise, stale, brokenButHeld, checkRules, DEFAULT_RULES, incomeOf, dividendFlags } from './book.js';
+import { parseTradeLine, positionMath, summarise, stale, brokenButHeld, checkRules, DEFAULT_RULES, incomeOf, dividendFlags, rebalancePlan } from './book.js';
 
 const money = (n) => (n == null ? 'n/a' : (n < 0 ? '-' : '') + '$' + Math.abs(n).toFixed(2));
 const pct = (n) => (n == null ? '' : `${n >= 0 ? '+' : ''}${n.toFixed(1)}%`);
@@ -101,6 +101,32 @@ async function cmdTrade(parsed, rawText) {
   return lines.join('\n');
 }
 
+/** The monthly question, answered arithmetically. "Do nothing" is the expected result and is
+ *  printed as loudly as a trade would be — on a small book that answer is worth more than any
+ *  suggestion, because the alternative is paying spreads to move a few dollars around. */
+async function cmdRebalance(contribution) {
+  const positions = await store.allPositions();
+  if (!positions.filter((p) => positionMath(p).open).length) {
+    return 'Nothing in the book yet. Once you own something, "target KO 8" sets what share it should be, and I check the drift from there.';
+  }
+  const { prices } = await priced(positions);
+  const plan = rebalancePlan({ positions, prices, contribution });
+  const out = [];
+
+  const drifted = plan.drift.rows.filter((r) => r.drift != null);
+  if (drifted.length) {
+    out.push(drifted
+      .sort((a, b) => Math.abs(b.drift) - Math.abs(a.drift))
+      .map((r) => `${r.ticker}  ${r.actualPct.toFixed(1)}% vs ${r.target}%  ${r.drift > 0 ? '+' : ''}${r.drift.toFixed(1)}${r.outside ? '  ⚠ outside band' : ''}`)
+      .join('\n'));
+  }
+  if (contribution > 0) out.push('', `Putting in ${money(contribution)}:`);
+  for (const b of plan.buys) out.push(`  Buy ${money(b.amount)} ${b.ticker} — ${b.why}`);
+  for (const s of plan.sells) out.push(`  Trim ${money(s.amount)} ${s.ticker} — ${s.why}`);
+  if (plan.notes.length) out.push('', ...plan.notes);
+  return out.join('\n');
+}
+
 async function cmdIdea(ticker, note) {
   const sym = market.cleanTicker(ticker);
   if (!sym) return 'Which ticker? e.g. "idea MSTR".';
@@ -138,8 +164,8 @@ export async function review(when = 'the weekly review') {
 // commands: a tap sends the label as text, so it walks the same path as typing and there is
 // no second code path to keep in sync.
 export const KEYBOARD = [
-  ['📓 Book', '🔍 Review'],
-  ['💡 Idea', '⚖️ Check theses'],
+  ['📓 Book', '⚖️ Rebalance'],
+  ['🔍 Review', '✅ Check theses'],
 ];
 /** Strip the emoji so "📓 Book" routes exactly as "book" does. */
 const stripIcon = (s) => String(s || '').replace(/^[^\p{L}\p{N}/]+/u, '').trim();
@@ -199,6 +225,12 @@ export async function handle(text, chatId) {
   if (/^\/?review\b/.test(low)) return (await review('a review he asked for just now')) || 'Nothing open to review.';
 
   let m;
+  if ((m = s.match(/^\/?rebalance\s*(\d+(?:[.,]\d+)?)?/i))) return cmdRebalance(m[1] ? Number(m[1].replace(',', '.')) : 0);
+  if ((m = s.match(/^\/?target\s+(\S+)\s+(\d+(?:[.,]\d+)?)\s*%?$/i))) {
+    const p = await store.setTarget({ ticker: m[1].toUpperCase(), target: Number(m[2].replace(',', '.')) });
+    if (!p) return `I don't have ${m[1].toUpperCase()} in the book. Record a buy first, or say "plan" to set the whole thing up.`;
+    return `${p.ticker} target set to ${p.target}%.`;
+  }
   if ((m = s.match(/^\/?idea\s+(\S+)\s*(.*)$/i))) return cmdIdea(m[1], m[2]);
   if ((m = s.match(/^\/?thesis\s+(\S+)\s+(.+)$/i))) {
     const p = await store.setThesis({ ticker: m[1].toUpperCase(), thesis: m[2] });
