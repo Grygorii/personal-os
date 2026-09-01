@@ -6,7 +6,7 @@ import { startServer } from './webserver.js';
 import { syncWordBank } from './agents/english.js';
 import * as users from './users.js';
 import { runAs } from './ctx.js';
-import { config } from './config.js';
+import { config, warnIfNoLlmKey } from './config.js';
 import { initPush } from './push.js';
 
 // Bump on each deploy so we can confirm which build is actually live (read meta.boot).
@@ -25,6 +25,7 @@ process.on('uncaughtException', (err) => {
 });
 
 async function main() {
+  warnIfNoLlmKey();   // this app does call a model; Pocket does not, so it never says this
   // ---- Which app is this? ----
   // Railway defaults an unconfigured service to `npm start`, which is THIS file. So a service
   // meant to be Pocket or the Steward, whose Custom Start Command never got set, boots the

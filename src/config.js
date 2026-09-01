@@ -81,6 +81,15 @@ const required = {
 for (const [key, value] of Object.entries(required)) {
   if (!value) console.warn(`[config] Missing env var: ${key}`);
 }
-if (!config.anthropicKey && !config.geminiKey) {
-  console.warn('[config] No LLM key set — need ANTHROPIC_API_KEY or GEMINI_API_KEY');
+
+// This file is shared by three apps and only two of them talk to a model, so the LLM warning
+// cannot live here unconditionally. Printed on every boot it becomes noise at best — and at
+// worst it is read as a cause: Pocket crashed on a missing MONGO_URI while announcing "No LLM
+// key set", and the obvious reading of those two lines together sent a debugging session off
+// after an API key the app never uses. A warning that is not true of the running process is
+// worse than no warning, because someone will act on it.
+export function warnIfNoLlmKey() {
+  if (!config.anthropicKey && !config.geminiKey) {
+    console.warn('[config] No LLM key set — need ANTHROPIC_API_KEY or GEMINI_API_KEY');
+  }
 }

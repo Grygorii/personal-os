@@ -15,7 +15,7 @@
 
 import cron from 'node-cron';
 import { connect, col } from '../db.js';
-import { config } from '../config.js';
+import { config, warnIfNoLlmKey } from '../config.js';
 import { poll, setCommands, sendKeyboard } from '../telegram.js';
 import * as bot from './bot.js';
 import { ensureIndexes } from './store.js';
@@ -32,6 +32,7 @@ process.on('uncaughtException', (err) => {
 });
 
 async function main() {
+  warnIfNoLlmKey();   // this app does call a model; Pocket does not, so it never says this
   // Refusing to start beats starting against the wrong database. Sharing Kept's DB_NAME would
   // put positions in the same database as the reading app on a 512 MB cluster that also holds
   // a live shop — the exact blast radius this split exists to prevent.
