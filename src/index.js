@@ -25,6 +25,25 @@ process.on('uncaughtException', (err) => {
 });
 
 async function main() {
+  // ---- Which app is this? ----
+  // Railway defaults an unconfigured service to `npm start`, which is THIS file. So a service
+  // meant to be Pocket or the Steward, whose Custom Start Command never got set, boots the
+  // coach instead — with the right token and the right database name, so it looks deployed and
+  // answers in Telegram with entirely the wrong app. That happened, and the only clue was a
+  // menu offering Body map and Study deck in a bot meant to track money.
+  //
+  // The other two entry points already refuse to run against this one's database. This is the
+  // same guard pointing the other way: if DB_NAME names another app, the start command is
+  // wrong, and saying so is far better than serving the wrong bot convincingly.
+  const db = (config.dbName || '').toLowerCase();
+  if (db === 'pocket' || db === 'steward') {
+    console.error(
+      `[boot] DB_NAME is "${config.dbName}" but this is Kept (src/index.js).\n` +
+      `       This service's start command is wrong — it fell back to "npm start".\n` +
+      `       Set the Custom Start Command to "npm run start:${db}".`
+    );
+    process.exit(1);
+  }
   await connect();
   await col('meta').updateOne({ _id: 'boot' }, { $set: { version: VERSION, at: new Date() } }, { upsert: true });
   console.log(`[boot] ${VERSION}`);
