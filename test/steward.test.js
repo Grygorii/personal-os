@@ -260,3 +260,79 @@ test('REBALANCE_RULES: the band is the tighter of absolute and relative', () => 
   assert.equal(big.rows.find((r) => r.ticker === 'A').band, 5);
   assert.equal(REBALANCE_RULES.minTradeValue, 25);
 });
+
+// ---- Beating the boring option ----
+// He already owns a global index portfolio on a standing order that he does not touch. Picking
+// stocks by hand has to beat that or it is a hobby he is paying for. These tests exist to make
+// sure the comparison can actually deliver bad news.
+
+import { benchmarkCompare } from '../src/steward/book.js';
+
+const series = new Map([
+  ['2026-01-02', 100],
+  ['2026-06-01', 125],
+  ['2026-09-01', 150],
+]);
+const at = (d) => Date.parse(d + 'T12:00:00Z');
+
+test('benchmarkCompare: says plainly when the index would have won', () => {
+  // $1,000 into a pick on 2 Jan, now worth $1,200 (+20%). The index went 100 -> 150 (+50%).
+  const positions = [cleanPosition({ ticker: 'PICK', entries: [{ qty: 10, price: 100, ts: at('2026-01-02') }] })];
+  const s = benchmarkCompare({ positions, prices: { PICK: { price: 120 } }, series, benchNow: 150, ticker: 'URTH' });
+  assert.equal(s.contributed, 1000);
+  assert.equal(s.actual, 1200);
+  assert.equal(s.benchValue, 1500, '1,000 bought 10 units at 100, now worth 150 each');
+  assert.equal(s.edge, -300);
+  assert.ok(s.edgePct < 0);
+  assert.equal(s.trustworthy, true);
+});
+
+test('benchmarkCompare: and when the picking genuinely won', () => {
+  const positions = [cleanPosition({ ticker: 'PICK', entries: [{ qty: 10, price: 100, ts: at('2026-01-02') }] })];
+  const s = benchmarkCompare({ positions, prices: { PICK: { price: 200 } }, series, benchNow: 150 });
+  assert.equal(s.actual, 2000);
+  assert.equal(s.edge, 500);
+});
+
+test('benchmarkCompare: money-weighted — buying a winner late does not flatter the result', () => {
+  // Second tranche goes in on 1 June, when the benchmark had already run to 125. Crediting it
+  // at the January price would hand him benchmark units he never funded.
+  const positions = [cleanPosition({
+    ticker: 'PICK',
+    entries: [
+      { qty: 10, price: 100, ts: at('2026-01-02') },   // 1,000 at bench 100 -> 10 units
+      { qty: 10, price: 100, ts: at('2026-06-01') },   // 1,000 at bench 125 -> 8 units
+    ],
+  })];
+  const s = benchmarkCompare({ positions, prices: { PICK: { price: 100 } }, series, benchNow: 150 });
+  assert.equal(s.contributed, 2000);
+  assert.equal(s.benchValue, 18 * 150, 'eighteen units, not twenty');
+});
+
+test('benchmarkCompare: money taken out leaves the benchmark too', () => {
+  // Without subtracting the sale, he would be credited a benchmark stake he no longer funds.
+  const positions = [cleanPosition({
+    ticker: 'PICK',
+    entries: [{ qty: 10, price: 100, ts: at('2026-01-02') }],
+    exits: [{ qty: 5, price: 100, ts: at('2026-06-01') }],
+  })];
+  const s = benchmarkCompare({ positions, prices: { PICK: { price: 100 } }, series, benchNow: 150 });
+  assert.equal(s.contributed, 500, 'a thousand in, five hundred back out');
+  assert.equal(s.benchValue, 6 * 150, '10 units bought, 4 sold back at 125');
+});
+
+test('benchmarkCompare: a weekend buy uses the last trading day, not nothing', () => {
+  // 2026-01-04 is a Sunday here: there is no row, and dropping the leg would silently shrink
+  // the comparison rather than reporting a gap.
+  const positions = [cleanPosition({ ticker: 'PICK', entries: [{ qty: 10, price: 100, ts: at('2026-01-04') }] })];
+  const s = benchmarkCompare({ positions, prices: { PICK: { price: 100 } }, series, benchNow: 150 });
+  assert.equal(s.missingLegs, 0);
+  assert.equal(s.benchValue, 1500, 'priced off 2 January');
+});
+
+test('benchmarkCompare: a leg with no benchmark price is counted as missing, not skipped quietly', () => {
+  const positions = [cleanPosition({ ticker: 'PICK', entries: [{ qty: 10, price: 100, ts: at('2020-01-02') }] })];
+  const s = benchmarkCompare({ positions, prices: { PICK: { price: 100 } }, series, benchNow: 150 });
+  assert.equal(s.missingLegs, 1);
+  assert.equal(s.trustworthy, false, 'a partial scoreboard must announce itself');
+});

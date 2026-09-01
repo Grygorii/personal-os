@@ -69,6 +69,7 @@ MONGO_URI            same cluster as everything else
 ANTHROPIC_API_KEY    or GEMINI_API_KEY — same llm.js as Kept
 MARKET_API_KEY       Finnhub, free tier, 60 calls/min
 MARKET_PROVIDER      optional: 'finnhub' | 'stooq'. Defaults to finnhub when a key exists.
+BENCHMARK            what his picking is scored against. Default URTH (MSCI World).
 TZ                   schedules run in this zone
 ```
 
@@ -126,6 +127,23 @@ the price falling ahead of a cut that has not been announced yet.** A 4% payout 
 year beats a 12% payout that gets halved, and the bot is instructed to say so every time the
 temptation appears. `dividendFlags()` catches it arithmetically rather than leaving it to be
 argued about.
+
+## The scoreboard
+
+He already has a Revolut robo-advisor: global UCITS accumulating ETFs, EUR100 a month on
+standing order, and — the hard part, which he is already doing — he does not touch it.
+
+So anything he picks by hand has to beat that, or it is a hobby he is paying for. `score`
+compares every buy against the same money going into `BENCHMARK` on the same day. It is
+money-weighted on purpose: buying more of a winner after it has run must not flatter the
+result, and a comparison that ignores WHEN the money went in is the one people reach for when
+they want to like the answer. Sales are subtracted from the benchmark stake too, or he gets
+credited with a position he no longer funds.
+
+It is built to be able to tell him he is losing. That is the point of building it.
+
+Under a year the number is mostly noise and the bot says so. Around year two it starts to
+mean something.
 
 ## Not done yet
 

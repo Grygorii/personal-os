@@ -13,7 +13,7 @@ import { config } from '../config.js';
 import * as store from './store.js';
 import * as market from './market.js';
 import * as brain from './brain.js';
-import { parseTradeLine, positionMath, summarise, stale, brokenButHeld, checkRules, DEFAULT_RULES, incomeOf, dividendFlags, rebalancePlan } from './book.js';
+import { parseTradeLine, positionMath, summarise, stale, brokenButHeld, checkRules, DEFAULT_RULES, incomeOf, dividendFlags, rebalancePlan, benchmarkCompare } from './book.js';
 
 const money = (n) => (n == null ? 'n/a' : (n < 0 ? '-' : '') + '$' + Math.abs(n).toFixed(2));
 const pct = (n) => (n == null ? '' : `${n >= 0 ? '+' : ''}${n.toFixed(1)}%`);
@@ -127,6 +127,38 @@ async function cmdRebalance(contribution) {
   return out.join('\n');
 }
 
+/** Did the picking beat just adding the money to the index?
+ *  The one number that decides whether this whole exercise is worth his evenings. Built to be
+ *  able to say no. */
+async function cmdScore() {
+  const positions = await store.allPositions();
+  if (!positions.some((p) => p.entries.length)) return 'Nothing bought yet — nothing to score.';
+  const bench = config.benchmark;
+  const { prices } = await priced(positions);
+  let series = null, benchNow = null;
+  try {
+    series = await market.history(bench);
+    benchNow = (await market.quote(bench)).price;
+  } catch (e) {
+    return `Can't reach ${bench} history right now, so I won't guess at the comparison.`;
+  }
+  const s = benchmarkCompare({ positions, prices, series, benchNow, ticker: bench });
+  const out = [
+    `You put in ${money(s.contributed)}.`,
+    `Your picks: ${money(s.actual)}`,
+    `Same money in ${bench}: ${money(s.benchValue)}`,
+    '',
+    s.edge >= 0
+      ? `You are ahead by ${money(s.edge)} (${s.edgePct.toFixed(1)}%).`
+      : `You are behind by ${money(Math.abs(s.edge))} (${s.edgePct.toFixed(1)}%). The index would have done better, doing nothing.`,
+  ];
+  if (!s.trustworthy) out.push('', `${s.missingLegs} trade(s) had no ${bench} price on their date and are missing from this — treat it as rough.`);
+  // Early numbers are noise, and a scoreboard that lets him conclude anything from six weeks
+  // is worse than none.
+  out.push('', 'Money-weighted, so buying more of a winner late does not flatter it. Under a year this is mostly noise — it starts meaning something around year two.');
+  return out.join('\n');
+}
+
 async function cmdIdea(ticker, note) {
   const sym = market.cleanTicker(ticker);
   if (!sym) return 'Which ticker? e.g. "idea MSTR".';
@@ -165,7 +197,7 @@ export async function review(when = 'the weekly review') {
 // no second code path to keep in sync.
 export const KEYBOARD = [
   ['📓 Book', '⚖️ Rebalance'],
-  ['🔍 Review', '✅ Check theses'],
+  ['📈 Score', '✅ Check theses'],
 ];
 /** Strip the emoji so "📓 Book" routes exactly as "book" does. */
 const stripIcon = (s) => String(s || '').replace(/^[^\p{L}\p{N}/]+/u, '').trim();
@@ -203,6 +235,7 @@ Just type what you did:
   wrong if MSTR ... — what would prove you wrong
   holds MSTR / broken MSTR — does the thesis still stand?
   idea MSTR — the case for AND against, plus what I don't know
+  score — did your picking beat just buying the index?
   review — what most needs your attention
 
 I never place trades. You do that yourself, and nothing here can move money.`;
@@ -222,6 +255,7 @@ export async function handle(text, chatId) {
   // returning one block of text.
   if (/^check theses$/i.test(s)) return cmdCheckTheses(chatId);
   if (/^\/?(book|status|portfolio)\b/.test(low)) return cmdBook();
+  if (/^\/?(score|vs index|benchmark)\b/.test(low)) return cmdScore();
   if (/^\/?review\b/.test(low)) return (await review('a review he asked for just now')) || 'Nothing open to review.';
 
   let m;

@@ -375,3 +375,69 @@ export function rebalancePlan({ positions, prices, contribution = 0, rules = REB
   }
   return { buys, sells, notes, drift: d };
 }
+
+// ---- The only scoreboard that matters ----
+//
+// He already has a Revolut robo-advisor: global UCITS index ETFs, €100 a month, and — the
+// hard part — he does not touch it. The picking he does here has to beat that, or it is a
+// hobby he is paying for.
+//
+// So every buy is compared against the same money going into the benchmark on the same day.
+// It is money-weighted on purpose: buying more of a winner after it has run should not flatter
+// the result, and a comparison that ignores WHEN the money went in is the comparison people
+// use when they want to like the answer.
+//
+// This is built to be able to tell him he is losing. That is the point of building it.
+
+export function benchmarkCompare({ positions, prices, series, benchNow, ticker = 'BENCH' }) {
+  let contributed = 0;      // what he actually put in, when he put it in
+  let benchUnits = 0;       // what that money would have bought of the benchmark instead
+  let missing = 0;          // legs with no benchmark price — reported, never quietly skipped
+
+  for (const p of positions) {
+    for (const leg of p.entries) {
+      const amount = leg.qty * leg.price;
+      contributed += amount;
+      const on = series ? priceOnLocal(series, leg.ts) : null;
+      if (on == null || !(on > 0)) { missing += 1; continue; }
+      benchUnits += amount / on;
+    }
+    // Money taken back OUT would have come out of the benchmark too, or the comparison quietly
+    // credits him with a bigger benchmark stake than he ever funded.
+    for (const leg of p.exits) {
+      const amount = leg.qty * leg.price;
+      contributed -= amount;
+      const on = series ? priceOnLocal(series, leg.ts) : null;
+      if (on == null || !(on > 0)) { missing += 1; continue; }
+      benchUnits -= amount / on;
+    }
+  }
+
+  const b = summarise(positions, prices);
+  // What he actually has: open positions at today's prices, plus everything already realised.
+  const actual = b.totalValue + b.realised;
+  const benchValue = benchNow > 0 ? benchUnits * benchNow : null;
+  return {
+    ticker,
+    contributed,
+    actual,
+    benchValue,
+    // Positive means the picking has been worth doing. Negative is the answer worth having.
+    edge: benchValue == null ? null : actual - benchValue,
+    edgePct: benchValue > 0 ? ((actual - benchValue) / benchValue) * 100 : null,
+    missingLegs: missing,
+    // A total that silently omits legs is not a scoreboard.
+    trustworthy: missing === 0 && benchValue != null,
+  };
+}
+
+// Kept local so book.js stays free of imports and remains testable with no network at all.
+function priceOnLocal(series, ts) {
+  const d = new Date(ts);
+  for (let i = 0; i < 10; i++) {
+    const key = d.toISOString().slice(0, 10);
+    if (series.has(key)) return series.get(key);
+    d.setUTCDate(d.getUTCDate() - 1);
+  }
+  return null;
+}

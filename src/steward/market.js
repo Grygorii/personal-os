@@ -143,6 +143,56 @@ export async function fundamentalsFor(tickers) {
   return out;
 }
 
+// ---- History, for the only scoreboard that matters ----
+// To answer "would I have done better just adding this to the index?" we need what the
+// benchmark cost on the day of each buy. Stooq serves daily closes as CSV with no key, which
+// is exactly enough — this is a comparison over months and years, not a live quote.
+const seriesCache = new Map();
+
+/** Daily closes as a Map of 'YYYY-MM-DD' -> close. Fetched once per process per symbol. */
+export async function history(rawTicker) {
+  const ticker = cleanTicker(rawTicker);
+  if (!ticker) throw new Error('not a ticker');
+  const hit = seriesCache.get(ticker);
+  if (hit && Date.now() - hit.at < 12 * 3600_000) return hit.series;
+
+  const sym = encodeURIComponent(ticker.toLowerCase() + '.us');
+  const res = await fetch(`https://stooq.com/q/d/l/?s=${sym}&i=d`, {
+    headers: { 'User-Agent': 'personal-os-steward' },
+  });
+  if (!res.ok) throw new Error(`stooq history ${res.status}`);
+  const text = await res.text();
+  const rows = text.trim().split('\n');
+  if (rows.length < 2) throw new Error(`no history for ${ticker}`);
+  const cols = rows[0].split(',').map((c) => c.trim().toLowerCase());
+  const dateAt = cols.indexOf('date');
+  const closeAt = cols.indexOf('close');
+  if (dateAt < 0 || closeAt < 0) throw new Error('unexpected history format');
+  const series = new Map();
+  for (let i = 1; i < rows.length; i++) {
+    const v = rows[i].split(',');
+    const close = Number(v[closeAt]);
+    if (v[dateAt] && Number.isFinite(close) && close > 0) series.set(v[dateAt].trim(), close);
+  }
+  if (!series.size) throw new Error(`no history for ${ticker}`);
+  seriesCache.set(ticker, { series, at: Date.now() });
+  return series;
+}
+
+/** The close on that day, or the most recent trading day before it. Weekends, holidays and a
+ *  buy placed after hours all land on a date with no row; walking backwards is correct and
+ *  returning null would silently drop that leg from the comparison. */
+export function priceOn(series, ts) {
+  if (!series || !series.size) return null;
+  const d = new Date(ts);
+  for (let i = 0; i < 10; i++) {
+    const key = d.toISOString().slice(0, 10);
+    if (series.has(key)) return series.get(key);
+    d.setUTCDate(d.getUTCDate() - 1);
+  }
+  return null;
+}
+
 /** How a quote is written wherever a person will read it: never a bare number. A price with
  *  no time on it is the same trap as a price from memory — it looks current. */
 export function describeQuote(q) {

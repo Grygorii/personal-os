@@ -56,6 +56,10 @@ export const config = {
   // dividend numbers at all, which for an income strategy is most of what matters.
   marketKey: oneLine(process.env.MARKET_API_KEY),
   marketProvider: oneLine(process.env.MARKET_PROVIDER),
+  // What his stock picking is measured against. He already owns a global index portfolio he
+  // does not touch; anything he picks by hand has to beat it or it is a hobby he is paying
+  // for. Default is a world tracker, so the comparison is "the boring thing", not the S&P.
+  benchmark: oneLine(process.env.BENCHMARK) || 'URTH',
   allowedEmails: oneLine(process.env.ALLOWED_EMAILS)
     .split(',')
     .map((e) => e.trim().toLowerCase())
