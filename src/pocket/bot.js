@@ -142,6 +142,9 @@ What you own:
   add portfolio 1000 USD eToro
   add deposit 540000 EGP 20% Cairo savings     (a rate, if it pays one)
   add loan 200000 EGP 24% car credit           (a credit you owe)
+  add deposit 495000 EGP 20% quarterly start 28.05.2024 end 28.05.2027
+                           (dates and how often it pays — that is what turns
+                            a rate into an amount on a date you can plan around)
   accounts                 — list them, with ids to remove
 
   month    — in, out, surplus, where it went

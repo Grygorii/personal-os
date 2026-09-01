@@ -63,7 +63,14 @@
   .rmeta{color:var(--dim);font-size:12px;margin-top:1px}
   .ramt{font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap;text-align:right}
   .rorig{display:block;color:var(--dim);font-size:11px;font-weight:400}
-  .del{border:0;background:none;color:var(--dim);font-size:17px;padding:0 2px;cursor:pointer;line-height:1}
+  /* 44px is the smallest thing a thumb hits reliably; these were 17px of glyph with 2px of
+     padding, and the DESTRUCTIVE one sat directly beside the everyday one. Both are now real
+     targets, and delete is pushed to the far edge with a gap between them. */
+  .del,.edit{border:0;background:none;color:var(--dim);font-size:17px;line-height:1;cursor:pointer;
+    flex:none;width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center}
+  .del{color:var(--dim);margin-left:2px}
+  .del:active{background:var(--out-bg);color:var(--out)}
+  .edit:active{background:var(--line)}
 
   .pill{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:20px;background:var(--in-bg);color:var(--in)}
   .pill.out{background:var(--out-bg);color:var(--out)}
@@ -92,6 +99,42 @@
   .chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
   .chip{background:var(--bg);border:1px solid var(--line);border-radius:16px;color:var(--dim);font:12px/1 inherit;padding:8px 11px;cursor:pointer}
   .err{color:var(--out);font-size:13px;margin-bottom:10px}
+
+  /* ---- The year along the top ----
+     Twelve months side by side, because the only way to know whether this month is bad is to
+     see the eleven before it. Scrolls horizontally INSIDE itself — the page body must never
+     scroll sideways on a phone. */
+  .months{position:relative;display:flex;gap:6px;overflow-x:auto;padding:2px 2px 10px;margin-bottom:6px;scrollbar-width:none}
+  .months::-webkit-scrollbar{display:none}
+  .mchip{flex:none;background:var(--card);border:1.5px solid transparent;border-radius:12px;
+    padding:7px 12px;min-width:76px;text-align:center;cursor:pointer;color:var(--dim);font:inherit}
+  .mchip.on{border-color:var(--accent);color:var(--ink)}
+  .mchip .mname{display:block;font-size:13px;font-weight:600}
+  .mchip .msum{display:block;font-size:11px;font-variant-numeric:tabular-nums;margin-top:2px}
+  .mchip.blank{opacity:.42}
+
+  /* ---- Editing ---- */
+  .field{margin-bottom:10px}
+  .field>label{display:block;font-size:12px;color:var(--dim);margin-bottom:4px}
+  .field input,.field select{width:100%;background:var(--bg);border:1px solid var(--line);border-radius:11px;
+    color:var(--ink);font:16px/1.2 inherit;padding:12px 13px}
+  .two{display:flex;gap:8px}
+  .two>.field{flex:1}
+  .seg{display:flex;gap:6px}
+  .seg button{flex:1;background:var(--bg);border:1.5px solid var(--line);border-radius:11px;color:var(--dim);
+    font:600 14px/1 inherit;padding:12px 4px;cursor:pointer}
+  .seg button.on{border-color:var(--accent);color:var(--ink)}
+  .sheetbox h3{font-size:15px;margin:0 0 12px;font-weight:600}
+  .scroller{max-height:70vh;overflow-y:auto}
+
+  /* While a request is in flight. Without this a tapped month looks like a tap that did
+     nothing, and he taps it again. */
+  body.busy .panel{opacity:.5;pointer-events:none}
+  body.busy .fab{opacity:.5;pointer-events:none}
+  .todo{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--line)}
+  .todo:first-of-type{border-top:0}
+  .todo .add{flex:none;background:var(--bg);border:1.5px solid var(--accent);color:var(--ink);
+    border-radius:10px;font:600 13px/1 inherit;padding:9px 13px;cursor:pointer}
 </style>
 </head>
 <body>
@@ -121,6 +164,21 @@
   </div>
 </div>
 
+<!-- Correcting something already recorded. Real fields, not the one-line grammar: retyping the
+     line to fix a typo makes a second entry, and a tracker that double-counts is worse than one
+     that was wrong once. -->
+<div class="sheet" id="esheet" hidden>
+  <div class="sheetbox">
+    <div class="scroller">
+      <h3 id="etitle">Edit</h3>
+      <div class="err" id="eerr" hidden></div>
+      <div id="efields"></div>
+    </div>
+    <button class="btn" id="esave">Save changes</button>
+    <button class="btn ghost" id="ecancel">Cancel</button>
+  </div>
+</div>
+
 <script>
 const tg = window.Telegram?.WebApp;
 tg?.ready(); tg?.expand();
@@ -131,7 +189,34 @@ const esc = (s) => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').re
 const money = (n, cur) => n == null ? '—'
   : (n < 0 ? '−' : '') + Math.abs(n).toLocaleString(undefined,{maximumFractionDigits:0}) + ' ' + (cur || S.base);
 
+// Which month is on screen. null means "the one he is in", so the app opens on today without
+// having to know today's date before the first answer comes back.
+let viewMonth = null;
+
+// Telegram's own dialogs where they exist. A browser confirm() inside a Mini App looks like a
+// web page that escaped, and on some clients it is easy to dismiss by accident — which for the
+// delete button is the wrong accident to make easy.
+const ask = (q) => new Promise((resolve) => {
+  if (tg?.showConfirm) tg.showConfirm(q, (ok) => resolve(!!ok));
+  else resolve(window.confirm(q));
+});
+const tell = (msg) => { if (tg?.showAlert) tg.showAlert(String(msg)); else window.alert(msg); };
+
+// One request at a time, and the page says so. Without this a tapped month reads as a tap that
+// did nothing and he taps it again — which is how two identical entries get recorded.
+let busy = false;
+async function work(fn) {
+  if (busy) return false;
+  busy = true; document.body.classList.add('busy');
+  try { S = await fn(); draw(); return true; }
+  catch (err) { tell(err.message); return false; }
+  finally { busy = false; document.body.classList.remove('busy'); }
+}
+
 async function api(path, body) {
+  // The month travels on EVERY call, including the writes: an edit made while looking at August
+  // has to redraw August, not silently jump the view back to today.
+  if (viewMonth) path += (path.includes('?') ? '&' : '?') + 'month=' + encodeURIComponent(viewMonth);
   const res = await fetch(path, {
     method: body ? 'POST' : 'GET',
     headers: { 'Content-Type': 'application/json', 'X-Telegram-Init-Data': tg?.initData || '' },
@@ -151,25 +236,67 @@ function draw() {
   drawMonth(); drawWorth(); drawGoal(); drawPlan();
 }
 
+const dd = (ms) => new Date(ms).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+const monthName = (from, opts) => new Date(from).toLocaleDateString(undefined, opts || { month: 'short' });
+const thisYear = new Date().getUTCFullYear();
+
+/* The strip of months along the top.
+   Every month in the window is drawn, including the ones with nothing in them — a month
+   quietly missing from the row reads as a month that did not happen, when what it means is a
+   month nothing was recorded in, and those are opposite messages. The empty ones are dimmed
+   instead. */
+function drawMonthStrip() {
+  const here = S.monthKey;
+  return `<div class="months" id="months">${(S.months || []).map((mo) => {
+    const yr = new Date(mo.from).getUTCFullYear();
+    const surplus = mo.entries ? `<span class="msum ${mo.surplus >= 0 ? 'in' : 'out'}">${mo.surplus >= 0 ? '+' : '−'}${Math.abs(Math.round(mo.surplus)).toLocaleString()}</span>`
+      : '<span class="msum">—</span>';
+    return `<button class="mchip ${mo.key === here ? 'on' : ''} ${mo.entries ? '' : 'blank'}" data-month="${esc(mo.key)}">
+      <span class="mname">${esc(monthName(mo.from))}${yr !== thisYear ? ' ’' + String(yr).slice(2) : ''}</span>
+      ${surplus}
+    </button>`;
+  }).join('')}</div>`;
+}
+
 function drawMonth() {
   const m = S.month;
+  const showing = monthName(S.monthFrom, { month: 'long', year: 'numeric' });
   const rows = S.flows.slice(0, 60).map((f) => `
     <div class="row">
       <span class="dot ${f.dir === 'in' ? 'in' : 'out'}"></span>
       <div class="rmain">
         <div class="rlabel">${esc(f.category || 'uncategorised')}${f.passive ? ' <span class="pill">passive</span>' : ''}</div>
-        <div class="rmeta">${new Date(f.ts).toLocaleDateString(undefined,{day:'numeric',month:'short'})}</div>
+        <div class="rmeta">${new Date(f.ts).toLocaleDateString(undefined,{day:'numeric',month:'short'})}${f.recurring ? ' · repeats' : ''}</div>
       </div>
       <div class="ramt ${f.dir === 'in' ? 'in' : 'out'}">${f.dir === 'in' ? '+' : '−'}${money(f.inBase)}
         ${f.currency !== S.base ? `<span class="rorig">${esc(f.amount.toLocaleString())} ${esc(f.currency)}</span>` : ''}
       </div>
+      <button class="edit" data-edit="flow" data-id="${esc(f.id)}" aria-label="Edit">✎</button>
       <button class="del" data-del="flow" data-id="${esc(f.id)}" aria-label="Remove">×</button>
     </div>`).join('');
 
   const cats = m.spendingByCategory.slice(0, 8);
   const worst = cats[0]?.amount || 1;
+  const hidden = Math.max(0, S.flows.length - 60);
+
+  /* Things that repeat and have not been entered again this month.
+     Deliberately NOT added to any total. Salary that has not arrived is not income, and an app
+     that quietly counts it would report a surplus he cannot spend. It is a list to confirm —
+     one tap each — because the alternative is retyping the same three lines twelve times a year
+     and eventually not bothering, and a month missing its salary reads as a month he earned
+     nothing. */
+  const todo = (S.missing || []).map((r, i) => `
+    <div class="todo">
+      <span class="dot ${r.dir === 'in' ? 'in' : 'out'}"></span>
+      <div class="rmain">
+        <div class="rlabel">${esc(r.category || 'uncategorised')}</div>
+        <div class="rmeta">${r.dir === 'in' ? '+' : '−'}${esc(Math.round(r.amount).toLocaleString())} ${esc(r.currency)} · usually around the ${r.day}${r.day === 1 ? 'st' : r.day === 2 ? 'nd' : r.day === 3 ? 'rd' : 'th'}</div>
+      </div>
+      <button class="add" data-repeat="${i}">Yes, add it</button>
+    </div>`).join('');
 
   $('p-month').innerHTML = `
+    ${drawMonthStrip()}
     <div class="split">
       <div><h2>In</h2><div class="amt in">${money(m.income)}</div></div>
       <div><h2>Out</h2><div class="amt out">${money(m.spending)}</div></div>
@@ -187,25 +314,65 @@ function drawMonth() {
         <div class="catbar" style="width:${Math.max(4, (c.amount / worst) * 100)}%"></div>
       </div>`).join('')}</div>` : ''}
     ${m.unconverted.length ? `<div class="warn">No exchange rate for ${esc(m.unconverted.join(', '))} — not counted above.</div>` : ''}
-    <div class="card"><h2>This month</h2>${rows || '<div class="empty">Nothing yet. Tap Add.</div>'}</div>
+    ${todo ? `<div class="card"><h2>Repeats — not recorded yet</h2>${todo}
+      <div class="note">Not counted in anything above. Money that has not arrived is not income.</div></div>` : ''}
+    <div class="card"><h2>${esc(showing)}</h2>${rows || '<div class="empty">Nothing recorded in ' + esc(showing) + '.</div>'}
+      ${hidden ? `<div class="note">${hidden} more not shown.</div>` : ''}</div>
     <div class="note">Rates ${esc(S.ratesAge)}.</div>`;
+
+  // Land on the month being shown rather than on January. Instant, not smooth: this runs on
+  // every redraw, and an animation restarting mid-scroll on each edit is worse than no scroll.
+  const strip = $('months');
+  const on = strip?.querySelector('.mchip.on');
+  if (strip && on) strip.scrollLeft = Math.max(0, on.offsetLeft - strip.clientWidth / 2 + on.offsetWidth / 2);
 }
 
 function drawWorth() {
   const w = S.worth;
   const order = { cash: 0, deposit: 1, portfolio: 2, property: 3, card: 4, loan: 5, other: 6 };
-  const rows = [...S.accounts].sort((a, b) => (order[a.kind] ?? 9) - (order[b.kind] ?? 9)).map((a) => `
-    <div class="row">
-      <span class="dot ${a.liability ? 'out' : 'in'}"></span>
-      <div class="rmain">
-        <div class="rlabel">${esc(a.label || a.kind)}</div>
-        <div class="rmeta">${esc(a.kind)}${a.ratePct != null ? ' · ' + a.ratePct + '%' : ''}</div>
+  const rows = [...S.accounts].sort((a, b) => (order[a.kind] ?? 9) - (order[b.kind] ?? 9)).map((a) => {
+    const t = a.term;
+    // How often the money actually MOVES, which is the part he can plan around. A rate is a
+    // property of the paper; a payment is a date and an amount.
+    const s = t && t.schedule;
+    const pays = a.liability ? 'You pay' : 'Pays you';
+    const sched = !s ? '' : s.payout === 'maturity'
+      ? `<div class="rmeta" style="margin-top:4px">All of it at the end — nothing lands before ${dd(t.end)}.</div>`
+      : `<div class="rmeta" style="margin-top:4px">${pays} <b>${Math.round(s.perPayment).toLocaleString()} ${esc(a.currency)}</b>${s.perPaymentInBase != null ? ` (${money(s.perPaymentInBase)})` : ''} ${esc(s.payout)}${s.next ? ` · next ${dd(s.next)}` : ''}${s.total ? ` · ${s.made} of ${s.total} so far` : ''}</div>`;
+    // A dated deposit is the interesting case: how far through, what it has paid so far, and
+    // what is still to come. Every figure comes from the server; the page only draws.
+    const term = t && t.hasTerm ? `
+      <div style="margin-top:9px">
+        <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--dim)">
+          <span>${dd(t.start)} → ${dd(t.end)}</span>
+          <span>${t.matured ? 'matured' : Math.round(t.remainingDays) + ' days left'}</span>
+        </div>
+        <div class="bar" style="margin-top:5px"><i style="width:${t.pctThrough}%"></i></div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-top:5px">
+          <span class="in">${money(t.earnedInBase)} earned so far</span>
+          <span style="color:var(--dim)">${money(t.remainingInBase)} still to come</span>
+        </div>
+        <div class="rmeta" style="margin-top:3px">Pays back ${Math.round(t.valueAtMaturity).toLocaleString()} ${esc(a.currency)} at maturity</div>
+        ${sched}
+      </div>` : (t ? `<div class="rmeta" style="margin-top:6px">${money(t.perYearInBase)} a year${t.hasTerm === false && t.start ? ' · running since ' + dd(t.start) : ''}</div>${sched}` : '');
+
+    return `
+    <div style="padding:11px 0;border-top:1px solid var(--line)">
+      <div style="display:flex;align-items:center;gap:11px">
+        <span class="dot ${a.liability ? 'out' : 'in'}"></span>
+        <div class="rmain">
+          <div class="rlabel">${esc(a.label || a.kind)}</div>
+          <div class="rmeta">${esc(a.kind)}${a.ratePct != null ? ' · ' + a.ratePct + '%' : ''}${a.payout ? ' ' + esc(a.payout) : ''}</div>
+        </div>
+        <div class="ramt ${a.liability ? 'out' : 'in'}">${a.liability ? '−' : ''}${money(a.inBase)}
+          ${a.currency !== S.base ? `<span class="rorig">${esc(a.value.toLocaleString())} ${esc(a.currency)}</span>` : ''}
+        </div>
+        <button class="edit" data-edit="account" data-id="${esc(a.id)}" aria-label="Edit">✎</button>
+        <button class="del" data-del="account" data-id="${esc(a.id)}" aria-label="Remove">×</button>
       </div>
-      <div class="ramt ${a.liability ? 'out' : 'in'}">${a.liability ? '−' : ''}${money(a.inBase)}
-        ${a.currency !== S.base ? `<span class="rorig">${esc(a.value.toLocaleString())} ${esc(a.currency)}</span>` : ''}
-      </div>
-      <button class="del" data-del="account" data-id="${esc(a.id)}" aria-label="Remove">×</button>
-    </div>`).join('');
+      ${term}
+    </div>`;
+  }).join('');
 
   $('p-worth').innerHTML = `
     <div class="card">
@@ -213,10 +380,19 @@ function drawWorth() {
       <div class="big ${w.total >= 0 ? '' : 'out'}">${money(w.total)}</div>
       <div class="sub"><span class="in">${money(w.assets)} owned</span>${w.debts > 0 ? ` · <span class="out">${money(w.debts)} owed</span>` : ''}</div>
     </div>
+    ${(S.terms?.matured || []).map((t) => `<div class="warn"><b>${esc(t.label)} matured on ${dd(t.at)}.</b>
+      ${t.backInBase != null ? money(t.backInBase) + ' came back and is' : 'That money is'} earning nothing until you do something with it.
+      Put it somewhere, or change its dates here if it rolled over.</div>`).join('')}
+    ${(S.terms?.maturingSoon || []).map((t) => `<div class="warn" style="border-left-color:var(--accent);background:var(--in-bg)">
+      <b>${esc(t.label)} matures in ${t.days} days</b>, on ${dd(t.at)}. Worth deciding now where it goes next —
+      a certificate that rolls over by default rarely rolls into the best rate available.</div>`).join('')}
     ${S.payFirst.map((d) => `<div class="warn"><b>${esc(d.label)} costs ${d.ratePct}% a year.</b> Clearing it is a guaranteed ${d.ratePct}% return — better than the ${d.expectedYieldPct}% you'd hope for investing, with no risk. Pay this before buying anything.</div>`).join('')}
     ${(S.interest.earned > 0 || S.interest.paid > 0) ? `<div class="card"><h2>Interest a year</h2>
       <div style="display:flex;justify-content:space-between"><span class="in">Earning ${money(S.interest.earned)}</span><span class="out">Paying ${money(S.interest.paid)}</span></div>
-      <div class="sub">Net ${money(S.interest.net)}</div></div>` : ''}
+      <div class="sub">Net ${money(S.interest.net)}</div>
+      ${(S.interest.ended || []).length ? `<div class="note">Not counted: ${esc(S.interest.ended.join(', '))} — the term has ended, so it is not earning any more.</div>` : ''}
+      ${(S.interest.notStarted || []).length ? `<div class="note">Not counted yet: ${esc(S.interest.notStarted.join(', '))} — it has not started.</div>` : ''}
+      </div>` : ''}
     <div class="card"><h2>What you hold</h2>${rows || '<div class="empty">Nothing yet. Tap Add.</div>'}</div>
     ${w.exposure.length > 1 ? `<div class="card"><h2>Currency it's in</h2>${w.exposure.map((e) => `
       <div style="margin-bottom:10px">
@@ -231,11 +407,41 @@ function drawWorth() {
 
 function drawGoal() {
   if (!S.goal) {
+    const c0 = S.contracted;
     $('p-goal').innerHTML = `<div class="card"><h2>Passive income goal</h2>
-      <div class="empty">No goal set. Tap Add and type <b>goal 2000</b>.</div></div>`;
+      <div class="empty">No goal set. Tap Add and type <b>goal 2000</b>.</div></div>
+      ${c0 && c0.perMonth > 0 ? `<div class="card"><h2>Already contracted</h2>
+        <div class="sub" style="font-size:15px;color:var(--ink)">About ${money(c0.perMonth)} a month is scheduled to arrive from what you already hold.</div>
+        <div class="note">Set a goal and this gets a target to sit against.</div></div>` : ''}`;
     return;
   }
-  const g = S.goal, p = S.plan;
+  const g = S.goal, p = S.plan, c = S.contracted;
+
+  /* Contracted, not counted.
+     The big number is what actually LANDED this month, and it has to stay that way: a promise
+     is not income, and a goal that counts promises is a goal you can reach without any money
+     arriving. But showing 0 beside a certificate that pays 24,750 EGP every quarter reads as an
+     app that does not know about the certificate. So it sits below, in its own card, in the
+     dim colour, never inside the bar. */
+  const contracted = c && (c.streams.length || c.lumps.length) ? `
+    <div class="card">
+      <h2>Already contracted</h2>
+      ${c.perMonth > 0 ? `<div class="sub" style="font-size:15px;color:var(--ink)">About ${money(c.perMonth)} a month is scheduled to arrive from what you already hold.</div>` : ''}
+      ${c.streams.map((r) => `<div class="row">
+        <div class="rmain"><div class="rlabel">${esc(r.label)}</div>
+          <div class="rmeta">${esc(Math.round(r.perPayment).toLocaleString())} ${esc(r.currency)} ${esc(r.payout)}${r.next ? ' · next ' + dd(r.next) : ''}</div></div>
+        <div class="ramt in">${money((r.inBase || 0) / 12)}<span class="rorig">a month</span></div>
+      </div>`).join('')}
+      ${c.lumps.map((r) => `<div class="row">
+        <div class="rmain"><div class="rlabel">${esc(r.label)}</div>
+          <div class="rmeta">all at once on ${dd(r.at)} — nothing monthly until then</div></div>
+        <div class="ramt">${money(r.inBase)}</div>
+      </div>`).join('')}
+      ${c.owedPerMonth > 0 ? `<div class="note out">And about ${money(c.owedPerMonth)} a month goes back out on what you owe.</div>` : ''}
+      <div class="note">None of this is in the figure above. That one counts money that actually
+      arrived and was recorded — which is the only version of this number worth having.</div>
+    </div>` : '';
+
   $('p-goal').innerHTML = `
     <div class="card">
       <h2>Passive income</h2>
@@ -244,6 +450,7 @@ function drawGoal() {
       <div class="bar"><i style="width:${Math.min(100, g.pct)}%"></i></div>
       <div class="sub" style="margin-top:8px">${money(g.gap, g.currency)} a month still to go</div>
     </div>
+    ${contracted}
     ${p && p.fastest != null ? `<div class="card">
       <h2>What it would take</h2>
       ${p.scenarios.map((s) => `<div class="row">
@@ -315,16 +522,10 @@ function drawPlan() {
       <button class="btn ghost" id="addevent" style="margin-top:10px">+ Add a change</button>
     </div>`;
 
-  $('addevent').onclick = async () => {
-    const label = prompt('What changes? e.g. "second rental"');
-    if (!label) return;
-    const atYear = Number(prompt('From which year? (1 = next 12 months)', '3'));
-    const kind = (prompt('Type: income, contribution, spending or lump', 'income') || 'income').toLowerCase();
-    const amount = Number(prompt(kind === 'lump' ? 'One-off amount' : 'Amount per month', '300'));
-    if (!atYear || !amount) return;
-    try { S = await api('/api/plan', { label, atYear, kind, amount }); draw(); }
-    catch (err) { alert(err.message); }
-  };
+  // One form, not four prompt() boxes in a row. The old flow asked four questions with no way
+  // back, and answering the third wrong meant starting again — which is why nothing was ever
+  // added to the plan.
+  $('addevent').onclick = () => openPlanEvent();
 }
 
 // ---- Tabs ----
@@ -335,7 +536,7 @@ document.querySelectorAll('.tab').forEach((t) => t.onclick = () => {
 });
 
 // ---- Add ----
-const CHIPS = ['out 40 food', 'in 3200 salary', 'in 27000 EGP rent', 'add card 1200 EUR 19% visa', 'add deposit 540000 EGP 20% Cairo', 'goal 2000'];
+const CHIPS = ['out 40 food', 'in 3200 salary', 'in 27000 EGP rent', 'add card 1200 EUR 19% visa', 'add deposit 495000 EGP 20% quarterly start 28.05.2024 end 28.05.2027', 'goal 2000'];
 $('chips').innerHTML = CHIPS.map((c) => `<button class="chip">${esc(c)}</button>`).join('');
 $('chips').onclick = (e) => { if (e.target.classList.contains('chip')) { $('entry').value = e.target.textContent; $('entry').focus(); } };
 
@@ -349,6 +550,9 @@ $('entry').onkeydown = (e) => { if (e.key === 'Enter') $('save').click(); };
 $('save').onclick = async () => {
   const text = $('entry').value.trim();
   if (!text) return;
+  // A new entry is stamped with today, so record it into today's month. Adding while reading
+  // last March and seeing nothing appear is the same as the app losing it.
+  viewMonth = null;
   $('save').disabled = true;
   try {
     // "goal 2000" is the one line that isn't an entry, so it is routed here rather than being
@@ -363,19 +567,179 @@ $('save').onclick = async () => {
   } finally { $('save').disabled = false; }
 };
 
+// ---- Editing something already recorded ----
+//
+// Real fields, not the one-line grammar. Retyping "out 40 food" to fix a mistyped amount adds a
+// SECOND entry, and a month that double-counts is worse than one that was wrong once.
+//
+// The currency is a LIST, never a text box: "EGY" typed into a free field would sanitise to
+// nothing, fall back to the base, and quietly move an Egyptian holding into euro.
+let editing = null;
+
+const isoOf = (ms) => (ms ? new Date(ms).toISOString().slice(0, 10) : '');
+const field = (label, inner) => `<div class="field"><label>${esc(label)}</label>${inner}</div>`;
+const input = (k, value, extra = '') => `<input data-k="${k}" value="${esc(value ?? '')}" ${extra}>`;
+const select = (k, options, current) =>
+  `<select data-k="${k}">${options.map((o) => {
+    const v = typeof o === 'string' ? o : o.v, t = typeof o === 'string' ? o : o.t;
+    return `<option value="${esc(v)}" ${v === (current ?? '') ? 'selected' : ''}>${esc(t)}</option>`;
+  }).join('')}</select>`;
+const seg = (name, options, current, type = '') =>
+  `<div class="seg" data-seg="${name}" data-type="${type}">${options.map((o) =>
+    `<button type="button" data-val="${esc(o.v)}" class="${o.v === current ? 'on' : ''}">${esc(o.t)}</button>`).join('')}</div>`;
+
+/** His currencies first, then the rest. A 46-item alphabetical list buries EGP under Argentina. */
+function currencyOptions(current) {
+  const used = [...new Set([...(S.accounts || []).map((a) => a.currency), ...(S.flows || []).map((f) => f.currency), S.base, current].filter(Boolean))];
+  const rest = (S.currencies || []).filter((c) => !used.includes(c)).sort();
+  return [...used, ...rest];
+}
+
+function flowFields(f) {
+  return `
+    ${field('Money', seg('dir', [{ v: 'in', t: '+ In' }, { v: 'out', t: '− Out' }], f.dir))}
+    ${field('Name', input('category', f.category))}
+    <div class="two">
+      ${field('Amount', input('amount', f.amount, 'inputmode="decimal"'))}
+      ${field('Currency', select('currency', currencyOptions(f.currency), f.currency))}
+    </div>
+    ${field('Date', input('date', isoOf(f.ts), 'type="date"'))}
+    ${field('Counts towards the passive goal', seg('passive', [{ v: 'yes', t: 'Yes' }, { v: 'no', t: 'No' }], f.passive ? 'yes' : 'no', 'bool'))}
+    ${field('Repeats every month', seg('recurring', [{ v: 'yes', t: 'Yes' }, { v: 'no', t: 'No' }], f.recurring ? 'yes' : 'no', 'bool'))}`;
+}
+
+function accountFields(a) {
+  const payouts = [{ v: '', t: 'not said' }, ...(S.payoutKinds || []).map((p) => ({ v: p, t: p }))];
+  return `
+    ${field('Name', input('label', a.label))}
+    <div class="two">
+      ${field('Amount', input('value', a.value, 'inputmode="decimal"'))}
+      ${field('Currency', select('currency', currencyOptions(a.currency), a.currency))}
+    </div>
+    ${field('What it is', select('kind', S.kinds || [], a.kind))}
+    <div class="two">
+      ${field('Rate % a year', input('ratePct', a.ratePct ?? '', 'inputmode="decimal"'))}
+      ${field(a.liability ? 'Paid back' : 'Paid out', select('payout', payouts, a.payout || ''))}
+    </div>
+    <div class="two">
+      ${field('Starts', input('startsAt', isoOf(a.startsAt), 'type="date"'))}
+      ${field('Ends', input('endsAt', isoOf(a.endsAt), 'type="date"'))}
+    </div>
+    <div class="note" style="margin-top:0">Dates and how often it pays are what turn a rate into money on a date — leave them empty if you don't know them.</div>`;
+}
+
+function openEdit(kind, id) {
+  const it = kind === 'flow' ? S.flows.find((f) => f.id === id) : S.accounts.find((a) => a.id === id);
+  if (!it) return;
+  editing = { kind, id };
+  $('etitle').textContent = kind === 'flow' ? 'Edit this entry' : 'Edit what you hold';
+  $('eerr').hidden = true;
+  $('efields').innerHTML = kind === 'flow' ? flowFields(it) : accountFields(it);
+  $('esheet').hidden = false;
+}
+const closeEdit = () => { $('esheet').hidden = true; editing = null; };
+$('ecancel').onclick = closeEdit;
+$('esheet').onclick = (e) => { if (e.target === $('esheet')) closeEdit(); };
+$('efields').onclick = (e) => {
+  const b = e.target.closest('.seg button');
+  if (!b) return;
+  b.parentElement.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b));
+};
+
+$('esave').onclick = async () => {
+  if (!editing) return;
+  if (editing.kind === 'planEvent') {
+    const v = {};
+    $('efields').querySelectorAll('[data-k]').forEach((el) => { v[el.dataset.k] = el.value.trim(); });
+    if (!v.label || !Number(v.amount) || !Number(v.atYear)) {
+      $('eerr').textContent = 'It needs a name, an amount and a year.'; $('eerr').hidden = false; return;
+    }
+    $('esave').disabled = true;
+    try {
+      S = await api('/api/plan', { label: v.label, kind: v.kind, amount: Number(v.amount), atYear: Number(v.atYear) });
+      draw(); closeEdit();
+    } catch (err) { $('eerr').textContent = err.message; $('eerr').hidden = false; }
+    finally { $('esave').disabled = false; }
+    return;
+  }
+  const patch = {};
+  $('efields').querySelectorAll('[data-k]').forEach((el) => { patch[el.dataset.k] = el.value; });
+  $('efields').querySelectorAll('[data-seg]').forEach((g) => {
+    const on = g.querySelector('button.on');
+    if (!on) return;
+    // A yes/no group must arrive as a real boolean: the STRING "no" is truthy, and a passive
+    // flag set from it would count a salary towards the passive-income goal.
+    patch[g.dataset.seg] = g.dataset.type === 'bool' ? on.dataset.val === 'yes' : on.dataset.val;
+  });
+  $('esave').disabled = true;
+  try {
+    S = await api('/api/edit', { kind: editing.kind, id: editing.id, patch });
+    draw(); closeEdit();
+    tg?.HapticFeedback?.notificationOccurred?.('success');
+  } catch (err) {
+    $('eerr').textContent = err.message; $('eerr').hidden = false;
+  } finally { $('esave').disabled = false; }
+};
+
+/** Adding a change to the ten-year plan. Same sheet machinery as editing, so there is one way
+ *  to fill in a form in this app rather than two. */
+function openPlanEvent() {
+  editing = { kind: 'planEvent' };
+  $('etitle').textContent = 'What changes, and when';
+  $('eerr').hidden = true;
+  $('efields').innerHTML = `
+    ${field('What is it', input('label', '', 'placeholder="second rental"'))}
+    ${field('Kind', select('kind', [
+      { v: 'income', t: 'new income each month' },
+      { v: 'contribution', t: 'you save more each month' },
+      { v: 'spending', t: 'you spend more each month' },
+      { v: 'lump', t: 'a one-off amount' },
+    ], 'income'))}
+    <div class="two">
+      ${field('Amount', input('amount', '', 'inputmode="decimal" placeholder="300"'))}
+      ${field('From year', input('atYear', '3', 'inputmode="numeric"'))}
+    </div>
+    <div class="note" style="margin-top:0">Year 1 is the next twelve months. Everything here is in
+    ${esc(S.base)} — the plan is a shape, not a ledger.</div>`;
+  $('esheet').hidden = false;
+}
+
 document.body.addEventListener('click', async (e) => {
+  // Which month is being read. The whole state comes back for it, so every tab stays in step.
+  const mo = e.target.closest('[data-month]');
+  if (mo) {
+    if (mo.dataset.month === S.monthKey) return;
+    viewMonth = mo.dataset.month;
+    if (await work(() => api('/api/state'))) tg?.HapticFeedback?.selectionChanged?.();
+    return;
+  }
+  const ed = e.target.closest('[data-edit]');
+  if (ed) { openEdit(ed.dataset.edit, ed.dataset.id); return; }
+
+  // "Yes, it arrived again." Records a real flow — nothing is ever added on its own.
+  const rep = e.target.closest('[data-repeat]');
+  if (rep) {
+    const r = (S.missing || [])[Number(rep.dataset.repeat)];
+    if (!r) return;
+    if (await work(() => api('/api/repeat', r))) tg?.HapticFeedback?.notificationOccurred?.('success');
+    return;
+  }
+
   const planDel = e.target.closest('[data-plan-del]');
   if (planDel) {
-    if (!confirm('Remove this change?')) return;
-    try { S = await api('/api/plan', { remove: planDel.dataset.planDel }); draw(); }
-    catch (err) { alert(err.message); }
+    if (!await ask('Remove this change from the plan?')) return;
+    await work(() => api('/api/plan', { remove: planDel.dataset.planDel }));
     return;
   }
   const btn = e.target.closest('[data-del]');
   if (!btn) return;
-  if (!confirm('Remove this?')) return;
-  try { S = await api('/api/remove', { kind: btn.dataset.del, id: btn.dataset.id }); draw(); }
-  catch (err) { alert(err.message); }
+  // Named, not "Remove this?". A generic confirmation beside a mis-tappable button is how the
+  // wrong row gets deleted, and there is no undo behind it.
+  const what = btn.dataset.del === 'flow'
+    ? (S.flows.find((f) => f.id === btn.dataset.id)?.category || 'this entry')
+    : (S.accounts.find((a) => a.id === btn.dataset.id)?.label || 'this holding');
+  if (!await ask(`Delete “${what}”? This cannot be undone.`)) return;
+  await work(() => api('/api/remove', { kind: btn.dataset.del, id: btn.dataset.id }));
 });
 
 (async () => {

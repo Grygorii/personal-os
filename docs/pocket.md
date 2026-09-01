@@ -72,6 +72,35 @@ decided in code against a known list (`isKnownCurrency`), never by the shape of 
 the goal measures. An explicit flag always wins — a category name is a label; `passive` is a
 decision.
 
+### Dates, and how often it pays
+
+```
+add deposit 495000 EGP 20% quarterly start 28.05.2024 end 28.05.2027
+```
+
+A rate on its own is a property of the paper. A rate **with a term and a frequency** is money on
+a date, which is the only form he can plan around — so a dated holding reports what it has
+already paid, what is still to come, how far through it is, what each payment is, and when the
+next one lands.
+
+- Dotted and slashed dates are read **day first** (`28.05.2024` is 28 May); ISO is read as
+  itself; anything else is `null` rather than a guess. A misread date shifts every interest
+  figure that hangs off it.
+- The keyword claims the date after it and **both leave the label**. Before this, `start
+  28.05.2024 end 28.05.2027` ended up as the deposit's name.
+- `monthly` · `quarterly` (`kvartally` works too) · `yearly` · `maturity`. Nothing said stays
+  nothing said — assuming monthly would invent twelve arrivals a year that never come.
+- Only on `add` lines. A spend may legitimately be called "monthly gym", and swallowing that
+  word as a frequency would silently rename the category.
+
+Interest is **simple, on the principal**, because that is how these certificates pay. Compounding
+would overstate the return, and overstating a return is the one direction this app is not allowed
+to be wrong in.
+
+Terms are measured on the **calendar**, not in days ÷ 365. That version reads a one-year
+certificate opened on 1 January 2020 as 366/365 of a year and pays 10,027 on a round 10,000 —
+quietly wrong on every term that spans a leap day (`yearsBetween`).
+
 ## The goal
 
 `goal` reports the gap, then how long — as a **range across stated yields**, never a date.
@@ -121,8 +150,19 @@ src/pocket/money.js      pure: accounts, flows, net worth, the month, the goal, 
 src/pocket/store.js      Mongo, whitelisted in and out
 src/pocket/bot.js        Telegram — the grammar, the four buttons
 src/pocket/index.js      boot and the DB_NAME guard
-test/pocket.test.js      17 tests over the money maths
+src/pocket/web.js        the Mini App server; buildState() is pure and fixture-testable
+src/pocket/app.html      the Mini App itself — four tabs, the month strip, the edit sheet
+test/pocket.test.js      the money maths
+scripts/pocket-render.mjs  does the page actually DRAW? (npm run render:pocket)
 ```
+
+`npm test` proves the arithmetic; it cannot prove the page survives contact with it. A
+`ReferenceError` in one line of an inline script does not fail softly — it kills the whole script
+and serves a blank page with every unit test still green. `scripts/pocket-render.mjs` builds the
+real `/api/state` payload from fixtures, runs `app.html`'s script against a small DOM shim, and
+checks that all four panels drew, across five states: this month, a month scrolled back to, an
+empty month, no exchange rates, and a brand new Pocket with nothing in it. Same reason
+`scripts/smoke.mjs` exists on the Kept side.
 
 `money.js` is pure for the same reason `shape.js` and `steward/book.js` are: a wrong number
 here is not a bad screen, it is a household misreading what it has.
@@ -148,6 +188,52 @@ apps import `rawCol`.
 Chat is the fastest way to **record** something and a poor way to **look** at anything: no
 tabs, no colour, no way to scan a month. So the bot keeps the typing and a Telegram Mini App
 serves the seeing — four tabs: **Month · Worth · Goal · Plan**.
+
+### The year along the top
+
+The Month tab opens on a strip of twelve months, each with its own surplus, and tapping one
+loads it. One month is a number; twelve months is a shape, and the shape is what says whether
+this month is normal. Empty months stay in the strip, dimmed — a month silently missing reads
+as a month that did not happen, which is the opposite of a month nothing was recorded in.
+
+The whole strip and the month being read come back in **one query**, because thirteen round
+trips to a shared M0 cluster to scroll back through a year is not a thing to do.
+
+The Goal and Plan tabs are always about **now**, whichever month is on screen. Reading a thin
+August must not quietly rewrite the ten-year projection.
+
+### Editing, and repeats
+
+Every entry and every holding has a pencil beside it that opens a real form — name, amount,
+currency, date, and for a holding its kind, rate, term and payout frequency. Deliberately not
+the one-line grammar: retyping `out 40 food` to fix a mistyped amount produces a **second**
+entry, and a month that double-counts is worse than one that was wrong once.
+
+The currency is a **list, never a text box**. "EGY" typed into a free field sanitises to nothing,
+falls back to the base, and silently moves an Egyptian holding into euro.
+
+An edit is a patch of named fields (`patchFrom` is the whitelist) merged over the stored
+document and *then* sanitised. The order matters: cleaning the fragment alone and `$set`-ing it
+would drop every field the fragment did not mention — the same shape of bug as `saveBooks`
+deleting a quiz. The id always comes from what is stored, never from the patch.
+
+**Repeats.** Anything marked recurring that has not been entered again this month appears as a
+list to confirm, one tap each. Nothing is ever auto-created and none of it is added to a total:
+salary that has not arrived is not income. But a month missing its salary does not read as "he
+forgot" — it reads as a household that earned nothing, with a surplus to match.
+
+### Two things the Worth and Goal tabs now say out loud
+
+**A term that has ended earns nothing.** Before dates existed the app could not know that, and a
+certificate that matured in 2021 went on reporting its interest for ever. Ended and not-yet-
+started terms are excluded from the yearly interest figure and named, so a smaller number is
+explained rather than mysterious. A matured certificate also raises a warning of its own —
+capital sitting idle is invisible everywhere else in the app.
+
+**Contracted is not counted.** What his holdings are scheduled to pay sits in its own card on the
+Goal tab, never inside the bar. A promise is not income, and a goal that counts promises can be
+reached without any money arriving. But showing `0` beside a certificate paying 24,750 EGP a
+quarter reads as an app that does not know about the certificate.
 
 It is a public URL in front of a household's finances, so two checks guard every API call:
 Telegram's signed `initData` verified server-side against the bot token (constant-time, with a
@@ -179,11 +265,14 @@ contributions differs by tens of thousands. Showing that gap *is* the feature.
 
 - **Never run against live Telegram or the live rate API.** The sandbox this was built in
   blocks the FX provider, so the fetch path is untested end to end.
-- Recurring flows are stored and queryable but nothing re-stamps them into each new month yet,
-  so salary and the Cairo rent need entering monthly until that lands.
+- Months are bounded in **UTC** while `TZ` is Europe/Dublin. For the seven months of the year
+  Ireland is UTC+1, an entry made between midnight and 1 a.m. on the 1st lands in the previous
+  month. Narrow, but real; the escape hatch is that any entry's date is now editable in two taps.
+- Recurring flows are listed for confirmation but still never re-stamped automatically, which is
+  deliberate — the app must not invent income he has not received.
 - Pocket holds the portfolio as a single `portfolio` account entered by hand; it does not yet
   read the steward's book directly, so the two need keeping in step manually.
-- Removing an account or flow works in the Mini App, but not yet from a Telegram message.
+- Removing or editing an account or flow works in the Mini App, but not from a Telegram message.
+- The bot itself still only knows "this month". The month strip is the app's alone.
 - The Mini App has never been opened against real Telegram — `initData` verification, the
   Railway domain and the web_app button are all untested end to end.
-- Plan events are added through browser `prompt()` dialogs, which is functional and ugly.

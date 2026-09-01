@@ -193,7 +193,10 @@ test('parseEntry: the ways a European writes a number', () => {
 
 test('parseEntry: accounts, and a kind it does not know', () => {
   const dep = parseEntry('add deposit 540000 EGP Cairo savings', 'EUR');
-  assert.deepEqual(dep, { type: 'account', kind: 'deposit', value: 540000, currency: 'EGP', ratePct: null, label: 'Cairo savings' });
+  assert.deepEqual(dep, {
+    type: 'account', kind: 'deposit', value: 540000, currency: 'EGP',
+    ratePct: null, startsAt: null, endsAt: null, payout: null, label: 'Cairo savings',
+  });
   assert.equal(parseEntry('add portfolio 1000 USD eToro').label, 'eToro');
   // An unknown kind is reported so the reply can list the real ones, not silently filed as cash.
   assert.deepEqual(parseEntry('add gold 5 oz'), { type: 'account', badKind: 'gold' });
@@ -401,4 +404,250 @@ test('cleanEvent: years and kinds are bounded, never trusted', () => {
   assert.equal(cleanEvent({ atYear: 'x' }).atYear, 1);
   assert.equal(cleanEvent({ kind: 'nonsense' }).kind, 'contribution');
   assert.equal(cleanEvent({ kind: 'lump', amount: '5000' }).amount, 5000);
+});
+
+// ---- Dates, terms, and when the money actually moves ----
+//
+// He typed "add deposit 495000 EGP 20% start 28.05.2024 end 28.05.2027" and the dates landed in
+// the LABEL. Worse than ugly: with no term, nothing could say what the certificate had already
+// paid him, which is the only number he actually wanted from it.
+
+import {
+  parseDate, depositProgress, addMonths, yearsBetween, payoutSchedule, PAYOUT_KINDS,
+  monthKey, monthWindowOf, recentMonths, monthsSummary, patchFrom,
+} from '../src/pocket/money.js';
+
+const utc = (y, m, d) => Date.UTC(y, m - 1, d);
+
+test('parseDate: 28.05.2024 is 28 May, and junk is null rather than a guess', () => {
+  assert.equal(parseDate('28.05.2024'), utc(2024, 5, 28), 'day first, the way he writes it');
+  assert.equal(parseDate('28/05/2024'), utc(2024, 5, 28));
+  assert.equal(parseDate('2024-05-28'), utc(2024, 5, 28), 'ISO is unambiguous and read as itself');
+  assert.equal(parseDate('1.1.2025'), utc(2025, 1, 1), 'single digits too');
+  // A misread date shifts every interest figure that hangs off it, so nothing is guessed.
+  for (const junk of ['', null, 'May', '28.05', '2024', '32.01.2024', '01.13.2024', 'tomorrow']) {
+    assert.equal(parseDate(junk), null, JSON.stringify(junk));
+  }
+});
+
+test('parseEntry: the dates go in the date fields and OUT of the label', () => {
+  const p = parseEntry('add deposit 495000 EGP 20% start 28.05.2024 end 28.05.2027', 'EUR');
+  assert.equal(p.value, 495000);
+  assert.equal(p.currency, 'EGP');
+  assert.equal(p.ratePct, 20);
+  assert.equal(p.startsAt, utc(2024, 5, 28));
+  assert.equal(p.endsAt, utc(2027, 5, 28));
+  // The bug this fixes: both keywords AND both dates used to survive into the name.
+  assert.equal(p.label, 'deposit', 'no dates left in the name');
+
+  // A keyword with nothing date-shaped after it is just a word, not a swallowed field.
+  const q = parseEntry('add cash 500 EUR start of the month money', 'EUR');
+  assert.equal(q.startsAt, null);
+  assert.match(q.label, /start of the month/);
+});
+
+test('parseEntry: how often it pays, in his words, and only on accounts', () => {
+  assert.equal(parseEntry('add deposit 495000 EGP 20% quarterly', 'EUR').payout, 'quarterly');
+  assert.equal(parseEntry('add loan 200000 EGP 24% monthly car', 'EUR').payout, 'monthly');
+  assert.equal(parseEntry('add loan 200000 EGP 24% monthly car', 'EUR').label, 'car');
+  assert.equal(parseEntry('add deposit 100 EUR 5% kvartally', 'EUR').payout, 'quarterly', 'his word for it');
+  assert.equal(parseEntry('add deposit 100 EUR 5%', 'EUR').payout, null, 'not said stays not said');
+
+  // A SPEND may legitimately be called "monthly gym". Swallowing that word as a frequency would
+  // silently rename the category, so the flow side never looks for one.
+  const gym = parseEntry('out 40 monthly gym', 'EUR');
+  assert.equal(gym.category, 'monthly');
+  assert.equal(gym.note, 'monthly gym');
+});
+
+test('cleanAccount: a payout frequency it has never heard of is not one', () => {
+  assert.equal(cleanAccount({ payout: 'quarterly' }).payout, 'quarterly');
+  assert.equal(cleanAccount({ payout: 'weekly' }).payout, null);
+  assert.equal(cleanAccount({}).payout, null);
+  assert.deepEqual(PAYOUT_KINDS, ['monthly', 'quarterly', 'yearly', 'maturity']);
+});
+
+test('depositProgress: what 20% for three years has actually paid so far', () => {
+  const a = cleanAccount({
+    kind: 'deposit', currency: 'EGP', value: 495000, ratePct: 20,
+    startsAt: utc(2024, 5, 28), endsAt: utc(2027, 5, 28),
+  });
+  const t = depositProgress(a, utc(2026, 9, 1));
+  assert.equal(t.hasTerm, true);
+  assert.equal(t.perYear, 99000);
+  // Simple interest on the principal — that is how these certificates pay. Compounding would
+  // overstate it, and overstating a return is the one direction this app must not be wrong in.
+  assert.equal(Math.round(t.totalAtMaturity), 297000);
+  assert.equal(Math.round(t.valueAtMaturity), 495000 + 297000);
+  // Two years, three months and four days of a three-year term, measured on the calendar and
+  // not in days ÷ 365 — see yearsBetween.
+  assert.equal(Math.round(t.earned), 223815);
+  assert.equal(Math.round(t.earned + t.remaining), 297000, 'earned and still-to-come are the whole term');
+  assert.ok(t.pctThrough > 74 && t.pctThrough < 76);
+  assert.equal(Math.round(t.remainingDays), 269);
+  assert.equal(t.matured, false);
+});
+
+test('depositProgress: a matured deposit stops earning, and never runs past its end', () => {
+  const a = cleanAccount({ kind: 'deposit', currency: 'EGP', value: 100000, ratePct: 10, startsAt: utc(2020, 1, 1), endsAt: utc(2021, 1, 1) });
+  const t = depositProgress(a, utc(2026, 9, 1));
+  assert.equal(t.matured, true);
+  assert.equal(t.pctThrough, 100);
+  assert.equal(Math.round(t.earned), 10000, 'exactly one year, and five extra years add nothing it never paid');
+  assert.equal(t.remaining, 0);
+});
+
+test('depositProgress: no dates says only what can honestly be said, and no rate says nothing', () => {
+  const noDates = depositProgress(cleanAccount({ kind: 'deposit', currency: 'EUR', value: 1000, ratePct: 4 }));
+  assert.equal(noDates.hasTerm, false);
+  assert.equal(noDates.perYear, 40);
+  assert.equal(noDates.earned, undefined, 'without a start there is no "so far"');
+  assert.equal(depositProgress(cleanAccount({ kind: 'cash', currency: 'EUR', value: 1000 })), null);
+});
+
+test('addMonths: calendar months, so 31 January plus one is the end of February', () => {
+  assert.equal(addMonths(utc(2024, 1, 31), 1), utc(2024, 2, 29), 'a leap year');
+  assert.equal(addMonths(utc(2025, 1, 31), 1), utc(2025, 2, 28));
+  assert.equal(addMonths(utc(2024, 5, 28), 12), utc(2025, 5, 28));
+  assert.equal(addMonths(utc(2024, 12, 15), 1), utc(2025, 1, 15), 'across a year boundary');
+  // Days ÷ 30.44 put a one-year term at 11.99 months once. This is why it is calendar maths.
+  assert.equal(addMonths(utc(2024, 5, 28), 36), utc(2027, 5, 28));
+});
+
+test('yearsBetween: a one-year term is one year, leap day or not', () => {
+  // The bug this exists for: days ÷ 365 pays 10,027 on a round 10,000 one-year deposit opened
+  // in a leap year. A number he would not believe, from arithmetic wrong on every leap term.
+  assert.equal(yearsBetween(utc(2020, 1, 1), utc(2021, 1, 1)), 1, 'across 29 February');
+  assert.equal(yearsBetween(utc(2021, 1, 1), utc(2022, 1, 1)), 1);
+  assert.equal(yearsBetween(utc(2024, 5, 28), utc(2027, 5, 28)), 3);
+  assert.equal(yearsBetween(utc(2024, 5, 28), utc(2024, 11, 28)), 0.5);
+  assert.equal(yearsBetween(utc(2026, 9, 1), utc(2024, 5, 28)), 0, 'backwards is nothing, never negative');
+});
+
+test('payoutSchedule: a rate becomes an amount on a date', () => {
+  const base = { start: utc(2024, 5, 28), end: utc(2027, 5, 28), perYear: 99000, totalAtMaturity: 297000 };
+  const now = utc(2026, 9, 1);
+
+  const q = payoutSchedule({ ...base, payout: 'quarterly' }, now);
+  assert.equal(q.perPayment, 24750);
+  assert.equal(q.every, 3);
+  assert.equal(q.total, 12, 'three years, four times a year');
+  assert.equal(q.made, 9);
+  assert.equal(q.next, utc(2026, 11, 28));
+
+  const m = payoutSchedule({ ...base, payout: 'monthly' }, now);
+  assert.equal(m.perPayment, 8250);
+  assert.equal(m.total, 36);
+  assert.equal(m.made, 27);
+  assert.equal(m.next, utc(2026, 9, 28));
+
+  // "At maturity" is not a frequency: nothing lands until the last day.
+  const mat = payoutSchedule({ ...base, payout: 'maturity' }, now);
+  assert.equal(mat.perPayment, 297000);
+  assert.equal(mat.total, 1);
+  assert.equal(mat.made, 0);
+  assert.equal(mat.next, base.end);
+
+  // Nothing said, nothing invented — assuming monthly would promise twelve arrivals a year.
+  assert.equal(payoutSchedule({ ...base, payout: null }, now), null);
+});
+
+test('depositProgress: the schedule rides along with the term', () => {
+  const a = cleanAccount({
+    kind: 'deposit', currency: 'EGP', value: 495000, ratePct: 20, payout: 'quarterly',
+    startsAt: utc(2024, 5, 28), endsAt: utc(2027, 5, 28),
+  });
+  const t = depositProgress(a, utc(2026, 9, 1));
+  assert.equal(t.payout, 'quarterly');
+  assert.equal(t.schedule.perPayment, 24750);
+  assert.equal(t.schedule.next, utc(2026, 11, 28));
+  // Nine payments of 24,750 is 222,750 — close to the 224,174 accrued, because interest keeps
+  // running between coupons. The two are different questions and both are shown.
+  assert.equal(t.schedule.made * t.schedule.perPayment, 222750);
+});
+
+// ---- A year of months, not just this one ----
+
+test('monthWindowOf: a key selects its month, and a bad key never selects everything', () => {
+  const w = monthWindowOf('2026-08');
+  assert.equal(w.key, '2026-08');
+  assert.equal(w.from, utc(2026, 8, 1));
+  assert.equal(w.to, utc(2026, 9, 1) - 1);
+  assert.equal(monthKey(utc(2026, 8, 15)), '2026-08');
+
+  // The failure that matters: junk must fall back to the current month, never to epoch zero,
+  // which would total every flow ever recorded and call it "this month".
+  const now = utc(2026, 9, 10);
+  for (const junk of ['', null, 'august', '2026-13', '2026']) {
+    assert.equal(monthWindowOf(junk, now).key, '2026-09', JSON.stringify(junk));
+  }
+});
+
+test('recentMonths: twelve of them, oldest first, ending with the one he is in', () => {
+  const r = recentMonths(12, utc(2026, 9, 10));
+  assert.equal(r.length, 12);
+  assert.equal(r[0].key, '2025-10');
+  assert.equal(r[11].key, '2026-09');
+});
+
+test('monthsSummary: every month is returned, including the empty ones', () => {
+  const flows = [
+    cleanFlow({ dir: 'in', amount: 3000, currency: 'EUR', category: 'salary', ts: utc(2026, 8, 5) }),
+    cleanFlow({ dir: 'out', amount: 1200, currency: 'EUR', category: 'rent', ts: utc(2026, 8, 6) }),
+    cleanFlow({ dir: 'out', amount: 54000, currency: 'EGP', category: 'trip', ts: utc(2026, 9, 2) }),
+  ];
+  const s = monthsSummary(flows, T, 'EUR', { count: 3, now: utc(2026, 9, 10) });
+  assert.deepEqual(s.map((m) => m.key), ['2026-07', '2026-08', '2026-09']);
+
+  const july = s[0], august = s[1], september = s[2];
+  // A month dropped from the strip reads as a month that did not happen. It is kept, at zero.
+  assert.equal(july.entries, 0);
+  assert.equal(july.surplus, 0);
+  assert.equal(august.income, 3000);
+  assert.equal(august.spending, 1200);
+  assert.equal(august.surplus, 1800);
+  assert.equal(september.spending, 1000, 'the Egyptian spend is converted, not passed through');
+});
+
+// ---- Correcting something already recorded ----
+
+test('patchFrom: only fields it knows, and an absent one is not a deletion', () => {
+  const p = patchFrom('flow', { category: 'groceries', amount: '42,50', dir: 'out', nonsense: 'x', id: 'other' });
+  assert.deepEqual(p, { category: 'groceries', amount: 42.5, dir: 'out' });
+  // The id is never patchable — an edit that could rewrite an id is an overwrite of another row.
+  assert.equal('id' in p, false);
+  assert.deepEqual(patchFrom('flow', {}), {}, 'nothing said, nothing changed');
+
+  // false has to survive: the string "no" is truthy, and a passive flag set from it would count
+  // a salary towards the passive-income goal.
+  assert.equal(patchFrom('flow', { passive: false }).passive, false);
+  assert.equal(patchFrom('flow', { recurring: true }).recurring, true);
+  assert.equal(patchFrom('flow', { date: '28.05.2024' }).ts, utc(2024, 5, 28));
+  assert.equal('ts' in patchFrom('flow', { date: 'rubbish' }), false, 'a date it cannot read changes nothing');
+});
+
+test('patchFrom: an account, including clearing a rate back to nothing', () => {
+  const p = patchFrom('account', { label: 'Cairo CD', value: '495 000', currency: 'EGP', kind: 'deposit', payout: 'quarterly', startsAt: '28.05.2024', endsAt: '' });
+  assert.deepEqual(p, {
+    label: 'Cairo CD', value: 495000, currency: 'EGP', kind: 'deposit',
+    payout: 'quarterly', startsAt: utc(2024, 5, 28), endsAt: null,
+  });
+  assert.equal(patchFrom('account', { ratePct: '' }).ratePct, null, 'a rate can be cleared, not only set');
+  assert.equal(patchFrom('account', { ratePct: '4,5' }).ratePct, 4.5);
+  assert.equal(patchFrom('account', { kind: 'gold' }).kind, undefined, 'an unknown kind is ignored, not filed as cash');
+  assert.equal(patchFrom('account', { payout: 'weekly' }).payout, null);
+});
+
+test('an edit merges over what is stored — it never applies the whitelist to a fragment', () => {
+  // This is what store.updateFlow does. The order matters: merge first, THEN sanitise. Cleaning
+  // the patch alone and $set-ing it would drop every field the patch did not mention, which is
+  // exactly how `saveBooks` once deleted a quiz.
+  const stored = cleanFlow({ dir: 'out', amount: 40, currency: 'EGP', category: 'food', ts: utc(2026, 8, 3), note: 'market', id: 'abc' });
+  const merged = cleanFlow({ ...stored, ...patchFrom('flow', { amount: '45' }), id: stored.id });
+  assert.equal(merged.amount, 45);
+  assert.equal(merged.currency, 'EGP', 'the currency survived an edit that never mentioned it');
+  assert.equal(merged.category, 'food');
+  assert.equal(merged.note, 'market');
+  assert.equal(merged.ts, utc(2026, 8, 3), 'the date it happened is not moved to today');
+  assert.equal(merged.id, 'abc', 'the id is taken from what is stored, never from the patch');
 });

@@ -48,6 +48,32 @@ export async function addFlow(f) {
   return clean;
 }
 
+/** Change part of something already recorded.
+ *
+ *  Read, merge, sanitise, write the whole clean document. Deliberately NOT a bare $set of the
+ *  patch: the cleaners are whitelists, and a whitelist applied to a fragment would drop every
+ *  field the fragment did not mention. Merging first means an absent key keeps what is stored,
+ *  which is the rule CLAUDE.md arrived at the hard way when `saveBooks` deleted a quiz.
+ *
+ *  The id is taken from the stored document, never from the patch, so an edit can never become
+ *  an overwrite of a different row.
+ */
+export async function updateFlow(id, patch) {
+  const doc = await col('flows').findOne({ id: String(id || '') });
+  if (!doc) return null;
+  const clean = cleanFlow({ ...doc, ...patch, id: doc.id });
+  await col('flows').updateOne({ id: doc.id }, { $set: clean });
+  return clean;
+}
+
+export async function updateAccount(id, patch) {
+  const doc = await col('accounts').findOne({ id: String(id || '') });
+  if (!doc) return null;
+  const clean = cleanAccount({ ...doc, ...patch, id: doc.id });
+  await col('accounts').updateOne({ id: doc.id }, { $set: clean });
+  return clean;
+}
+
 export async function removeFlow(id) {
   const r = await col('flows').deleteOne({ id: String(id || '') });
   return r.deletedCount > 0;

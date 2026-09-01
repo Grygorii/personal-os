@@ -22,7 +22,7 @@ import * as bot from './bot.js';
 import { ensureIndexes } from './store.js';
 import { startWeb } from './web.js';
 
-const VERSION = 'pocket-1';
+const VERSION = 'pocket-2';
 
 process.on('unhandledRejection', (reason) => {
   console.error('[fatal] unhandled rejection:', reason instanceof Error ? reason.stack : reason);

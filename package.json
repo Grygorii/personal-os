@@ -12,7 +12,8 @@
     "migrate": "node src/migrate-tenant.js",
     "test": "node --test test/*.test.js",
     "start:steward": "node src/steward/index.js",
-    "start:pocket": "node src/pocket/index.js"
+    "start:pocket": "node src/pocket/index.js",
+    "render:pocket": "node scripts/pocket-render.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.104.1",
