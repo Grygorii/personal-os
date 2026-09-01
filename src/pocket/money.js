@@ -14,14 +14,19 @@
 // original is gone so it cannot be corrected. A missing rate produces null and is reported as
 // "not converted", never as the raw number passed through, and never as zero.
 
-import { toBase, cleanCurrency, isKnownCurrency } from '../fx.js';
+import { toBase, cleanCurrency, isKnownCurrency, realReturn } from '../fx.js';
 
 const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
 const txt = (v, n) => String(v == null ? '' : v).replace(/\s+/g, ' ').trim().slice(0, n);
 
 // What he holds. `portfolio` is the steward's book, carried here so net worth is the whole
 // picture rather than the part that happens to live in this database.
-export const ACCOUNT_KINDS = ['cash', 'deposit', 'property', 'portfolio', 'other'];
+export const ACCOUNT_KINDS = ['cash', 'deposit', 'property', 'portfolio', 'loan', 'other'];
+// What is OWED, not owned. A loan is stored as a positive number like everything else — the
+// sign lives in the kind, never in the value — and subtracted where it counts. Without this a
+// borrowing either vanishes from net worth or, worse, is added to it.
+export const LIABILITY_KINDS = ['loan'];
+export const isLiability = (kind) => LIABILITY_KINDS.includes(kind);
 // Money that arrives without him working for it. This flag, not the category name, is what
 // the goal counts — "rent" typed as a category is a label; `passive` is a decision.
 export const PASSIVE_KINDS = ['rent', 'interest', 'dividend'];
@@ -62,18 +67,24 @@ export function cleanFlow(f) {
 /** Everything he owns, in one currency. Anything without a rate is EXCLUDED from the total and
  *  named — a net worth that quietly omits the Egyptian apartment is worse than no total. */
 export function netWorth(accounts, table, base = 'EUR') {
-  const rows = accounts.map((a) => ({ ...a, inBase: toBase(a.value, a.currency, table) }));
+  const rows = accounts.map((a) => {
+    const inBase = toBase(a.value, a.currency, table);
+    // Signed once, here, so every consumer below adds and nothing has to remember the rule.
+    return { ...a, inBase, signed: inBase == null ? null : (isLiability(a.kind) ? -inBase : inBase) };
+  });
   const known = rows.filter((r) => r.inBase != null);
-  const total = known.reduce((n, r) => n + r.inBase, 0);
+  const assets = known.filter((r) => !isLiability(r.kind)).reduce((n, r) => n + r.inBase, 0);
+  const debts = known.filter((r) => isLiability(r.kind)).reduce((n, r) => n + r.inBase, 0);
+  const total = assets - debts;
   const byCurrency = {};
   for (const r of rows) {
     byCurrency[r.currency] = byCurrency[r.currency] || { currency: r.currency, raw: 0, inBase: 0, converted: true };
-    byCurrency[r.currency].raw += r.value;
+    byCurrency[r.currency].raw += isLiability(r.kind) ? -r.value : r.value;
     if (r.inBase == null) byCurrency[r.currency].converted = false;
-    else byCurrency[r.currency].inBase += r.inBase;
+    else byCurrency[r.currency].inBase += r.signed;
   }
   return {
-    rows, total, base,
+    rows, total, base, assets, debts,
     byKind: ACCOUNT_KINDS.map((k) => ({
       kind: k,
       inBase: known.filter((r) => r.kind === k).reduce((n, r) => n + r.inBase, 0),
@@ -83,7 +94,7 @@ export function netWorth(accounts, table, base = 'EUR') {
     // How much of the whole is exposed to one currency. For a household with most of its net
     // worth in a currency it does not spend, this is the number that matters most.
     exposure: Object.values(byCurrency)
-      .filter((c) => c.converted && total > 0)
+      .filter((c) => c.converted && total > 0 && c.inBase > 0)
       .map((c) => ({ currency: c.currency, pct: (c.inBase / total) * 100 }))
       .sort((a, b) => b.pct - a.pct),
   };
@@ -208,19 +219,28 @@ export function parseEntry(text, base = 'EUR') {
   // The first word of the remainder is a currency only if it is one.
   const split = (rest) => {
     const words = String(rest || '').trim().split(/\s+/).filter(Boolean);
-    if (words.length && isKnownCurrency(words[0])) {
-      return { currency: words[0].toUpperCase(), rest: words.slice(1).join(' ') };
+    let currency = base;
+    if (words.length && isKnownCurrency(words[0])) currency = words.shift().toUpperCase();
+    // A rate can sit anywhere in what is left — "20%", "20 %", "at 20%". Pulled out rather
+    // than positional, because nobody remembers a field order.
+    let ratePct = null;
+    const keep = [];
+    for (const w of words) {
+      const m = w.match(/^([\d]+(?:[.,]\d+)?)%$/);
+      if (m && ratePct == null) { ratePct = Number(m[1].replace(',', '.')); continue; }
+      if (/^(at|@)$/i.test(w)) continue;
+      keep.push(w);
     }
-    return { currency: base, rest: words.join(' ') };
+    return { currency, ratePct, rest: keep.join(' ') };
   };
 
   if (acct) {
     const kind = acct[1].toLowerCase();
     if (!ACCOUNT_KINDS.includes(kind)) return { type: 'account', badKind: kind };
     const amount = amountOf(acct[2]);
-    const { currency, rest } = split(acct[3]);
+    const { currency, ratePct, rest } = split(acct[3]);
     if (amount == null) return null;
-    return { type: 'account', kind, value: amount, currency, label: rest || kind };
+    return { type: 'account', kind, value: amount, currency, ratePct, label: rest || kind };
   }
 
   const amount = amountOf(flow[2]);
@@ -234,4 +254,66 @@ export function parseEntry(text, base = 'EUR') {
     category: (words[0] || 'uncategorised').toLowerCase(),
     note: rest,
   };
+}
+
+// ---- What the rates actually do ----
+//
+// He has deposits paying a percentage and credits costing one. Two questions follow, and both
+// are arithmetic, so neither is left to be felt.
+
+/** Interest earned and interest paid, per year, in the base currency. */
+export function interestPicture(accounts, table, base = 'EUR') {
+  const rows = accounts
+    .filter((a) => a.ratePct != null && a.value > 0)
+    .map((a) => {
+      const inBase = toBase(a.value, a.currency, table);
+      const annualLocal = a.value * (a.ratePct / 100);
+      return {
+        ...a,
+        inBase,
+        annualLocal,
+        annualBase: inBase == null ? null : inBase * (a.ratePct / 100),
+        liability: isLiability(a.kind),
+      };
+    });
+  const known = rows.filter((r) => r.annualBase != null);
+  const earned = known.filter((r) => !r.liability).reduce((n, r) => n + r.annualBase, 0);
+  const paid = known.filter((r) => r.liability).reduce((n, r) => n + r.annualBase, 0);
+  return {
+    base, rows, earned, paid,
+    net: earned - paid,
+    unconverted: rows.filter((r) => r.annualBase == null).map((r) => `${r.label || r.kind} (${r.currency})`),
+  };
+}
+
+/** THE QUESTION ANYONE WITH BOTH A LOAN AND A PORTFOLIO SHOULD ASK FIRST.
+ *
+ *  Paying 20% on a credit while expecting 7% from investing is a guaranteed 13% loss on every
+ *  euro that goes into the market instead of into the debt. Clearing the loan is a risk-free
+ *  return equal to its rate — the only risk-free return anyone is ever offered — and it beats
+ *  any yield he could chase. This is the single most valuable thing this app can tell him, and
+ *  it needs no model at all.
+ *
+ *  The comparison is honest about currency: a loan in EGP at 20% is not really costing 20% to a
+ *  euro household if the pound is falling, so where a rate history is known the real cost is
+ *  used instead of the headline. */
+export function debtVsInvesting(accounts, { expectedYieldPct = 5, rateThen, rateNow } = {}) {
+  const loans = accounts.filter((a) => isLiability(a.kind) && a.ratePct != null && a.value > 0);
+  return loans.map((l) => {
+    // Devaluation erodes a foreign-currency debt in the borrower's favour, exactly as it erodes
+    // a deposit against him. Same arithmetic, opposite sign.
+    const real = rateThen && rateNow ? realReturn({ nominalPct: l.ratePct, rateThen, rateNow }) : null;
+    const effectiveCost = real ? real.realPct : l.ratePct;
+    const edge = effectiveCost - expectedYieldPct;
+    return {
+      label: l.label || l.kind,
+      currency: l.currency,
+      ratePct: l.ratePct,
+      effectiveCostPct: effectiveCost,
+      expectedYieldPct,
+      edge,
+      // Positive edge means the debt costs more than investing is expected to pay.
+      payFirst: edge > 0,
+    };
+  }).sort((a, b) => b.edge - a.edge);
 }

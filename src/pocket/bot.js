@@ -12,7 +12,7 @@ import { send, sendLong, sendKeyboard } from '../telegram.js';
 import { config } from '../config.js';
 import * as fx from '../fx.js';
 import * as store from './store.js';
-import { netWorth, monthOf, goalProgress, yearsToGoal, ACCOUNT_KINDS, parseEntry } from './money.js';
+import { netWorth, monthOf, goalProgress, yearsToGoal, ACCOUNT_KINDS, parseEntry, interestPicture, debtVsInvesting, isLiability } from './money.js';
 
 const BASE = () => (config.baseCurrency || 'EUR');
 const fmt = (n, cur = BASE()) =>
@@ -64,8 +64,23 @@ async function cmdWorth() {
   if (!list.length) return 'Nothing added yet. Try "add deposit 540000 EGP Cairo savings" or "add property 2700000 EGP flat".';
   const n = netWorth(list, t, BASE());
 
-  const out = list.map((a) => `${a.label || a.kind}  ${fx.describeAmount(a.value, a.currency, t, BASE())}`);
-  out.push('', `Net worth ${fmt(n.total)}`);
+  const out = list.map((a) => {
+    const rate = a.ratePct != null ? `  ${a.ratePct}%` : '';
+    return `${isLiability(a.kind) ? '−' : ''}${a.label || a.kind}  ${fx.describeAmount(a.value, a.currency, t, BASE())}${rate}`;
+  });
+  out.push('', `Assets ${fmt(n.assets)}${n.debts > 0 ? ` · owed ${fmt(n.debts)}` : ''}`);
+  out.push(`Net worth ${fmt(n.total)}`);
+
+  // What the rates do over a year, and then the one question anyone holding both a credit and
+  // a portfolio should answer before choosing between them.
+  const ip = interestPicture(list, t, BASE());
+  if (ip.earned > 0 || ip.paid > 0) {
+    out.push('', `Interest: earning ${fmt(ip.earned)}/yr · paying ${fmt(ip.paid)}/yr · net ${fmt(ip.net)}/yr`);
+  }
+  for (const d of debtVsInvesting(list, { expectedYieldPct: 7 })) {
+    if (!d.payFirst) continue;
+    out.push('', `⚠ ${d.label} costs ${d.ratePct}% a year. Clearing it is a guaranteed ${d.ratePct}% return — better than the ${d.expectedYieldPct}% you'd hope for investing, and with no risk at all. Pay this before you buy anything.`);
+  }
 
   // The number that matters most for this household, and the one a single euro total hides.
   if (n.exposure.length > 1) {
@@ -125,6 +140,8 @@ What you own:
   add deposit 540000 EGP Cairo savings
   add property 2700000 EGP apartment
   add portfolio 1000 USD eToro
+  add deposit 540000 EGP 20% Cairo savings     (a rate, if it pays one)
+  add loan 200000 EGP 24% car credit           (a credit you owe)
   accounts                 — list them, with ids to remove
 
   month    — in, out, surplus, where it went

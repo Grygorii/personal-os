@@ -193,7 +193,7 @@ test('parseEntry: the ways a European writes a number', () => {
 
 test('parseEntry: accounts, and a kind it does not know', () => {
   const dep = parseEntry('add deposit 540000 EGP Cairo savings', 'EUR');
-  assert.deepEqual(dep, { type: 'account', kind: 'deposit', value: 540000, currency: 'EGP', label: 'Cairo savings' });
+  assert.deepEqual(dep, { type: 'account', kind: 'deposit', value: 540000, currency: 'EGP', ratePct: null, label: 'Cairo savings' });
   assert.equal(parseEntry('add portfolio 1000 USD eToro').label, 'eToro');
   // An unknown kind is reported so the reply can list the real ones, not silently filed as cash.
   assert.deepEqual(parseEntry('add gold 5 oz'), { type: 'account', badKind: 'gold' });
@@ -205,4 +205,84 @@ test('parseEntry: anything that is not an entry is null, not a guess', () => {
   for (const junk of ['', null, 'help', 'how much did I spend', 'in', 'out food', 'in abc salary']) {
     assert.equal(parseEntry(junk), null, JSON.stringify(junk));
   }
+});
+
+// ---- Credits and deposits, both with a rate ----
+// A loan is money OWED. Without a liability kind it either vanishes from net worth or gets
+// added to it, and either way the household reads its own position wrong.
+
+import { interestPicture, debtVsInvesting, isLiability, ACCOUNT_KINDS } from '../src/pocket/money.js';
+
+test('netWorth: a credit is subtracted, not added and not dropped', () => {
+  const accounts = [
+    cleanAccount({ label: 'Bank', kind: 'cash', currency: 'EUR', value: 5000 }),
+    cleanAccount({ label: 'Cairo deposit', kind: 'deposit', currency: 'EGP', value: 540000, ratePct: 20 }),
+    cleanAccount({ label: 'Car credit', kind: 'loan', currency: 'EGP', value: 216000, ratePct: 24 }),
+  ];
+  const n = netWorth(accounts, T);
+  assert.equal(n.assets, 15000, '5,000 EUR + 10,000 EUR of EGP deposit');
+  assert.equal(n.debts, 4000, '216,000 EGP');
+  assert.equal(n.total, 11000, 'assets minus debts');
+  assert.notEqual(n.total, 19000, 'a debt must never be added as though it were an asset');
+  assert.equal(isLiability('loan'), true);
+  assert.equal(isLiability('deposit'), false);
+  assert.ok(ACCOUNT_KINDS.includes('loan'));
+});
+
+test('netWorth: currency exposure nets the debt against holdings in the same currency', () => {
+  const accounts = [
+    cleanAccount({ label: 'Bank', kind: 'cash', currency: 'EUR', value: 5000 }),
+    cleanAccount({ label: 'Deposit', kind: 'deposit', currency: 'EGP', value: 540000 }),
+    cleanAccount({ label: 'Credit', kind: 'loan', currency: 'EGP', value: 270000 }),
+  ];
+  const n = netWorth(accounts, T);
+  // 10,000 of EGP assets less 5,000 of EGP debt is 5,000 net, against 5,000 EUR.
+  const egp = n.exposure.find((e) => e.currency === 'EGP');
+  assert.ok(Math.abs(egp.pct - 50) < 0.01, 'borrowing in a currency reduces exposure to it');
+});
+
+test('interestPicture: what is earned, what is paid, and the net', () => {
+  const accounts = [
+    cleanAccount({ label: 'Cairo deposit', kind: 'deposit', currency: 'EGP', value: 540000, ratePct: 20 }),
+    cleanAccount({ label: 'Car credit', kind: 'loan', currency: 'EGP', value: 216000, ratePct: 25 }),
+    cleanAccount({ label: 'Flat', kind: 'property', currency: 'EGP', value: 2700000 }),   // no rate
+  ];
+  const p = interestPicture(accounts, T);
+  assert.equal(p.rows.length, 2, 'only things with a rate');
+  assert.equal(p.earned, 2000, '20% of 10,000 EUR');
+  assert.equal(p.paid, 1000, '25% of 4,000 EUR');
+  assert.equal(p.net, 1000);
+});
+
+test('debtVsInvesting: a credit costing more than investing pays comes first', () => {
+  const accounts = [
+    cleanAccount({ label: 'Car credit', kind: 'loan', currency: 'EGP', value: 216000, ratePct: 24 }),
+    cleanAccount({ label: 'Cheap loan', kind: 'loan', currency: 'EUR', value: 5000, ratePct: 2 }),
+    cleanAccount({ label: 'Deposit', kind: 'deposit', currency: 'EGP', value: 540000, ratePct: 20 }),
+  ];
+  const d = debtVsInvesting(accounts, { expectedYieldPct: 7 });
+  assert.equal(d.length, 2, 'only debts');
+  assert.equal(d[0].label, 'Car credit', 'worst spread first');
+  assert.equal(d[0].payFirst, true);
+  assert.equal(d[0].edge, 17, '24% cost against 7% expected');
+  // A loan cheaper than the expected return is not urgent, and must not be flagged as if it were.
+  assert.equal(d[1].payFirst, false);
+});
+
+test('debtVsInvesting: a falling currency makes a foreign debt genuinely cheaper', () => {
+  const accounts = [cleanAccount({ label: 'Cairo credit', kind: 'loan', currency: 'EGP', value: 216000, ratePct: 24 })];
+  // The pound fell from 54 to 72 per euro: the debt shrank in euro terms.
+  const d = debtVsInvesting(accounts, { expectedYieldPct: 7, rateThen: 54, rateNow: 72 });
+  assert.ok(d[0].effectiveCostPct < 24, 'the headline rate overstates what it costs a euro household');
+  assert.ok(d[0].effectiveCostPct < 0, 'a 24% rate against a 25% devaluation is cheap money');
+  assert.equal(d[0].payFirst, false, 'and so it is not the thing to clear first');
+});
+
+test('parseEntry: a rate can sit anywhere, and is optional', () => {
+  assert.equal(parseEntry('add deposit 540000 EGP 20% Cairo savings').ratePct, 20);
+  assert.equal(parseEntry('add loan 200000 EGP at 24% car credit').ratePct, 24);
+  assert.equal(parseEntry('add deposit 5000 EUR 2,5% bank').ratePct, 2.5);
+  assert.equal(parseEntry('add property 2700000 EGP apartment').ratePct, null);
+  // The rate and the connecting word never end up in the label.
+  assert.equal(parseEntry('add loan 200000 EGP at 24% car credit').label, 'car credit');
 });
