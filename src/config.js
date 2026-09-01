@@ -60,6 +60,13 @@ export const config = {
   // does not touch; anything he picks by hand has to beat it or it is a hobby he is paying
   // for. Default is a world tracker, so the comparison is "the boring thing", not the S&P.
   benchmark: oneLine(process.env.BENCHMARK) || 'URTH',
+  // ---- Pocket (the household's money) ----
+  // What everything totals in. He earns and spends in euro; the portfolio is in dollars and
+  // the deposits and the apartment are in Egyptian pounds, so one base currency has to be
+  // named or "how much do I have" has no answer.
+  baseCurrency: (oneLine(process.env.BASE_CURRENCY) || 'EUR').toUpperCase(),
+  // Overridable so a different rate provider can be swapped in without a code change.
+  fxUrl: oneLine(process.env.FX_URL),
   allowedEmails: oneLine(process.env.ALLOWED_EMAILS)
     .split(',')
     .map((e) => e.trim().toLowerCase())

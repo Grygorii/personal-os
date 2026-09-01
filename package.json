@@ -11,7 +11,8 @@
     "seed": "node src/seed.js",
     "migrate": "node src/migrate-tenant.js",
     "test": "node --test test/*.test.js",
-    "start:steward": "node src/steward/index.js"
+    "start:steward": "node src/steward/index.js",
+    "start:pocket": "node src/pocket/index.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.104.1",
