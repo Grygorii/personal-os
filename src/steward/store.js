@@ -101,7 +101,19 @@ export async function setPlan({ monthly, months, startCapital }) {
   return plan;
 }
 
+// Filings read, kept so the NEXT one can be compared against it. One quarter's cover means
+// little; cover falling from 1.8x to 1.05x over three quarters is the whole story.
+export async function saveDigest({ ticker, url, figures, coverage }) {
+  await col('digests').insertOne({ ticker, url, figures, coverage, at: Date.now() });
+}
+
+export async function lastDigest(ticker) {
+  const rows = await col('digests').find({ ticker }).sort({ at: -1 }).limit(1).toArray();
+  return rows[0] || null;
+}
+
 export async function ensureIndexes() {
   await col(POSITIONS).createIndex({ id: 1 }, { unique: true });
   await col(POSITIONS).createIndex({ ticker: 1 });
+  await col('digests').createIndex({ ticker: 1, at: -1 });
 }

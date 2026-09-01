@@ -13,6 +13,7 @@ import { config } from '../config.js';
 import * as store from './store.js';
 import * as market from './market.js';
 import * as brain from './brain.js';
+import * as digest from './digest.js';
 import { parseTradeLine, positionMath, summarise, stale, brokenButHeld, checkRules, DEFAULT_RULES, incomeOf, dividendFlags, rebalancePlan, benchmarkCompare, checkRulesPlanned, plannedCapital, planProgress } from './book.js';
 
 const money = (n) => (n == null ? 'n/a' : (n < 0 ? '-' : '') + '$' + Math.abs(n).toFixed(2));
@@ -186,6 +187,43 @@ async function cmdScore() {
   return out.join('\n');
 }
 
+/** Read a filing and answer the one question his strategy rests on: is the dividend safe?
+ *  The model copies figures out of the document; the arithmetic happens in digest.js. */
+async function cmdDigest(rawTicker, url) {
+  const ticker = market.cleanTicker(rawTicker);
+  if (!ticker) return 'Which company? "digest KO <url>".';
+  let doc;
+  try { doc = await digest.fetchDocument(url); }
+  catch (e) { return `Couldn't read that: ${e.message}`; }
+
+  let result;
+  try { result = await digest.extract({ text: doc.text, ticker }); }
+  catch (e) { return `Couldn't get the figures out of that document: ${e.message}`; }
+
+  const prev = await store.lastDigest(ticker);
+  await store.saveDigest({ ticker, url: doc.url, ...result });
+
+  const c = result.coverage, f = result.figures;
+  const out = [`${ticker} — ${f.period || 'period not stated'}${f.scale ? ` (${f.scale})` : ''}`];
+  out.push(
+    c.freeCashFlow != null ? `Free cash flow ${c.freeCashFlow.toLocaleString()}` : 'Free cash flow: not computable',
+    f.dividendsPaid != null ? `Dividends paid ${f.dividendsPaid.toLocaleString()}` : 'Dividends paid: not found',
+    c.fcfCover != null ? `Covered ${c.fcfCover.toFixed(2)}x by cash` : 'Cover: unknown',
+  );
+  const flags = digest.digestFlags(f, c);
+  if (flags.length) out.push('', ...flags.map((x) => `⚠ ${x}`));
+  const moves = digest.compareDigests(result, prev);
+  if (moves.length) out.push('', 'Since last time:', ...moves.map((x) => `  ${x}`));
+  if (f.dividendLanguage) out.push('', `They said: "${f.dividendLanguage}"`);
+  if (f.concerns.length) out.push('', ...f.concerns.map((x) => `• ${x}`));
+  // A ratio from a third of a filing looks exactly like a ratio from all of it.
+  if (doc.truncated) out.push('', `⚠ That document was longer than I read (${doc.chars.toLocaleString()} chars) — figures may be from part of it.`);
+
+  const held = (await store.getPosition(ticker));
+  if (held?.invalidation) out.push('', `You said you'd be wrong if: "${held.invalidation}"`);
+  return out.join('\n');
+}
+
 async function cmdIdea(ticker, note) {
   const sym = market.cleanTicker(ticker);
   if (!sym) return 'Which ticker? e.g. "idea MSTR".';
@@ -263,6 +301,7 @@ Just type what you did:
   holds MSTR / broken MSTR — does the thesis still stand?
   idea MSTR — the case for AND against, plus what I don't know
   plan 1000 24 — what you're funding, and what limits are measured against
+  digest KO <url> — read a filing: is the dividend covered by cash?
   score — did your picking beat just buying the index?
   review — what most needs your attention
 
@@ -302,6 +341,7 @@ export async function handle(text, chatId) {
     if (!p) return `I don't have ${m[1].toUpperCase()} in the book. Record a buy first, or say "plan" to set the whole thing up.`;
     return `${p.ticker} target set to ${p.target}%.`;
   }
+  if ((m = s.match(/^\/?digest\s+(\S+)\s+(\S+)$/i))) return cmdDigest(m[1], m[2]);
   if ((m = s.match(/^\/?idea\s+(\S+)\s*(.*)$/i))) return cmdIdea(m[1], m[2]);
   if ((m = s.match(/^\/?thesis\s+(\S+)\s+(.+)$/i))) {
     const p = await store.setThesis({ ticker: m[1].toUpperCase(), thesis: m[2] });

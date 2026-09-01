@@ -426,3 +426,73 @@ test('planProgress: reports what he has put in, and refuses to project', () => {
   // There is deliberately no projected-value field. He has seen enough of those this week.
   assert.equal(p.projected, undefined);
 });
+
+// ---- Reading a filing ----
+// The model copies figures out of the document; the code decides what they mean. These test
+// the deciding half, which is the half that must never be wrong.
+
+import { cleanFigures, coverageOf, digestFlags, compareDigests, htmlToText } from '../src/steward/digest.js';
+
+test('cleanFigures: filings write negatives in brackets and scale in words', () => {
+  const f = cleanFigures({
+    revenue: '12,345.6 million', capex: '(2,100)', dividendsPaid: '(3,910)',
+    operatingCashFlow: '8,092', netIncome: 'not disclosed', cash: '1.2 billion',
+  });
+  assert.equal(f.revenue, 12345.6e6);
+  assert.equal(f.capex, 2100, 'capex is a magnitude, not a sign');
+  assert.equal(f.dividendsPaid, 3910);
+  assert.equal(f.operatingCashFlow, 8092);
+  assert.equal(f.netIncome, null, 'prose where a number belongs is unknown, not zero');
+  assert.equal(f.cash, 1.2e9);
+});
+
+test('coverageOf: free cash flow cover is the number that matters', () => {
+  const f = cleanFigures({ operatingCashFlow: 8092, capex: 2100, dividendsPaid: 3910, netIncome: 5000, buybacks: 2000, totalDebt: 30000, cash: 5000 });
+  const c = coverageOf(f);
+  assert.equal(c.freeCashFlow, 5992);
+  assert.ok(Math.abs(c.fcfCover - 1.532) < 0.001);
+  assert.ok(Math.abs(c.earningsCover - 1.279) < 0.001);
+  assert.equal(c.netDebt, 25000);
+  // Buybacks compete for the same cash: 5,992 against 5,910 is barely over one.
+  assert.ok(c.fcfCoverWithBuybacks < 1.02);
+});
+
+test('coverageOf: a missing figure produces null, never a confident ratio', () => {
+  const c = coverageOf(cleanFigures({ operatingCashFlow: 8092, dividendsPaid: 3910 }));
+  assert.equal(c.freeCashFlow, null, 'no capex means no free cash flow');
+  assert.equal(c.fcfCover, null);
+  // A zero dividend must not divide.
+  assert.equal(coverageOf(cleanFigures({ operatingCashFlow: 100, capex: 10, dividendsPaid: 0 })).fcfCover, null);
+});
+
+test('digestFlags: the gap between profit and cash is where a cut hides', () => {
+  const f = cleanFigures({ operatingCashFlow: 4000, capex: 1000, dividendsPaid: 3500, netIncome: 5000 });
+  const flags = digestFlags(f, coverageOf(f)).join(' | ');
+  assert.match(flags, /Earnings cover the dividend but cash does not/);
+
+  const unsafe = cleanFigures({ operatingCashFlow: 3000, capex: 1000, dividendsPaid: 3000 });
+  assert.match(digestFlags(unsafe, coverageOf(unsafe)).join(' '), /NOT funded by the business/);
+
+  const healthy = cleanFigures({ operatingCashFlow: 9000, capex: 1000, dividendsPaid: 2000, netIncome: 3000 });
+  assert.deepEqual(digestFlags(healthy, coverageOf(healthy)), [], 'a well-covered payer is quiet');
+
+  // Unknown must announce itself rather than passing as fine.
+  assert.match(digestFlags(cleanFigures({}), coverageOf(cleanFigures({}))).join(' '), /unknown, not fine/);
+});
+
+test('compareDigests: a cover falling over three quarters is the whole story', () => {
+  const mk = (fcfCover, div) => ({ coverage: { fcfCover }, figures: { dividendsPaid: div } });
+  const out = compareDigests(mk(1.05, 3900), mk(1.8, 3900)).join(' | ');
+  assert.match(out, /FCF cover down from 1\.80x to 1\.05x/);
+  assert.match(out, /⚠/, 'falling cover is flagged, not just reported');
+  // A dividend that shrank is the loudest signal there is.
+  assert.match(compareDigests(mk(2, 1000), mk(2, 3900)).join(' '), /Dividends paid FELL/);
+  assert.deepEqual(compareDigests(mk(1.5, 100), null), [], 'nothing to compare against on the first read');
+});
+
+test('htmlToText: script and style contents never become prose', () => {
+  const t = htmlToText('<style>.a{color:red}</style><script>var x=1</script><p>Dividends paid</p><p>3,910</p>');
+  assert.doesNotMatch(t, /color:red|var x/);
+  assert.match(t, /Dividends paid/);
+  assert.match(t, /3,910/);
+});
