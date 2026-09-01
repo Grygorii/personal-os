@@ -51,6 +51,11 @@ export const config = {
   // Set INVITE_ONLY=true to run a closed beta instead; then only the owner, ALLOWED_EMAILS
   // and addresses invited from /admin can get in.
   inviteOnly: oneLine(process.env.INVITE_ONLY) === 'true',
+  // ---- Steward (the investing bot) ----
+  // Market data. Without a key the steward falls back to end-of-day prices and has no
+  // dividend numbers at all, which for an income strategy is most of what matters.
+  marketKey: oneLine(process.env.MARKET_API_KEY),
+  marketProvider: oneLine(process.env.MARKET_PROVIDER),
   allowedEmails: oneLine(process.env.ALLOWED_EMAILS)
     .split(',')
     .map((e) => e.trim().toLowerCase())

@@ -1,7 +1,7 @@
 {
   "name": "personal-os",
   "version": "0.1.0",
-  "description": "A personal operating system: proactive agents that coach Гриша over Telegram, backed by MongoDB Atlas.",
+  "description": "A personal operating system: proactive agents that coach \u0413\u0440\u0438\u0448\u0430 over Telegram, backed by MongoDB Atlas.",
   "type": "module",
   "engines": {
     "node": ">=20"
@@ -10,7 +10,8 @@
     "start": "node src/index.js",
     "seed": "node src/seed.js",
     "migrate": "node src/migrate-tenant.js",
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "start:steward": "node src/steward/index.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.104.1",
