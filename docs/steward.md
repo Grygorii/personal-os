@@ -128,6 +128,23 @@ year beats a 12% payout that gets halved, and the bot is instructed to say so ev
 temptation appears. `dividendFlags()` catches it arithmetically rather than leaving it to be
 argued about.
 
+## The funding plan
+
+`plan 1000 24` — $1,000 a month for 24 months, on top of what is already in.
+
+This is not decoration. Without it the concentration rules are nonsense for a year: the first
+buy is 100% of a one-position book, the second is 50%, and the bot spends twelve months
+shouting about limits he is not actually breaching — which teaches him to ignore the warnings
+that matter. Measured against **committed** capital, a $1,000 buy in month one is 4%, which is
+the truth.
+
+The plan is used to judge whether a position is oversized. The **actual book** is always what
+gets reported. And once the book outgrows the plan, the book becomes the measure again — a
+plan must never soften a real breach.
+
+`plan` on its own reports what he has put in and how much is still to come. It deliberately
+does **not** project a future value.
+
 ## The scoreboard
 
 He already has a Revolut robo-advisor: global UCITS accumulating ETFs, EUR100 a month on

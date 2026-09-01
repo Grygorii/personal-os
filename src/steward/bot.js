@@ -13,7 +13,7 @@ import { config } from '../config.js';
 import * as store from './store.js';
 import * as market from './market.js';
 import * as brain from './brain.js';
-import { parseTradeLine, positionMath, summarise, stale, brokenButHeld, checkRules, DEFAULT_RULES, incomeOf, dividendFlags, rebalancePlan, benchmarkCompare } from './book.js';
+import { parseTradeLine, positionMath, summarise, stale, brokenButHeld, checkRules, DEFAULT_RULES, incomeOf, dividendFlags, rebalancePlan, benchmarkCompare, checkRulesPlanned, plannedCapital, planProgress } from './book.js';
 
 const money = (n) => (n == null ? 'n/a' : (n < 0 ? '-' : '') + '$' + Math.abs(n).toFixed(2));
 const pct = (n) => (n == null ? '' : `${n >= 0 ? '+' : ''}${n.toFixed(1)}%`);
@@ -82,8 +82,12 @@ async function cmdTrade(parsed, rawText) {
     const positions = await store.allPositions();
     const { prices } = await priced(positions);
     const existing = positions.find((p) => p.ticker === ticker);
-    warnings = checkRules({
+    // Judged against the capital he has COMMITTED to, not against a half-built book. In month
+    // one every position is 100% of what exists, and warning about that for a year would train
+    // him to ignore the warnings that matter.
+    warnings = checkRulesPlanned({
       ticker, addValue: qty * price, book: summarise(positions, prices),
+      planned: plannedCapital(await store.getPlan()),
       rules: DEFAULT_RULES, invalidation: existing?.invalidation,
     });
   }
@@ -110,6 +114,11 @@ async function cmdRebalance(contribution) {
     return 'Nothing in the book yet. Once you own something, "target KO 8" sets what share it should be, and I check the drift from there.';
   }
   const { prices } = await priced(positions);
+  // No amount typed → assume this month's contribution. That is the question he is actually
+  // asking on the 28th of the month, and making him type the number every time is friction on
+  // the one habit worth protecting.
+  const funding = await store.getPlan();
+  if (!contribution && funding?.monthly) contribution = funding.monthly;
   const plan = rebalancePlan({ positions, prices, contribution });
   const out = [];
 
@@ -125,6 +134,24 @@ async function cmdRebalance(contribution) {
   for (const s of plan.sells) out.push(`  Trim ${money(s.amount)} ${s.ticker} — ${s.why}`);
   if (plan.notes.length) out.push('', ...plan.notes);
   return out.join('\n');
+}
+
+/** Where he is in the funding, stated as what he has put in — never as what it might become.
+ *  He has already been shown one 31-year projection this week; this deliberately refuses to be
+ *  another one. */
+async function cmdPlan() {
+  const funding = await store.getPlan();
+  if (!funding) return 'No plan set. "plan 1000 24" = $1,000 a month for 24 months. It changes how position limits are measured — against what you have committed, not against a half-built account.';
+  const positions = await store.allPositions();
+  const { prices } = await priced(positions);
+  const p = planProgress(funding, summarise(positions, prices));
+  return [
+    `${money(p.monthly)} a month, ${p.monthsLeft} of ${funding.months} left.`,
+    `Committed: ${money(p.committed)} · still to come: ${money(p.toCome)}`,
+    `Put in so far: ${money(p.invested)} (${p.fundedPct.toFixed(0)}%)`,
+    '',
+    `Position limits are measured against ${money(p.committed)}, so a ${money(p.monthly)} buy today is sized against the finished account, not this one.`,
+  ].join('\n');
 }
 
 /** Did the picking beat just adding the money to the index?
@@ -235,6 +262,7 @@ Just type what you did:
   wrong if MSTR ... — what would prove you wrong
   holds MSTR / broken MSTR — does the thesis still stand?
   idea MSTR — the case for AND against, plus what I don't know
+  plan 1000 24 — what you're funding, and what limits are measured against
   score — did your picking beat just buying the index?
   review — what most needs your attention
 
@@ -259,6 +287,15 @@ export async function handle(text, chatId) {
   if (/^\/?review\b/.test(low)) return (await review('a review he asked for just now')) || 'Nothing open to review.';
 
   let m;
+  if (/^\/?plan\b/i.test(low) && !/^\/?plan\s+\d/i.test(low)) return cmdPlan();
+  if ((m = s.match(/^\/?plan\s+(\d+(?:[.,]\d+)?)\s*(?:x|for|\/)?\s*(\d+)?/i))) {
+    const saved = await store.setPlan({
+      monthly: Number(m[1].replace(',', '.')),
+      months: m[2] ? Number(m[2]) : 24,
+      startCapital: (await store.allPositions()).reduce((n, p) => n + positionMath(p).invested, 0),
+    });
+    return `Plan set: ${money(saved.monthly)} a month for ${saved.months} months — ${money(saved.startCapital + saved.monthly * saved.months)} committed.\n\nPosition limits are measured against that from now on, not against what's in the account today.`;
+  }
   if ((m = s.match(/^\/?rebalance\s*(\d+(?:[.,]\d+)?)?/i))) return cmdRebalance(m[1] ? Number(m[1].replace(',', '.')) : 0);
   if ((m = s.match(/^\/?target\s+(\S+)\s+(\d+(?:[.,]\d+)?)\s*%?$/i))) {
     const p = await store.setTarget({ ticker: m[1].toUpperCase(), target: Number(m[2].replace(',', '.')) });

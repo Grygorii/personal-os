@@ -336,3 +336,93 @@ test('benchmarkCompare: a leg with no benchmark price is counted as missing, not
   assert.equal(s.missingLegs, 1);
   assert.equal(s.trustworthy, false, 'a partial scoreboard must announce itself');
 });
+
+// ---- Funding a book over two years ----
+// $1,000 now and $1,000 a month for 24 months. Judged against a half-built book, every buy in
+// year one breaches a limit and the bot cries wolf until he stops reading it. Judged against
+// what he has committed to fund, the same buy is 4% and the warnings mean something again.
+
+import { plannedCapital, checkRulesPlanned, planProgress } from '../src/steward/book.js';
+
+const PLAN = { monthly: 1000, months: 24, startCapital: 1000, startedAt: Date.parse('2026-09-01T00:00:00Z') };
+
+test('plannedCapital: what he has committed, and what is still to come', () => {
+  const p = plannedCapital(PLAN, Date.parse('2026-09-02T00:00:00Z'));
+  assert.equal(p.committed, 25000, '1,000 now plus 1,000 a month for 24 months');
+  assert.equal(p.monthsLeft, 24);
+  assert.equal(p.toCome, 24000);
+
+  // A year in, the remaining commitment has shrunk but the total has not.
+  const later = plannedCapital(PLAN, Date.parse('2027-09-01T00:00:00Z'));
+  assert.equal(later.monthsLeft, 12);
+  assert.equal(later.toCome, 12000);
+  assert.equal(later.committed, 25000, 'the plan does not shrink as it is funded');
+
+  assert.equal(plannedCapital(null), null);
+  assert.equal(plannedCapital({ monthly: 0, months: 24 }), null, 'a plan with no money in it is not a plan');
+});
+
+test('checkRulesPlanned: the first buy of a 25k plan is 4%, not 100%', () => {
+  const empty = summarise([], {});
+  const planned = plannedCapital(PLAN, PLAN.startedAt);
+
+  // Against the book alone this is the entire account and would warn.
+  assert.match(
+    checkRules({ ticker: 'KO', addValue: 1000, book: empty, invalidation: 'cut' }).join(' '),
+    /100% of the book/,
+    'the old rule, which is why it needed replacing'
+  );
+  // Against the plan it is 4% of committed capital, which is the truth.
+  assert.deepEqual(
+    checkRulesPlanned({ ticker: 'KO', addValue: 1000, book: empty, planned, invalidation: 'cut' }),
+    [],
+    'a first position inside the starter size says nothing'
+  );
+});
+
+test('checkRulesPlanned: the ceiling still bites when it should', () => {
+  const planned = plannedCapital(PLAN, PLAN.startedAt);
+  const empty = summarise([], {});
+  // 6,000 into one name is 24% of the 25,000 plan — past the 20% ceiling even on day one.
+  assert.match(
+    checkRulesPlanned({ ticker: 'KO', addValue: 6000, book: empty, planned, invalidation: 'cut' }).join(' '),
+    /24% of your planned capital/
+  );
+  // And 3,000 is 12% — inside the ceiling but above the 10% starter size for a NEW name.
+  assert.match(
+    checkRulesPlanned({ ticker: 'NEW', addValue: 3000, book: empty, planned, invalidation: 'cut' }).join(' '),
+    /starter size/
+  );
+});
+
+test('checkRulesPlanned: once the book outgrows the plan, the book is the measure', () => {
+  const big = summarise(
+    [cleanPosition({ ticker: 'KO', entries: [{ qty: 1000, price: 100 }] })],
+    { KO: { price: 100 } }
+  );                                        // a 100,000 book against a 25,000 plan
+  const planned = plannedCapital(PLAN, PLAN.startedAt);
+  // 30,000 more of KO would be 130,000 of 130,000 — the plan must not soften a real breach.
+  assert.match(
+    checkRulesPlanned({ ticker: 'KO', addValue: 30000, book: big, planned, invalidation: 'cut' }).join(' '),
+    /100% of your planned capital/
+  );
+});
+
+test('checkRulesPlanned: no plan behaves exactly like the old rule', () => {
+  const empty = summarise([], {});
+  assert.match(
+    checkRulesPlanned({ ticker: 'KO', addValue: 1000, book: empty, planned: null, invalidation: 'cut' }).join(' '),
+    /100% of/,
+    'without a plan there is nothing to measure against but the book'
+  );
+});
+
+test('planProgress: reports what he has put in, and refuses to project', () => {
+  const book = summarise([cleanPosition({ ticker: 'KO', entries: [{ qty: 50, price: 100 }] })], { KO: { price: 120 } });
+  const p = planProgress(PLAN, book, PLAN.startedAt);
+  assert.equal(p.invested, 5000, 'what he paid, not what it is worth');
+  assert.equal(Math.round(p.fundedPct), 20);
+  assert.equal(p.committed, 25000);
+  // There is deliberately no projected-value field. He has seen enough of those this week.
+  assert.equal(p.projected, undefined);
+});

@@ -441,3 +441,79 @@ function priceOnLocal(series, ts) {
   }
   return null;
 }
+
+// ---- The accumulation plan ----
+//
+// $1,000 now and $1,000 a month for twenty-four months. That is not a $1,000 account, it is a
+// $25,000 account being funded over two years, and every rule has to know the difference.
+//
+// Without this, the concentration check is nonsense for the whole first year: the first buy is
+// 100% of a one-position book, the second is 50%, and the bot spends twelve months shouting
+// about limits he is not actually breaching. Measured against the capital he has COMMITTED to
+// contributing, a $1,000 position in month one is 4% of the plan — which is the truth.
+//
+// The other half of that truth: a plan is a promise about the future, and it is only real
+// while he keeps making the payments. So planned capital is used to judge whether a position
+// is oversized, and the ACTUAL book is always what gets reported.
+
+export function plannedCapital(plan, now = Date.now()) {
+  if (!plan || !(plan.monthly > 0) || !(plan.months > 0)) return null;
+  const start = num(plan.startedAt) || now;
+  // Calendar months, counted as calendar months. Dividing elapsed days by an average month
+  // length gets 11.99 for a full year, floors to 11, and tells him he has thirteen payments
+  // left on the first anniversary of a twenty-four month plan. Months are not a fixed length
+  // and cannot be derived by division.
+  const a = new Date(start), b = new Date(now);
+  let elapsed = (b.getUTCFullYear() - a.getUTCFullYear()) * 12 + (b.getUTCMonth() - a.getUTCMonth());
+  // Part-way through the month, that payment has not been made yet.
+  if (b.getUTCDate() < a.getUTCDate()) elapsed -= 1;
+  elapsed = Math.max(0, elapsed);
+  const remaining = Math.max(0, plan.months - elapsed);
+  return {
+    monthly: plan.monthly,
+    monthsLeft: remaining,
+    // What he has committed to putting in, in total, counting what is already invested.
+    committed: pos(plan.startCapital) + plan.monthly * plan.months,
+    // What is still to come.
+    toCome: plan.monthly * remaining,
+  };
+}
+
+/** Concentration, judged against the plan rather than against today's half-built book.
+ *  `book` is what he actually holds; `planned` is what he has committed to funding. */
+export function checkRulesPlanned({ ticker, addValue, book, planned, rules = DEFAULT_RULES, invalidation }) {
+  const warnings = [];
+  const bookNow = (book?.totalValue || 0) + pos(addValue);
+  // The denominator is the larger of the two. While he is still funding, the plan is the
+  // honest measure; once the book outgrows the plan, the book is.
+  const base = Math.max(bookNow, planned?.committed || 0);
+  if (base > 0) {
+    const existing = book?.weights?.find((w) => w.ticker === ticker);
+    const existingValue = existing ? (existing.pct / 100) * (book.totalValue || 0) : 0;
+    const after = ((existingValue + pos(addValue)) / base) * 100;
+    if (after > rules.maxPositionPct) {
+      warnings.push(`${ticker} would be ${after.toFixed(0)}% of your ${planned ? 'planned' : ''} capital — your ceiling is ${rules.maxPositionPct}%.`);
+    } else if (!existing && after > rules.maxNewPositionPct) {
+      warnings.push(`A new position at ${after.toFixed(0)}% is above your ${rules.maxNewPositionPct}% starter size.`);
+    }
+  }
+  if (rules.requireInvalidation && !txt(invalidation, 1000)) {
+    warnings.push('No invalidation written. What would tell you this is wrong?');
+  }
+  return warnings;
+}
+
+/** How far through the funding he is, for a review that can say something true about progress
+ *  without pretending to know what the market will do. */
+export function planProgress(plan, book, now = Date.now()) {
+  const p = plannedCapital(plan, now);
+  if (!p) return null;
+  const invested = book?.totalInvested || 0;
+  return {
+    ...p,
+    invested,
+    // Deliberately NOT a projection. He has seen one 31-year projection this week already, and
+    // the honest version of this number is "what you have put in", not "what it might become".
+    fundedPct: p.committed > 0 ? (invested / p.committed) * 100 : 0,
+  };
+}

@@ -75,6 +75,32 @@ export async function setThesis({ ticker, thesis, invalidation }) {
   return savePosition(p);
 }
 
+// ---- The funding plan ----
+// One document, not a collection: there is one plan. It is what turns "this is a $1,000 book"
+// into "this is a $25,000 book being funded over two years", which is the difference between
+// the concentration rules being useful and being noise for a year.
+export async function getPlan() {
+  const doc = await col('settings').findOne({ _id: 'plan' });
+  if (!doc) return null;
+  return {
+    monthly: Number(doc.monthly) || 0,
+    months: Number(doc.months) || 0,
+    startCapital: Number(doc.startCapital) || 0,
+    startedAt: Number(doc.startedAt) || Date.now(),
+  };
+}
+
+export async function setPlan({ monthly, months, startCapital }) {
+  const plan = {
+    monthly: Math.max(0, Number(monthly) || 0),
+    months: Math.max(0, Math.min(600, Number(months) || 0)),
+    startCapital: Math.max(0, Number(startCapital) || 0),
+    startedAt: Date.now(),
+  };
+  await col('settings').updateOne({ _id: 'plan' }, { $set: plan }, { upsert: true });
+  return plan;
+}
+
 export async function ensureIndexes() {
   await col(POSITIONS).createIndex({ id: 1 }, { unique: true });
   await col(POSITIONS).createIndex({ ticker: 1 });
