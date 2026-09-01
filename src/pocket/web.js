@@ -1,0 +1,181 @@
+// ---- Pocket as a Telegram Mini App ----
+//
+// Chat is the fastest way to RECORD something. It is a poor way to LOOK at anything: no tabs,
+// no colour, no way to scan a month and see where the money went. So the bot keeps the typing
+// and this serves the seeing.
+//
+// SECURITY, because this is a public URL in front of a household's finances:
+//   - every request carries Telegram's signed initData, verified server-side against the bot
+//     token (constant-time, with a freshness window);
+//   - and the verified Telegram user id must equal TELEGRAM_CHAT_ID. A valid signature only
+//     proves the request came from Telegram — it does not prove it came from HIM. Without the
+//     second check, any Telegram user who found the URL could open the Mini App and read
+//     everything.
+// There is no session cookie and no fallback path. No initData, no answer.
+
+import http from 'http';
+import { readFile } from 'fs/promises';
+import { fileURLToPath } from 'url';
+import { config } from '../config.js';
+import { verifyInitData } from '../miniapp.js';
+import * as fx from '../fx.js';
+import * as store from './store.js';
+import {
+  netWorth, monthOf, goalProgress, yearsToGoal, interestPicture, debtVsInvesting,
+  parseEntry, ACCOUNT_KINDS, isLiability, forecastRange,
+} from './money.js';
+
+const json = (res, code, body) => {
+  res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify(body));
+};
+
+async function readBody(req, limit = 100_000) {
+  let size = 0;
+  const chunks = [];
+  for await (const chunk of req) {
+    size += chunk.length;
+    if (size > limit) throw new Error('body too large');
+    chunks.push(chunk);
+  }
+  if (!chunks.length) return {};
+  try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { return {}; }
+}
+
+/** The gate. Returns true only for HIM. */
+function authorised(req) {
+  const initData = req.headers['x-telegram-init-data'];
+  const user = verifyInitData(initData, config.telegramToken);
+  if (!user?.id) return false;
+  return String(user.id) === String(config.telegramChatId);
+}
+
+function monthWindow(now = new Date()) {
+  return {
+    from: Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
+    to: Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1) - 1,
+  };
+}
+
+/** Everything the page draws, computed here so the browser does no money arithmetic at all.
+ *  Same rule as the bot: the numbers come from money.js, which is tested. */
+async function state() {
+  const base = config.baseCurrency || 'EUR';
+  let table = null;
+  try { table = await fx.rates(base); } catch (e) { table = null; }
+
+  const w = monthWindow();
+  const [accounts, flows, goal, events] = await Promise.all([
+    store.accounts(), store.flows(w), store.getGoal(), store.getPlanEvents(),
+  ]);
+
+  // Without rates nothing can be totalled honestly, so the page is told so rather than being
+  // handed numbers that quietly exclude two of three currencies.
+  if (!table) {
+    return { base, ratesAvailable: false, accounts, flows, goal, kinds: ACCOUNT_KINDS, events: events.list };
+  }
+
+  const n = netWorth(accounts, table, base);
+  const m = monthOf(flows, table, base, w);
+  const ip = interestPicture(accounts, table, base);
+  const g = goalProgress(m.passive, goal);
+  const invested = netWorth(accounts.filter((a) => ['portfolio', 'deposit'].includes(a.kind)), table, base).total;
+
+  return {
+    base,
+    ratesAvailable: true,
+    ratesAge: fx.rateAge(table),
+    kinds: ACCOUNT_KINDS,
+    liabilityKinds: ACCOUNT_KINDS.filter(isLiability),
+    month: m,
+    // Each account with its converted value alongside the original — the euro figure alone
+    // hides a devaluation, so the page always has both.
+    accounts: accounts.map((a) => ({
+      ...a,
+      liability: isLiability(a.kind),
+      inBase: fx.toBase(a.value, a.currency, table),
+      shown: fx.describeAmount(a.value, a.currency, table, base),
+    })),
+    flows: flows.map((f) => ({ ...f, inBase: fx.toBase(f.amount, f.currency, table) })),
+    worth: { total: n.total, assets: n.assets, debts: n.debts, exposure: n.exposure, unconverted: n.unconverted },
+    interest: { earned: ip.earned, paid: ip.paid, net: ip.net },
+    payFirst: debtVsInvesting(accounts, { expectedYieldPct: 7 }).filter((d) => d.payFirst),
+    goal: g,
+    plan: g ? yearsToGoal({ invested, monthlyContribution: Math.max(0, m.surplus), goalMonthly: goal.monthly }) : null,
+    // Ten years from what he ACTUALLY saved this month, plus whatever he has said will change.
+    // Three yields, because over a decade the yield assumption is most of the answer.
+    forecast: forecastRange({
+      startCapital: invested,
+      monthlySurplus: m.surplus,
+      monthlyPassiveNow: 0,
+      years: Number(events.years) || 10,
+      events: events.list,
+      goalMonthly: goal?.monthly || 0,
+    }),
+    events: events.list,
+    forecastYears: Number(events.years) || 10,
+  };
+}
+
+export function startWeb(port = process.env.PORT || 3000) {
+  const server = http.createServer(async (req, res) => {
+    const url = new URL(req.url, 'http://x');
+    try {
+      // The shell is public; it holds no data and cannot fetch any without a signature.
+      if (url.pathname === '/' || url.pathname === '/index.html') {
+        const html = await readFile(fileURLToPath(new URL('./app.html', import.meta.url)), 'utf8');
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+        return res.end(html);
+      }
+      if (url.pathname === '/health') return json(res, 200, { ok: true, app: 'pocket' });
+
+      if (url.pathname.startsWith('/api/')) {
+        if (!authorised(req)) return json(res, 401, { error: 'not authorised' });
+
+        if (url.pathname === '/api/state') return json(res, 200, await state());
+
+        if (url.pathname === '/api/entry' && req.method === 'POST') {
+          const body = await readBody(req);
+          // The SAME parser the bot uses, so a line typed in chat and a line typed in the app
+          // cannot disagree about what it means.
+          const parsed = parseEntry(String(body.text || ''), config.baseCurrency || 'EUR');
+          if (!parsed) return json(res, 400, { error: "Didn't understand that. Try “out 40 food”." });
+          if (parsed.badKind) return json(res, 400, { error: `Unknown kind “${parsed.badKind}”. One of: ${ACCOUNT_KINDS.join(', ')}.` });
+          if (parsed.type === 'account') await store.saveAccount(parsed);
+          else await store.addFlow(parsed);
+          return json(res, 200, await state());
+        }
+
+        if (url.pathname === '/api/goal' && req.method === 'POST') {
+          const body = await readBody(req);
+          await store.setGoal({ monthly: Number(body.monthly) || 0, currency: body.currency || config.baseCurrency });
+          return json(res, 200, await state());
+        }
+
+        if (url.pathname === '/api/plan' && req.method === 'POST') {
+          const body = await readBody(req);
+          if (body.remove) await store.removePlanEvent(String(body.remove));
+          else if (body.years) await store.setPlanYears(Number(body.years));
+          else await store.addPlanEvent(body);
+          return json(res, 200, await state());
+        }
+
+        if (url.pathname === '/api/remove' && req.method === 'POST') {
+          const body = await readBody(req);
+          const id = String(body.id || '');
+          const gone = body.kind === 'flow' ? await store.removeFlow(id) : await store.removeAccount(id);
+          if (!gone) return json(res, 404, { error: 'Nothing with that id' });
+          return json(res, 200, await state());
+        }
+        return json(res, 404, { error: 'no such endpoint' });
+      }
+      res.writeHead(404, { 'Content-Type': 'text/plain' });
+      res.end('Not found');
+    } catch (err) {
+      console.error('[pocket/web]', err);
+      json(res, 500, { error: err.message });
+    }
+  });
+  server.listen(port, () => console.log(`[pocket] web on :${port}`));
+  return server;
+}

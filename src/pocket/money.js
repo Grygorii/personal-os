@@ -21,11 +21,13 @@ const txt = (v, n) => String(v == null ? '' : v).replace(/\s+/g, ' ').trim().sli
 
 // What he holds. `portfolio` is the steward's book, carried here so net worth is the whole
 // picture rather than the part that happens to live in this database.
-export const ACCOUNT_KINDS = ['cash', 'deposit', 'property', 'portfolio', 'loan', 'other'];
+// The kinds he actually holds. `card` is a credit card BALANCE — what is owed on it, not a
+// spending limit — which is why it sits with `loan` on the liability side.
+export const ACCOUNT_KINDS = ['cash', 'deposit', 'property', 'portfolio', 'card', 'loan', 'other'];
 // What is OWED, not owned. A loan is stored as a positive number like everything else — the
 // sign lives in the kind, never in the value — and subtracted where it counts. Without this a
 // borrowing either vanishes from net worth or, worse, is added to it.
-export const LIABILITY_KINDS = ['loan'];
+export const LIABILITY_KINDS = ['loan', 'card'];
 export const isLiability = (kind) => LIABILITY_KINDS.includes(kind);
 // Money that arrives without him working for it. This flag, not the category name, is what
 // the goal counts — "rent" typed as a category is a label; `passive` is a decision.
@@ -316,4 +318,111 @@ export function debtVsInvesting(accounts, { expectedYieldPct = 5, rateThen, rate
       payFirst: edge > 0,
     };
   }).sort((a, b) => b.edge - a.edge);
+}
+
+// ---- Looking years ahead ----
+//
+// "Show me ten years, and let me say that something changes in year three."
+//
+// This is the same arithmetic as the eToro challenge he was shown, and the difference is
+// entirely in the presentation. That document quoted 2053 to the dollar off ONE optimistic
+// yield and called it a plan. The honest version runs the same maths across a spread of
+// yields, prints its assumptions beside every figure, and never produces a single number that
+// could be mistaken for a promise.
+//
+// The most important property: an error in the yield COMPOUNDS. Over ten years the gap between
+// 3.5% and 7% is not a detail, it is most of the answer — which is exactly why one line is a
+// lie and a range is not.
+
+export const EVENT_KINDS = ['contribution', 'lump', 'income', 'spending'];
+
+export function cleanEvent(e) {
+  return {
+    id: txt(e?.id, 32) || Date.now().toString(36),
+    // Which year of the plan it takes effect. Year 1 is the next twelve months.
+    atYear: Math.max(1, Math.min(60, Math.round(num(e?.atYear)) || 1)),
+    kind: EVENT_KINDS.includes(e?.kind) ? e.kind : 'contribution',
+    // A monthly figure for contribution/income/spending; a one-off total for a lump.
+    amount: num(e?.amount),
+    label: txt(e?.label, 80),
+  };
+}
+
+/** Year-by-year, from what he saves now and whatever he says will change.
+ *
+ *  `monthlySurplus` is what he actually saved — measured, not hoped for. Events adjust it from
+ *  a given year: a raise, a second rental, a child, a mortgage ending. Nothing is inferred;
+ *  if he does not say something changes, nothing does, and the flat line is the honest default.
+ */
+export function forecast({
+  startCapital = 0,
+  monthlySurplus = 0,
+  monthlyPassiveNow = 0,
+  years = 10,
+  yieldPct = 5,
+  events = [],
+  goalMonthly = 0,
+} = {}) {
+  const n = Math.max(1, Math.min(60, Math.round(num(years)) || 10));
+  const y = num(yieldPct) / 100;
+  const evts = (Array.isArray(events) ? events : []).map(cleanEvent);
+
+  let capital = Math.max(0, num(startCapital));
+  let contribution = num(monthlySurplus);
+  let extraIncome = 0;     // passive income from events, on top of what the capital yields
+  let extraSpending = 0;
+  const rows = [];
+
+  for (let year = 1; year <= n; year++) {
+    // Events land at the START of their year, so year 3 means "from year three onwards".
+    for (const e of evts.filter((x) => x.atYear === year)) {
+      if (e.kind === 'contribution') contribution += e.amount;
+      else if (e.kind === 'income') { extraIncome += e.amount; contribution += e.amount; }
+      else if (e.kind === 'spending') { extraSpending += e.amount; contribution -= e.amount; }
+      else if (e.kind === 'lump') capital += e.amount;
+    }
+    // Contributions through the year, then growth. Deliberately not the other way round: it
+    // credits a full year of return to money that arrived in December.
+    const added = Math.max(0, contribution) * 12;
+    capital = capital * (1 + y) + added;
+    const passive = (capital * y) / 12 + extraIncome + monthlyPassiveNow;
+    rows.push({
+      year,
+      capital,
+      contributedThisYear: added,
+      monthlyContribution: contribution,
+      passiveMonthly: passive,
+      extraSpending,
+      goalMet: goalMonthly > 0 ? passive >= goalMonthly : null,
+      events: evts.filter((x) => x.atYear === year).map((x) => x.label || x.kind),
+    });
+  }
+
+  const hit = rows.find((r) => r.goalMet);
+  return {
+    rows,
+    yieldPct: num(yieldPct),
+    endCapital: rows[rows.length - 1].capital,
+    endPassive: rows[rows.length - 1].passiveMonthly,
+    goalReachedInYear: hit ? hit.year : null,
+    // Travels with every figure this produces, wherever it is printed.
+    assumes: 'the yield holds every year, contributions continue, no tax, no inflation, no bad year',
+  };
+}
+
+/** The same ten years at three yields, because the spread between them IS the uncertainty.
+ *  Anyone shown one line will believe it; three lines cannot be mistaken for a forecast. */
+export function forecastRange(opts = {}, yields = [3.5, 5, 7]) {
+  const runs = yields.map((yieldPct) => forecast({ ...opts, yieldPct }));
+  return {
+    runs,
+    years: runs[0].rows.length,
+    low: runs[0],
+    mid: runs[Math.floor(runs.length / 2)],
+    high: runs[runs.length - 1],
+    // How far apart the optimistic and pessimistic answers are at the end. On a ten-year view
+    // this is usually large, and seeing it is the point.
+    spreadAtEnd: runs[runs.length - 1].endCapital - runs[0].endCapital,
+    assumes: runs[0].assumes,
+  };
 }

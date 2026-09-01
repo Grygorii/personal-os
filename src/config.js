@@ -67,6 +67,10 @@ export const config = {
   baseCurrency: (oneLine(process.env.BASE_CURRENCY) || 'EUR').toUpperCase(),
   // Overridable so a different rate provider can be swapped in without a code change.
   fxUrl: oneLine(process.env.FX_URL),
+  // Where the Mini App is served. Railway sets RAILWAY_PUBLIC_DOMAIN itself once a domain is
+  // generated, so this usually needs no configuration at all.
+  pocketUrl: (oneLine(process.env.POCKET_URL)
+    || (process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${oneLine(process.env.RAILWAY_PUBLIC_DOMAIN)}` : '')).replace(/\/+$/, ''),
   allowedEmails: oneLine(process.env.ALLOWED_EMAILS)
     .split(',')
     .map((e) => e.trim().toLowerCase())

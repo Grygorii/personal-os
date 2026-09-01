@@ -99,7 +99,15 @@ export async function sendKeyboard(text, rows, chatId = defaultChat()) {
       chat_id: chatId,
       text,
       parse_mode: 'Markdown',
-      reply_markup: { keyboard: rows.map((r) => r.map((label) => ({ text: label }))), resize_keyboard: true, is_persistent: true },
+      // A row entry is either a plain label or { text, webApp } — the second opens a Mini App
+      // inside Telegram instead of sending the label as a message.
+      reply_markup: {
+        keyboard: rows.map((r) => r.map((b) => (typeof b === 'string'
+          ? { text: b }
+          : { text: b.text, web_app: { url: b.webApp } }))),
+        resize_keyboard: true,
+        is_persistent: true,
+      },
     }),
   });
   if (!res.ok) console.error('[telegram] sendKeyboard failed:', await res.text());

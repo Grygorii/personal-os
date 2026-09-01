@@ -18,7 +18,7 @@
 // had that call not existed it would have crashed later on the first save instead, which is a
 // worse place to find out.
 import { rawCol as col } from '../db.js';
-import { cleanAccount, cleanFlow } from './money.js';
+import { cleanAccount, cleanFlow, cleanEvent } from './money.js';
 
 export async function accounts() {
   return (await col('accounts').find({}).toArray()).map(cleanAccount);
@@ -76,4 +76,31 @@ export async function ensureIndexes() {
   await col('flows').createIndex({ ts: -1 });
   await col('flows').createIndex({ id: 1 }, { unique: true });
   await col('flows').createIndex({ recurring: 1 });
+}
+
+// ---- The plan's future events ----
+// "In three years the rent goes up." "From year five there's a second flat." Stored so a
+// ten-year view is built from what he actually expects rather than from a flat line.
+export async function getPlanEvents() {
+  const doc = await col('settings').findOne({ _id: 'plan' });
+  return {
+    years: Number(doc?.years) || 10,
+    list: (Array.isArray(doc?.list) ? doc.list : []).map(cleanEvent),
+  };
+}
+
+export async function addPlanEvent(e) {
+  const clean = cleanEvent({ ...e, id: Date.now().toString(36) });
+  await col('settings').updateOne({ _id: 'plan' }, { $push: { list: clean } }, { upsert: true });
+  return clean;
+}
+
+export async function removePlanEvent(id) {
+  await col('settings').updateOne({ _id: 'plan' }, { $pull: { list: { id: String(id) } } });
+}
+
+export async function setPlanYears(years) {
+  const y = Math.max(1, Math.min(40, Math.round(Number(years) || 10)));
+  await col('settings').updateOne({ _id: 'plan' }, { $set: { years: y } }, { upsert: true });
+  return y;
 }

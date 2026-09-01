@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Pocket</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  /* Colour means ONE thing here and never decorates: green is money arriving or owned, red is
+     money leaving or owed. Nothing else is allowed either colour, so a red number is always
+     bad news and never a highlight.
+     Telegram supplies the surrounding theme, so the palette is built on its variables and
+     falls back to a dark set when opened outside Telegram. */
+  :root{
+    --bg: var(--tg-theme-bg-color, #17181c);
+    --card: var(--tg-theme-secondary-bg-color, #1f2126);
+    --ink: var(--tg-theme-text-color, #eceef2);
+    --dim: var(--tg-theme-hint-color, #8b8f99);
+    --line: #2c2f36;
+    --in: #3ecf8e;      --in-bg: rgba(62,207,142,.12);
+    --out: #f0616d;     --out-bg: rgba(240,97,109,.12);
+    --accent: var(--tg-theme-button-color, #3ecf8e);
+    --on-accent: var(--tg-theme-button-text-color, #06281a);
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    padding-bottom:96px; -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:640px;margin:0 auto;padding:14px}
+
+  /* ---- Tabs ---- */
+  .tabs{display:flex;gap:4px;background:var(--card);border-radius:12px;padding:4px;margin-bottom:16px;position:sticky;top:8px;z-index:5}
+  .tab{flex:1;border:0;background:none;color:var(--dim);font:600 13px/1 inherit;padding:11px 4px;border-radius:9px;cursor:pointer}
+  .tab.on{background:var(--bg);color:var(--ink)}
+  .panel[hidden]{display:none}
+
+  .card{background:var(--card);border-radius:14px;padding:14px 16px;margin-bottom:12px}
+  h2{font-size:13px;font-weight:600;color:var(--dim);margin:0 0 10px;letter-spacing:.03em;text-transform:uppercase}
+
+  .big{font-size:30px;font-weight:700;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+  .sub{color:var(--dim);font-size:13px;margin-top:2px}
+  .in{color:var(--in)} .out{color:var(--out)}
+
+  .split{display:flex;gap:10px}
+  .split>div{flex:1;background:var(--card);border-radius:14px;padding:14px 16px}
+  .split .amt{font-size:21px;font-weight:700;font-variant-numeric:tabular-nums}
+
+  /* ---- Rows ---- */
+  .row{display:flex;align-items:center;gap:11px;padding:11px 0;border-top:1px solid var(--line)}
+  .row:first-of-type{border-top:0}
+  /* Green and red are ΔE 7.7 apart for deuteranopia — the commonest colour blindness, and
+     exactly the pair this app is built on. Measured, not guessed: the palette validator flags
+     it as legal only WITH a secondary encoding. So colour never carries meaning alone here:
+     money in is a filled dot and always prefixed "+", money out is a hollow ring and always
+     "−". Either signal alone is enough to read the page. */
+  .dot{width:10px;height:10px;border-radius:50%;flex:none}
+  .dot.in{background:var(--in)}
+  .dot.out{background:transparent;border:2.5px solid var(--out)}
+  .rmain{flex:1;min-width:0}
+  .rlabel{font-weight:500}
+  .rmeta{color:var(--dim);font-size:12px;margin-top:1px}
+  .ramt{font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap;text-align:right}
+  .rorig{display:block;color:var(--dim);font-size:11px;font-weight:400}
+  .del{border:0;background:none;color:var(--dim);font-size:17px;padding:0 2px;cursor:pointer;line-height:1}
+
+  .pill{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:20px;background:var(--in-bg);color:var(--in)}
+  .pill.out{background:var(--out-bg);color:var(--out)}
+
+  /* ---- Bars ---- */
+  .bar{height:8px;border-radius:5px;background:var(--line);overflow:hidden;margin-top:8px}
+  .bar>i{display:block;height:100%;background:var(--in);border-radius:5px}
+  .catbar{height:6px;border-radius:4px;background:var(--out);opacity:.85;margin-top:6px}
+
+  .warn{background:var(--out-bg);border-left:3px solid var(--out);border-radius:0 10px 10px 0;padding:11px 13px;margin-bottom:12px;font-size:13px;line-height:1.5}
+  .note{color:var(--dim);font-size:12px;line-height:1.5;margin-top:10px}
+  .empty{color:var(--dim);text-align:center;padding:26px 10px;font-size:14px}
+
+  /* ---- Add ---- */
+  .fab{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(18px + env(safe-area-inset-bottom));
+    background:var(--accent);color:var(--on-accent);border:0;border-radius:26px;height:50px;padding:0 26px;
+    font:700 15px/1 inherit;box-shadow:0 6px 22px rgba(0,0,0,.4);cursor:pointer;z-index:20}
+  .sheet{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:30;display:flex;align-items:flex-end}
+  .sheet[hidden]{display:none}
+  .sheetbox{background:var(--card);width:100%;border-radius:18px 18px 0 0;padding:18px 16px calc(18px + env(safe-area-inset-bottom));max-width:640px;margin:0 auto}
+  input[type=text]{width:100%;background:var(--bg);border:1px solid var(--line);border-radius:11px;color:var(--ink);
+    font:16px/1 inherit;padding:13px 14px;margin-bottom:10px}
+  input:focus{outline:2px solid var(--accent);outline-offset:1px}
+  .btn{width:100%;background:var(--accent);color:var(--on-accent);border:0;border-radius:11px;height:46px;font:700 15px/1 inherit;cursor:pointer}
+  .btn.ghost{background:none;color:var(--dim);border:1px solid var(--line);margin-top:8px}
+  .chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+  .chip{background:var(--bg);border:1px solid var(--line);border-radius:16px;color:var(--dim);font:12px/1 inherit;padding:8px 11px;cursor:pointer}
+  .err{color:var(--out);font-size:13px;margin-bottom:10px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="tabs" role="tablist">
+    <button class="tab on" data-tab="month" role="tab">Month</button>
+    <button class="tab" data-tab="worth" role="tab">Worth</button>
+    <button class="tab" data-tab="goal" role="tab">Goal</button>
+    <button class="tab" data-tab="plan" role="tab">Plan</button>
+  </div>
+
+  <div class="panel" id="p-month"></div>
+  <div class="panel" id="p-worth" hidden></div>
+  <div class="panel" id="p-goal" hidden></div>
+  <div class="panel" id="p-plan" hidden></div>
+</div>
+
+<button class="fab" id="fab">+  Add</button>
+
+<div class="sheet" id="sheet" hidden>
+  <div class="sheetbox">
+    <div class="err" id="err" hidden></div>
+    <input type="text" id="entry" placeholder="out 40 food" autocomplete="off" autocapitalize="off">
+    <div class="chips" id="chips"></div>
+    <button class="btn" id="save">Save</button>
+    <button class="btn ghost" id="cancel">Cancel</button>
+  </div>
+</div>
+
+<script>
+const tg = window.Telegram?.WebApp;
+tg?.ready(); tg?.expand();
+
+let S = null;
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const money = (n, cur) => n == null ? '—'
+  : (n < 0 ? '−' : '') + Math.abs(n).toLocaleString(undefined,{maximumFractionDigits:0}) + ' ' + (cur || S.base);
+
+async function api(path, body) {
+  const res = await fetch(path, {
+    method: body ? 'POST' : 'GET',
+    headers: { 'Content-Type': 'application/json', 'X-Telegram-Init-Data': tg?.initData || '' },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'Something went wrong');
+  return data;
+}
+
+function draw() {
+  if (!S.ratesAvailable) {
+    const msg = '<div class="card"><div class="empty">Exchange rates are unreachable, so nothing is totalled. Numbers you have entered are safe — this only affects the view.</div></div>';
+    $('p-month').innerHTML = msg; $('p-worth').innerHTML = msg; $('p-goal').innerHTML = msg; $('p-plan').innerHTML = msg;
+    return;
+  }
+  drawMonth(); drawWorth(); drawGoal(); drawPlan();
+}
+
+function drawMonth() {
+  const m = S.month;
+  const rows = S.flows.slice(0, 60).map((f) => `
+    <div class="row">
+      <span class="dot ${f.dir === 'in' ? 'in' : 'out'}"></span>
+      <div class="rmain">
+        <div class="rlabel">${esc(f.category || 'uncategorised')}${f.passive ? ' <span class="pill">passive</span>' : ''}</div>
+        <div class="rmeta">${new Date(f.ts).toLocaleDateString(undefined,{day:'numeric',month:'short'})}</div>
+      </div>
+      <div class="ramt ${f.dir === 'in' ? 'in' : 'out'}">${f.dir === 'in' ? '+' : '−'}${money(f.inBase)}
+        ${f.currency !== S.base ? `<span class="rorig">${esc(f.amount.toLocaleString())} ${esc(f.currency)}</span>` : ''}
+      </div>
+      <button class="del" data-del="flow" data-id="${esc(f.id)}" aria-label="Remove">×</button>
+    </div>`).join('');
+
+  const cats = m.spendingByCategory.slice(0, 8);
+  const worst = cats[0]?.amount || 1;
+
+  $('p-month').innerHTML = `
+    <div class="split">
+      <div><h2>In</h2><div class="amt in">${money(m.income)}</div></div>
+      <div><h2>Out</h2><div class="amt out">${money(m.spending)}</div></div>
+    </div>
+    <div class="card">
+      <h2>Left over</h2>
+      <div class="big ${m.surplus >= 0 ? 'in' : 'out'}">${money(m.surplus)}</div>
+      <div class="sub">${m.savingsRatePct != null ? m.savingsRatePct.toFixed(0) + '% of what came in' : ''}${m.passive > 0 ? ' · ' + money(m.passive) + ' passive' : ''}</div>
+    </div>
+    ${cats.length ? `<div class="card"><h2>Where it went</h2>${cats.map((c) => `
+      <div style="margin-bottom:11px">
+        <div style="display:flex;justify-content:space-between;font-size:14px">
+          <span>${esc(c.category)}</span><span class="out" style="font-variant-numeric:tabular-nums">${money(c.amount)}</span>
+        </div>
+        <div class="catbar" style="width:${Math.max(4, (c.amount / worst) * 100)}%"></div>
+      </div>`).join('')}</div>` : ''}
+    ${m.unconverted.length ? `<div class="warn">No exchange rate for ${esc(m.unconverted.join(', '))} — not counted above.</div>` : ''}
+    <div class="card"><h2>This month</h2>${rows || '<div class="empty">Nothing yet. Tap Add.</div>'}</div>
+    <div class="note">Rates ${esc(S.ratesAge)}.</div>`;
+}
+
+function drawWorth() {
+  const w = S.worth;
+  const order = { cash: 0, deposit: 1, portfolio: 2, property: 3, card: 4, loan: 5, other: 6 };
+  const rows = [...S.accounts].sort((a, b) => (order[a.kind] ?? 9) - (order[b.kind] ?? 9)).map((a) => `
+    <div class="row">
+      <span class="dot ${a.liability ? 'out' : 'in'}"></span>
+      <div class="rmain">
+        <div class="rlabel">${esc(a.label || a.kind)}</div>
+        <div class="rmeta">${esc(a.kind)}${a.ratePct != null ? ' · ' + a.ratePct + '%' : ''}</div>
+      </div>
+      <div class="ramt ${a.liability ? 'out' : 'in'}">${a.liability ? '−' : ''}${money(a.inBase)}
+        ${a.currency !== S.base ? `<span class="rorig">${esc(a.value.toLocaleString())} ${esc(a.currency)}</span>` : ''}
+      </div>
+      <button class="del" data-del="account" data-id="${esc(a.id)}" aria-label="Remove">×</button>
+    </div>`).join('');
+
+  $('p-worth').innerHTML = `
+    <div class="card">
+      <h2>Net worth</h2>
+      <div class="big ${w.total >= 0 ? '' : 'out'}">${money(w.total)}</div>
+      <div class="sub"><span class="in">${money(w.assets)} owned</span>${w.debts > 0 ? ` · <span class="out">${money(w.debts)} owed</span>` : ''}</div>
+    </div>
+    ${S.payFirst.map((d) => `<div class="warn"><b>${esc(d.label)} costs ${d.ratePct}% a year.</b> Clearing it is a guaranteed ${d.ratePct}% return — better than the ${d.expectedYieldPct}% you'd hope for investing, with no risk. Pay this before buying anything.</div>`).join('')}
+    ${(S.interest.earned > 0 || S.interest.paid > 0) ? `<div class="card"><h2>Interest a year</h2>
+      <div style="display:flex;justify-content:space-between"><span class="in">Earning ${money(S.interest.earned)}</span><span class="out">Paying ${money(S.interest.paid)}</span></div>
+      <div class="sub">Net ${money(S.interest.net)}</div></div>` : ''}
+    <div class="card"><h2>What you hold</h2>${rows || '<div class="empty">Nothing yet. Tap Add.</div>'}</div>
+    ${w.exposure.length > 1 ? `<div class="card"><h2>Currency it's in</h2>${w.exposure.map((e) => `
+      <div style="margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;font-size:14px"><span>${esc(e.currency)}</span><span>${e.pct.toFixed(0)}%</span></div>
+        <div class="bar"><i style="width:${e.pct}%"></i></div>
+      </div>`).join('')}
+      ${w.exposure[0] && w.exposure[0].currency !== S.base && w.exposure[0].pct > 50
+        ? `<div class="note"><b>${w.exposure[0].pct.toFixed(0)}% of what you own is in ${esc(w.exposure[0].currency)}, which isn't what you spend.</b> If it falls 20%, so does most of your net worth — whatever the assets themselves do.</div>` : ''}
+    </div>` : ''}
+    ${w.unconverted.length ? `<div class="warn">No exchange rate for ${esc(w.unconverted.join(', '))} — not in the total.</div>` : ''}`;
+}
+
+function drawGoal() {
+  if (!S.goal) {
+    $('p-goal').innerHTML = `<div class="card"><h2>Passive income goal</h2>
+      <div class="empty">No goal set. Tap Add and type <b>goal 2000</b>.</div></div>`;
+    return;
+  }
+  const g = S.goal, p = S.plan;
+  $('p-goal').innerHTML = `
+    <div class="card">
+      <h2>Passive income</h2>
+      <div class="big in">${money(g.now, g.currency)}</div>
+      <div class="sub">of ${money(g.target, g.currency)} a month · ${g.pct.toFixed(1)}%</div>
+      <div class="bar"><i style="width:${Math.min(100, g.pct)}%"></i></div>
+      <div class="sub" style="margin-top:8px">${money(g.gap, g.currency)} a month still to go</div>
+    </div>
+    ${p && p.fastest != null ? `<div class="card">
+      <h2>What it would take</h2>
+      ${p.scenarios.map((s) => `<div class="row">
+        <div class="rmain"><div class="rlabel">${s.yieldPct.toFixed(1)}% yield</div>
+          <div class="rmeta">needs ${money(s.capitalNeeded)} invested</div></div>
+        <div class="ramt">${s.years == null ? '—' : s.years + ' yrs'}</div>
+      </div>`).join('')}
+      <div class="note">Roughly <b>${p.fastest}–${p.slowest} years</b> at what you saved this month. Assumes ${esc(p.assumes)}.
+      Saving more moves this far faster than picking better investments does.</div>
+    </div>` : p ? `<div class="card"><div class="note">Nothing was saved this month, so on these numbers the goal isn't reachable. The savings rate is the lever, not the returns.</div></div>` : ''}`;
+}
+
+
+/* The years ahead.
+   ONE hue, not three. The low/mid/high yields are a RANGE, not three identities — painting
+   them as separate colours would say "these are three plans" when the truth is "this is one
+   plan and we do not know which line it lands on". So the bar is the middle case in the
+   page's single accent, and the spread is printed as text beside it, where it cannot be
+   mistaken for precision. Every year is directly labelled, so nothing needs a hover. */
+function drawPlan() {
+  const f = S.forecast;
+  if (!f) { $('p-plan').innerHTML = '<div class="card"><div class="empty">Nothing to project yet.</div></div>'; return; }
+  const mid = f.mid, low = f.low, high = f.high;
+  const peak = high.rows[high.rows.length - 1].capital || 1;
+  const goal = S.goal?.target || 0;
+
+  const rows = mid.rows.map((r, i) => {
+    const lo = low.rows[i].capital, hi = high.rows[i].capital;
+    const met = goal > 0 && r.passiveMonthly >= goal;
+    return `
+      <div style="margin-bottom:13px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;font-size:13px">
+          <span style="color:var(--dim)">Year ${r.year}${r.events.length ? ' · ' + esc(r.events.join(', ')) : ''}</span>
+          <span style="font-variant-numeric:tabular-nums;font-weight:600">${money(r.capital)}${met ? ' <span class="pill">goal</span>' : ''}</span>
+        </div>
+        <div class="bar" style="margin-top:5px"><i style="width:${Math.max(2, (r.capital / peak) * 100)}%"></i></div>
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--dim);margin-top:4px">
+          <span>${money(lo)} – ${money(hi)} depending on yield</span>
+          <span>${money(r.passiveMonthly)}/mo passive</span>
+        </div>
+      </div>`;
+  }).join('');
+
+  const evts = (S.events || []).map((e) => `
+    <div class="row">
+      <div class="rmain"><div class="rlabel">${esc(e.label || e.kind)}</div>
+        <div class="rmeta">from year ${e.atYear} · ${esc(e.kind)} ${money(e.amount)}${e.kind === 'lump' ? '' : '/mo'}</div></div>
+      <button class="del" data-plan-del="${esc(e.id)}" aria-label="Remove">×</button>
+    </div>`).join('');
+
+  $('p-plan').innerHTML = `
+    <div class="card">
+      <h2>In ${mid.rows.length} years</h2>
+      <div class="big in">${money(mid.endPassive)}<span style="font-size:15px;color:var(--dim);font-weight:400">/mo passive</span></div>
+      <div class="sub">${money(mid.endCapital)} invested · could be ${money(low.endCapital)} or ${money(high.endCapital)}</div>
+      ${mid.goalReachedInYear ? `<div class="sub in" style="margin-top:6px">Goal reached in year ${mid.goalReachedInYear}</div>`
+        : (goal > 0 ? `<div class="sub" style="margin-top:6px">Goal not reached inside ${mid.rows.length} years at these numbers.</div>` : '')}
+    </div>
+    <div class="card">
+      <h2>Year by year</h2>
+      ${rows}
+      <div class="note">Bars are the middle case (5% a year). The range beside each is 3.5% to 7% —
+      over a decade that assumption is most of the answer, which is why it is shown as a spread
+      and not a number. Assumes ${esc(f.assumes)}.</div>
+    </div>
+    <div class="card">
+      <h2>What changes, and when</h2>
+      ${evts || '<div class="empty" style="padding:14px">Nothing added. The projection assumes today repeats.</div>'}
+      <button class="btn ghost" id="addevent" style="margin-top:10px">+ Add a change</button>
+    </div>`;
+
+  $('addevent').onclick = async () => {
+    const label = prompt('What changes? e.g. "second rental"');
+    if (!label) return;
+    const atYear = Number(prompt('From which year? (1 = next 12 months)', '3'));
+    const kind = (prompt('Type: income, contribution, spending or lump', 'income') || 'income').toLowerCase();
+    const amount = Number(prompt(kind === 'lump' ? 'One-off amount' : 'Amount per month', '300'));
+    if (!atYear || !amount) return;
+    try { S = await api('/api/plan', { label, atYear, kind, amount }); draw(); }
+    catch (err) { alert(err.message); }
+  };
+}
+
+// ---- Tabs ----
+document.querySelectorAll('.tab').forEach((t) => t.onclick = () => {
+  document.querySelectorAll('.tab').forEach((x) => x.classList.toggle('on', x === t));
+  for (const name of ['month','worth','goal','plan']) $('p-' + name).hidden = (name !== t.dataset.tab);
+  tg?.HapticFeedback?.selectionChanged?.();
+});
+
+// ---- Add ----
+const CHIPS = ['out 40 food', 'in 3200 salary', 'in 27000 EGP rent', 'add card 1200 EUR 19% visa', 'add deposit 540000 EGP 20% Cairo', 'goal 2000'];
+$('chips').innerHTML = CHIPS.map((c) => `<button class="chip">${esc(c)}</button>`).join('');
+$('chips').onclick = (e) => { if (e.target.classList.contains('chip')) { $('entry').value = e.target.textContent; $('entry').focus(); } };
+
+const openSheet = () => { $('sheet').hidden = false; $('err').hidden = true; $('entry').value = ''; $('entry').focus(); };
+const closeSheet = () => { $('sheet').hidden = true; };
+$('fab').onclick = openSheet;
+$('cancel').onclick = closeSheet;
+$('sheet').onclick = (e) => { if (e.target === $('sheet')) closeSheet(); };
+$('entry').onkeydown = (e) => { if (e.key === 'Enter') $('save').click(); };
+
+$('save').onclick = async () => {
+  const text = $('entry').value.trim();
+  if (!text) return;
+  $('save').disabled = true;
+  try {
+    // "goal 2000" is the one line that isn't an entry, so it is routed here rather than being
+    // taught to the shared parser, which must keep meaning exactly what the bot means.
+    const g = text.match(/^goal\s+(\d+(?:[.,]\d+)?)$/i);
+    S = g ? await api('/api/goal', { monthly: Number(g[1].replace(',', '.')) })
+          : await api('/api/entry', { text });
+    draw(); closeSheet();
+    tg?.HapticFeedback?.notificationOccurred?.('success');
+  } catch (err) {
+    $('err').textContent = err.message; $('err').hidden = false;
+  } finally { $('save').disabled = false; }
+};
+
+document.body.addEventListener('click', async (e) => {
+  const planDel = e.target.closest('[data-plan-del]');
+  if (planDel) {
+    if (!confirm('Remove this change?')) return;
+    try { S = await api('/api/plan', { remove: planDel.dataset.planDel }); draw(); }
+    catch (err) { alert(err.message); }
+    return;
+  }
+  const btn = e.target.closest('[data-del]');
+  if (!btn) return;
+  if (!confirm('Remove this?')) return;
+  try { S = await api('/api/remove', { kind: btn.dataset.del, id: btn.dataset.id }); draw(); }
+  catch (err) { alert(err.message); }
+});
+
+(async () => {
+  try { S = await api('/api/state'); draw(); }
+  catch (err) {
+    document.querySelector('.wrap').innerHTML =
+      `<div class="card"><div class="empty">${esc(err.message)}<br><br>Open this from the button in your Pocket chat.</div></div>`;
+  }
+})();
+</script>
+</body>
+</html>

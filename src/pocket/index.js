@@ -20,6 +20,7 @@ import { config } from '../config.js';
 import { poll, setCommands, sendKeyboard } from '../telegram.js';
 import * as bot from './bot.js';
 import { ensureIndexes } from './store.js';
+import { startWeb } from './web.js';
 
 const VERSION = 'pocket-1';
 
@@ -57,7 +58,19 @@ async function main() {
     { command: 'help', description: '❓ Everything I understand' },
   ]);
 
-  await sendKeyboard(`Pocket is up. Totals in ${config.baseCurrency}.`, bot.KEYBOARD).catch(() => {});
+  // The Mini App. Non-fatal on purpose: a web server that fails to bind must never take the
+  // bot down with it — recording a spend is the thing that has to keep working.
+  try { startWeb(); } catch (err) {
+    console.error('[pocket] web failed to start (the bot continues):', err.message);
+  }
+
+  const keyboard = config.pocketUrl
+    ? [[{ text: '📊 Open Pocket', webApp: config.pocketUrl }], ...bot.KEYBOARD]
+    : bot.KEYBOARD;
+  if (!config.pocketUrl) {
+    console.warn('[pocket] no public URL yet — generate a domain in Railway, or set POCKET_URL, for the Open Pocket button.');
+  }
+  await sendKeyboard(`Pocket is up. Totals in ${config.baseCurrency}.`, keyboard).catch(() => {});
   await poll(bot.route);
 }
 

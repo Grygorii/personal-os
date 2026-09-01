@@ -275,32 +275,9 @@ function countVisit(page, req) {
   return ownerId().then((id) => bump(sid === id ? 'owner' : 'people'));
 }
 
-// Verify Telegram Mini App initData (https://core.telegram.org/bots/webapps#validating-data).
-// Returns the parsed user object if the signature is valid, else null.
-const INITDATA_TTL_MS = 24 * 60 * 60 * 1000; // a captured initData must not work forever
-
-export function verifyInitData(initData, botToken) {
-  if (!initData || !botToken) return null;
-  const params = new URLSearchParams(initData);
-  const hash = params.get('hash');
-  if (!hash) return null;
-  params.delete('hash');
-  const dataCheckString = [...params.entries()].map(([k, v]) => `${k}=${v}`).sort().join('\n');
-  const secret = crypto.createHmac('sha256', 'WebAppData').update(botToken).digest();
-  const check = crypto.createHmac('sha256', secret).update(dataCheckString).digest('hex');
-  // Constant-time compare: a plain !== leaks how much of the hash matched via timing.
-  const a = Buffer.from(check, 'hex');
-  const b = Buffer.from(hash, 'hex');
-  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
-  // Freshness: without this, one captured initData string is a permanent credential.
-  const authDate = Number(params.get('auth_date')) * 1000;
-  if (!authDate || Date.now() - authDate > INITDATA_TTL_MS) return null;
-  try {
-    return JSON.parse(params.get('user') || '{}');
-  } catch {
-    return null;
-  }
-}
+// Verifying a Mini App request now lives in src/miniapp.js so Pocket can use it too. Still
+// re-exported here: this is where callers have always imported it from.
+export { verifyInitData } from './miniapp.js';
 
 // Gather his live System into a compact JSON for the dashboard.
 async function gatherDashboard() {

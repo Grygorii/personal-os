@@ -325,3 +325,80 @@ test('the scoped col genuinely lacks what these apps need', async () => {
   assert.throws(() => db.col('accounts'), /DB not connected/);
   assert.throws(() => db.rawCol('accounts'), /DB not connected/);
 });
+
+// ---- Ten years out ----
+// Same arithmetic as the challenge document he was shown; the difference is entirely in the
+// presentation. These pin the parts that keep it honest.
+
+import { forecast, forecastRange, cleanEvent } from '../src/pocket/money.js';
+
+test('forecast: flat years when nothing is said to change', () => {
+  const f = forecast({ startCapital: 1000, monthlySurplus: 1000, years: 10, yieldPct: 5 });
+  assert.equal(f.rows.length, 10);
+  // Year one: 1,000 grown, plus twelve months of contributions.
+  assert.equal(Math.round(f.rows[0].capital), Math.round(1000 * 1.05 + 12000));
+  // Contributions are added AFTER growth, so December's money is not credited a full year.
+  assert.ok(f.rows[0].capital < 13000 * 1.05, 'no full-year return on money that arrived late');
+  for (const r of f.rows) assert.equal(r.monthlyContribution, 1000, 'nothing changes on its own');
+  assert.ok(f.endCapital > f.rows[0].capital);
+});
+
+test('forecast: an event takes effect from its year, not before', () => {
+  const f = forecast({
+    startCapital: 0, monthlySurplus: 1000, years: 5, yieldPct: 5,
+    events: [{ atYear: 3, kind: 'income', amount: 300, label: 'second rental' }],
+  });
+  assert.equal(f.rows[0].monthlyContribution, 1000);
+  assert.equal(f.rows[1].monthlyContribution, 1000, 'year two is untouched');
+  assert.equal(f.rows[2].monthlyContribution, 1300, 'and from year three it applies');
+  assert.deepEqual(f.rows[2].events, ['second rental']);
+  // Extra income counts toward passive from that year, on top of what the capital yields.
+  assert.ok(f.rows[2].passiveMonthly > f.rows[1].passiveMonthly + 250);
+});
+
+test('forecast: a lump sum lands once, and spending reduces what is saved', () => {
+  const lump = forecast({ startCapital: 0, monthlySurplus: 0, years: 3, yieldPct: 10,
+    events: [{ atYear: 2, kind: 'lump', amount: 10000 }] });
+  assert.equal(lump.rows[0].capital, 0);
+  assert.equal(Math.round(lump.rows[1].capital), 11000, 'added at the start of year two, then grown');
+
+  const spend = forecast({ startCapital: 0, monthlySurplus: 1000, years: 3, yieldPct: 0,
+    events: [{ atYear: 2, kind: 'spending', amount: 400, label: 'childcare' }] });
+  assert.equal(spend.rows[1].monthlyContribution, 600);
+});
+
+test('forecast: a contribution driven negative never becomes a withdrawal', () => {
+  // Saving less than nothing is a real situation; silently draining capital to model it is not
+  // what was asked for, and would produce a confident number nobody entered.
+  const f = forecast({ startCapital: 5000, monthlySurplus: 200, years: 2, yieldPct: 0,
+    events: [{ atYear: 1, kind: 'spending', amount: 900 }] });
+  assert.equal(f.rows[0].monthlyContribution, -700, 'the shortfall is reported honestly');
+  assert.equal(f.rows[0].contributedThisYear, 0, 'but nothing is added, and nothing is taken');
+  assert.equal(f.rows[0].capital, 5000);
+});
+
+test('forecast: reports the year a goal is met, or that it is not', () => {
+  const near = forecast({ startCapital: 500000, monthlySurplus: 0, years: 5, yieldPct: 5, goalMonthly: 2000 });
+  assert.equal(near.goalReachedInYear, 1, '500k at 5% already pays over 2,000 a month');
+  const far = forecast({ startCapital: 1000, monthlySurplus: 100, years: 5, yieldPct: 5, goalMonthly: 2000 });
+  assert.equal(far.goalReachedInYear, null, 'and it says so rather than picking a year');
+});
+
+test('forecastRange: three yields, and the spread between them is the point', () => {
+  const g = forecastRange({ startCapital: 1000, monthlySurplus: 1000, years: 10 });
+  assert.equal(g.runs.length, 3);
+  assert.equal(g.low.yieldPct, 3.5);
+  assert.equal(g.high.yieldPct, 7);
+  assert.ok(g.high.endCapital > g.low.endCapital);
+  assert.ok(g.spreadAtEnd > 20000, 'over ten years the yield assumption is most of the answer');
+  assert.match(g.assumes, /no tax/);
+  assert.match(g.assumes, /no bad year/);
+});
+
+test('cleanEvent: years and kinds are bounded, never trusted', () => {
+  assert.equal(cleanEvent({ atYear: 0 }).atYear, 1);
+  assert.equal(cleanEvent({ atYear: 999 }).atYear, 60);
+  assert.equal(cleanEvent({ atYear: 'x' }).atYear, 1);
+  assert.equal(cleanEvent({ kind: 'nonsense' }).kind, 'contribution');
+  assert.equal(cleanEvent({ kind: 'lump', amount: '5000' }).amount, 5000);
+});

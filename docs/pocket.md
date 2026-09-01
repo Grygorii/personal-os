@@ -143,14 +143,47 @@ scoped view does not expose. Had that call not been there it would have crashed 
 first save, which is a far worse place to discover it. `test/pocket.test.js` now asserts both
 apps import `rawCol`.
 
+## The Mini App
+
+Chat is the fastest way to **record** something and a poor way to **look** at anything: no
+tabs, no colour, no way to scan a month. So the bot keeps the typing and a Telegram Mini App
+serves the seeing — four tabs: **Month · Worth · Goal · Plan**.
+
+It is a public URL in front of a household's finances, so two checks guard every API call:
+Telegram's signed `initData` verified server-side against the bot token (constant-time, with a
+freshness window), **and** the verified Telegram user id must equal `TELEGRAM_CHAT_ID`. A valid
+signature only proves the request came from Telegram — not that it came from him. No cookie, no
+fallback path, no initData no answer.
+
+Railway sets `RAILWAY_PUBLIC_DOMAIN` once a domain is generated, so the "Open Pocket" button
+usually needs no configuration; `POCKET_URL` overrides it.
+
+### Why colour never carries meaning alone
+
+Green for money in, red for money out — which is the pair the palette validator scores at
+**ΔE 7.7 for deuteranopia**, the commonest colour blindness. Measured, not guessed. The rule is
+that such a pair is legal only with a *secondary encoding*, so here money in is a **filled dot
+prefixed +** and money out is a **hollow ring prefixed −**. Either signal alone reads correctly.
+
+### Why the ten-year view is one colour, not three
+
+The low / mid / high yields are a **range, not three identities**. Painting them as three series
+would say "here are three plans" when the truth is "here is one plan and nobody knows which line
+it lands on". So the bar is the middle case in a single hue and the spread is printed beside it
+as text, where it cannot be mistaken for precision — with `assumes` attached to every figure.
+
+Over ten years the yield assumption is most of the answer: 3.5% against 7% on the same
+contributions differs by tens of thousands. Showing that gap *is* the feature.
+
 ## Not done yet
 
 - **Never run against live Telegram or the live rate API.** The sandbox this was built in
   blocks the FX provider, so the fetch path is untested end to end.
 - Recurring flows are stored and queryable but nothing re-stamps them into each new month yet,
   so salary and the Cairo rent need entering monthly until that lands.
-- No web dashboard — Telegram only for now.
 - Pocket holds the portfolio as a single `portfolio` account entered by hand; it does not yet
   read the steward's book directly, so the two need keeping in step manually.
-- Nothing removes accounts or flows from Telegram yet (`removeAccount`/`removeFlow` exist and
-  are unused).
+- Removing an account or flow works in the Mini App, but not yet from a Telegram message.
+- The Mini App has never been opened against real Telegram — `initData` verification, the
+  Railway domain and the web_app button are all untested end to end.
+- Plan events are added through browser `prompt()` dialogs, which is functional and ugly.
