@@ -42,12 +42,29 @@ async function readBody(req, limit = 100_000) {
   try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { return {}; }
 }
 
-/** The gate. Returns true only for HIM. */
+/** The gate. Returns { ok } or { ok:false, why } — the reason matters because "not authorised"
+ *  has five different causes here and they need five different fixes. None of the reasons leaks
+ *  a secret: they name which check failed, never the token, and only ever the last four digits
+ *  of an id that is his own. */
 function authorised(req) {
   const initData = req.headers['x-telegram-init-data'];
+  if (!config.telegramToken) return { ok: false, why: 'The server has no bot token set.' };
+  if (!initData) {
+    return { ok: false, why: 'Telegram sent no signature. Open this from the “Open Pocket” button in the chat, not from a link or a browser.' };
+  }
   const user = verifyInitData(initData, config.telegramToken);
-  if (!user?.id) return false;
-  return String(user.id) === String(config.telegramChatId);
+  if (!user) {
+    return { ok: false, why: 'Telegram’s signature did not verify. Usually this means the bot token here is not the token of the bot you opened this from — check TELEGRAM_BOT_TOKEN, especially if it was revoked and replaced.' };
+  }
+  if (!user.id) return { ok: false, why: 'The signature verified but carried no user.' };
+  if (String(user.id) !== String(config.telegramChatId)) {
+    const tail = (v) => String(v).slice(-4);
+    return {
+      ok: false,
+      why: `Signed in as Telegram user …${tail(user.id)}, but this Pocket is set to …${tail(config.telegramChatId)}. Set TELEGRAM_CHAT_ID to ${user.id}.`,
+    };
+  }
+  return { ok: true };
 }
 
 function monthWindow(now = new Date()) {
@@ -130,7 +147,8 @@ export function startWeb(port = process.env.PORT || 3000) {
       if (url.pathname === '/health') return json(res, 200, { ok: true, app: 'pocket' });
 
       if (url.pathname.startsWith('/api/')) {
-        if (!authorised(req)) return json(res, 401, { error: 'not authorised' });
+        const gate = authorised(req);
+        if (!gate.ok) return json(res, 401, { error: gate.why });
 
         if (url.pathname === '/api/state') return json(res, 200, await state());
 
