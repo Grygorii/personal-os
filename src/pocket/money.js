@@ -767,6 +767,10 @@ export function payoutSchedule({ start, end, payout, perYear, totalAtMaturity, p
 
   return {
     payout, every, perPayment, made, total: end ? total : null, next,
+    // The date the schedule is anchored to. For a tenancy with no stated start that is the day
+    // it was added, and callers must use THIS rather than re-deriving it from the account, or
+    // the rent has dates here and no dates there.
+    start,
     estimated,
     stated: payment != null,
     // Everything the term will move, and what is left of it.
@@ -825,13 +829,47 @@ export function depositProgress(a, now = Date.now()) {
   };
 }
 
-function termProgress(a, now = Date.now()) {
-  if (!a || a.ratePct == null || !(a.value > 0)) return null;
-  const start = a.startsAt, end = a.endsAt;
-  const perYear = a.value * (a.ratePct / 100);
+// How many times a year each frequency pays. `maturity` pays once, at the end.
+const PAYOUTS_PER_YEAR = { monthly: 12, quarterly: 4, yearly: 1 };
 
-  // No dates: the yearly figure is all that can honestly be said.
-  if (!start) return { perYear, currency: a.currency, hasTerm: false, payout: a.payout || null, schedule: null };
+function termProgress(a, now = Date.now()) {
+  if (!a || !(a.value > 0)) return null;
+  // AN ASSET DOES NOT HAVE TO HAVE A RATE TO PAY YOU.
+  //
+  // A deposit is described by a percentage. A FLAT IS NOT: he knows the rent — 27,000 EGP a
+  // month — and not what fraction of the flat's value that happens to be. Requiring a rate here
+  // is why he could not add the apartment with the rent he actually receives: the income simply
+  // had nowhere to go, and the flat sat in his net worth doing nothing.
+  //
+  // So either describes an income: a rate, or an amount and how often it arrives.
+  const perPeriod = PAYOUTS_PER_YEAR[a.payout];
+  const paysAmount = a.payment > 0 && (perPeriod || a.payout === 'maturity');
+  if (a.ratePct == null && !paysAmount) return null;
+
+  const start = a.startsAt, end = a.endsAt;
+  const perYear = a.ratePct != null
+    ? a.value * (a.ratePct / 100)
+    : (perPeriod ? a.payment * perPeriod : 0);
+
+  // What the asset actually returns, when he told us the rent rather than a percentage. This is
+  // the number that says whether a flat is working or merely expensive — and it is the same
+  // question the app asks of a deposit rate, asked of bricks.
+  const yieldPct = a.ratePct == null && perYear > 0 && a.value > 0 ? (perYear / a.value) * 100 : null;
+
+  // No start date: a tenancy he has had for years has no interesting beginning, so the day he
+  // added it anchors the schedule. Better than refusing to show the rent at all.
+  const anchor = start || (paysAmount && a.payout !== 'maturity' ? a.at : null);
+  if (!anchor) return { perYear, yieldPct, currency: a.currency, hasTerm: false, payout: a.payout || null, schedule: null };
+  if (!start) {
+    return {
+      perYear, yieldPct, currency: a.currency, hasTerm: false, running: true,
+      liability: isLiability(a.kind), payout: a.payout || null,
+      schedule: payoutSchedule({
+        start: anchor, end: null, payout: a.payout, perYear,
+        principal: a.value, payment: a.payment ?? null, amortising: isLiability(a.kind),
+      }, now),
+    };
+  }
 
   const upTo = Math.min(now, end ?? now);
   const elapsedDays = Math.max(0, (upTo - start) / DAY);
@@ -842,7 +880,7 @@ function termProgress(a, now = Date.now()) {
 
   if (!end) {
     return {
-      perYear, currency: a.currency, hasTerm: false, start, elapsedDays, earned, running: true,
+      perYear, yieldPct, currency: a.currency, hasTerm: false, start, elapsedDays, earned, running: true,
       liability, payout: a.payout || null,
       schedule: payoutSchedule({ ...common, start, end: null, payout: a.payout, perYear }, now),
     };
@@ -854,6 +892,7 @@ function termProgress(a, now = Date.now()) {
   const matured = now >= end;
   return {
     perYear,
+    yieldPct,
     currency: a.currency,
     hasTerm: true,
     start, end,
@@ -1224,15 +1263,16 @@ export function subsSummary(subs, table, base = 'EUR', now = Date.now()) {
 export function paymentDates(a, { from = 0, to = Number.MAX_SAFE_INTEGER } = {}) {
   const t = termProgress(a);
   const s = t?.schedule;
-  if (!s || !a.startsAt) return [];
+  if (!s) return [];
   if (s.payout === 'maturity') {
     return a.endsAt && a.endsAt >= from && a.endsAt <= to ? [a.endsAt] : [];
   }
+  const anchor = s.start;
   const every = PAYOUT_MONTHS[s.payout];
-  if (!every) return [];
+  if (!every || !anchor) return [];
   const out = [];
   for (let i = 1; i <= 2400; i++) {
-    const at = addMonths(a.startsAt, i * every);
+    const at = addMonths(anchor, i * every);
     if (a.endsAt && at > a.endsAt) break;
     if (at > to) break;
     if (at >= from) out.push(at);
@@ -1244,7 +1284,22 @@ export function paymentDates(a, { from = 0, to = Number.MAX_SAFE_INTEGER } = {})
  *
  *  `recorded` is the set of schedule ids already entered as real flows; those are dropped, so
  *  confirming a payment swaps a projection for the real thing rather than adding to it. */
-export function scheduledFlows(accounts, window = {}, { now = Date.now(), recorded = new Set() } = {}) {
+export function scheduledFlows(accounts, window = {}, { now = Date.now(), recorded = new Set(), flows = [] } = {}) {
+  // AND THE ONE HE HAS BEEN TYPING BY HAND.
+  //
+  // He has entered the Cairo rent every month for a year. Those flows carry no schedule id, so
+  // the exact-id guard does not see them — and the day the flat learned to produce its own rent,
+  // every one of those months would have counted it twice. A recorded flow that looks like a
+  // scheduled one IS it: same direction, same currency, the same amount within a percent, within
+  // five days of the date. Suppressing a real projection is a small loss; double-counting the
+  // rent is a wrong total, and a wrong total gets believed.
+  const untagged = (flows || []).filter((f) => !f.schedId && !f.subId);
+  const looksLike = (p) => untagged.some((f) =>
+    f.dir === p.dir
+    && f.currency === p.currency
+    && Math.abs(f.amount - p.amount) <= Math.max(0.01, p.amount * 0.01)
+    && Math.abs(f.ts - p.ts) <= 5 * DAY);
+
   const out = [];
   for (const a of accounts || []) {
     const t = depositProgress(a, now);
@@ -1256,6 +1311,7 @@ export function scheduledFlows(accounts, window = {}, { now = Date.now(), record
     for (const at of paymentDates(a, window)) {
       const schedId = `${a.id}:${new Date(at).toISOString().slice(0, 10)}`;
       if (recorded.has(schedId)) continue;
+      if (looksLike({ dir: owed ? 'out' : 'in', currency: a.currency, amount: perPayment, ts: at })) continue;
 
       // A LOAN INSTALMENT IS NOT ALL SPENDING. Part of it buys back his own debt, and that part
       // is saving wearing the clothes of an expense. The split is the interest on the balance
@@ -1275,7 +1331,10 @@ export function scheduledFlows(accounts, window = {}, { now = Date.now(), record
         accountId: a.id,
         label: a.label || a.kind,
         dir: owed ? 'out' : 'in',
-        category: owed ? (a.kind === 'card' ? 'card' : 'loan') : 'interest',
+        category: owed ? (a.kind === 'card' ? 'card' : 'loan')
+          : a.kind === 'property' ? 'rent'
+          : a.kind === 'portfolio' ? 'dividend'
+          : 'interest',
         amount: perPayment,
         currency: a.currency,
         ts: at,

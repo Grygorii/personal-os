@@ -158,7 +158,10 @@ Money moving:
 
 What you own:
   add deposit 540000 EGP Cairo savings
-  add property 2700000 EGP apartment
+  add property 2700000 EGP apartment pays 27000 monthly
+                           (a flat does not have a rate — it has rent. Put the rent in
+                            and the app works out the yield, and drops it into every
+                            month as passive income towards the goal.)
   add portfolio 1000 USD eToro
   add deposit 540000 EGP 20% Cairo savings     (a rate, if it pays one)
   add loan 200000 EGP 24% car credit           (a credit you owe)

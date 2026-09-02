@@ -400,6 +400,14 @@ function drawWorth() {
         <b>${t.implied.nominalPct.toFixed(1)}% a year</b>${Math.abs(t.implied.nominalPct - a.ratePct) > 0.6 ? `, not the ${a.ratePct}% on the paperwork` : ''}.</div>`;
     // A dated deposit is the interesting case: how far through, what it has paid so far, and
     // what is still to come. Every figure comes from the server; the page only draws.
+    /* An asset that pays an AMOUNT rather than a rate — a flat and its rent. The yield is
+       computed and shown, because "12% a year" is the number that says whether the flat is
+       working or merely expensive, and it is the same question the app asks of a deposit rate,
+       asked of bricks. */
+    const yieldLine = t && t.yieldPct != null ? `
+      <div class="rmeta" style="margin-top:3px">That is <b>${t.yieldPct.toFixed(1)}% a year</b> on what it is worth${
+        t.yieldPct < 4 ? ' — low for something this size. Worth asking what else that money could do.' : ''}</div>` : '';
+
     const term = t && t.hasTerm ? `
       <div style="margin-top:9px">
         <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--dim)">
@@ -411,7 +419,7 @@ function drawWorth() {
         ${progress}
         ${sched}
         ${truth}
-      </div>` : (t ? `<div class="rmeta" style="margin-top:6px">${money(t.perYearInBase)} a year${t.hasTerm === false && t.start ? ' · running since ' + dd(t.start) : ''}</div>${sched}` : '');
+      </div>` : (t ? `<div class="rmeta" style="margin-top:6px">${money(t.perYearInBase)} a year${t.hasTerm === false && t.start ? ' · running since ' + dd(t.start) : ''}</div>${sched}${yieldLine}` : '');
 
     return `
     <div style="padding:11px 0;border-top:1px solid var(--line)">
@@ -714,7 +722,7 @@ document.querySelectorAll('.tab').forEach((t) => t.onclick = () => {
 });
 
 // ---- Add ----
-const CHIPS = ['out 40 food', 'in 3200 salary', 'in 27000 EGP rent', 'sub 12.99 netflix monthly', 'sub 90 icloud yearly', 'add card 1200 EUR 19% visa', 'add loan 445000 EGP 24% quarterly pays 58063.45 start 28.11.2024 end 28.05.2027', 'add deposit 495000 EGP 20% quarterly start 28.05.2024 end 28.05.2027', 'goal 2000'];
+const CHIPS = ['out 40 food', 'in 3200 salary', 'in 27000 EGP rent', 'add property 2700000 EGP apartment pays 27000 monthly', 'sub 12.99 netflix monthly', 'sub 90 icloud yearly', 'add card 1200 EUR 19% visa', 'add loan 445000 EGP 24% quarterly pays 58063.45 start 28.11.2024 end 28.05.2027', 'add deposit 495000 EGP 20% quarterly start 28.05.2024 end 28.05.2027', 'goal 2000'];
 $('chips').innerHTML = CHIPS.map((c) => `<button class="chip">${esc(c)}</button>`).join('');
 $('chips').onclick = (e) => { if (e.target.classList.contains('chip')) { $('entry').value = e.target.textContent; $('entry').focus(); } };
 
@@ -796,18 +804,23 @@ function accountFields(a) {
     </div>
     ${field('What it is', select('kind', S.kinds || [], a.kind))}
     <div class="two">
-      ${field('Rate % a year', input('ratePct', a.ratePct ?? '', 'inputmode="decimal"'))}
+      ${field('Rate % a year', input('ratePct', a.ratePct ?? '', 'inputmode="decimal" placeholder="only if it has one"'))}
       ${field(a.liability ? 'Paid back' : 'Paid out', select('payout', payouts, a.payout || ''))}
     </div>
-    ${field(a.liability ? 'What you actually pay each time' : 'What it actually pays each time',
-      input('payment', a.payment ?? '', 'inputmode="decimal" placeholder="leave empty to work it out"'))}
+    ${field(a.liability ? 'What you actually pay each time'
+      : a.kind === 'property' ? 'Rent it pays you each time'
+      : 'What it actually pays each time',
+      input('payment', a.payment ?? '', 'inputmode="decimal" placeholder="' + (a.kind === 'property' ? '27000' : 'leave empty to work it out') + '"'))}
     <div class="two">
       ${field('Starts', input('startsAt', isoOf(a.startsAt), 'type="date"'))}
       ${field('Ends', input('endsAt', isoOf(a.endsAt), 'type="date"'))}
     </div>
     <div class="note" style="margin-top:0">Dates and how often it pays are what turn a rate into money
     on a date — leave them empty if you don't know them. The payment beats every calculation here:
-    a loan repays principal as well as interest, and only your statement knows the exact figure.</div>`;
+    a loan repays principal as well as interest, and only your statement knows the exact figure.
+    <br><br><b>A flat does not need a rate.</b> Put the rent in the payment box and set how often it
+    arrives, and the app works the yield out for you — and drops the rent into each month as passive
+    income towards your goal.</div>`;
 }
 
 function subFields(r) {

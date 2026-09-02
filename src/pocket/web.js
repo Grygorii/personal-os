@@ -106,7 +106,7 @@ export function buildState({ base = 'EUR', table, monthKey, accounts = [], spanF
   // dated, so they belong in a month; but only the ones whose date has PASSED go into the
   // totals, and any that he has already recorded by hand drop out entirely.
   const recorded = new Set(spanFlows.map((f) => f.schedId).filter(Boolean));
-  const spanSched = scheduledFlows(accounts, { from: span.from, to: span.to }, { now, recorded });
+  const spanSched = scheduledFlows(accounts, { from: span.from, to: span.to }, { now, recorded, flows: spanFlows });
   const sched = spanSched.filter((f) => f.ts >= w.from && f.ts <= w.to);
   const landed = (list) => list.filter((f) => f.due);
 

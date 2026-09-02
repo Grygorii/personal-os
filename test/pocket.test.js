@@ -1118,3 +1118,77 @@ test('forecast: an income that ends stops counting towards the goal', () => {
   assert.ok(y3 < y2, 'when they leave it is not');
   assert.ok(y3 < 900);
 });
+
+// ---- A flat, and the rent it pays ----
+//
+// "I want to add apartment in worth with rent I am getting but cannot do it."
+//
+// He could not, because an account only produced anything if it had a RATE. A deposit is
+// described by a percentage; a flat is not — he knows the rent is 27,000 EGP a month and not
+// what fraction of the building's value that happens to be. So the income had nowhere to go and
+// the flat sat in his net worth doing nothing.
+
+const FLAT = () => cleanAccount({
+  id: 'p1', label: 'Cairo apartment', kind: 'property', currency: 'EGP',
+  value: 2700000, payout: 'monthly', payment: 27000, startsAt: utc(2023, 6, 1),
+});
+
+test('an asset can pay an amount instead of a rate', () => {
+  const t = depositProgress(FLAT(), utc(2026, 9, 20));
+  assert.ok(t, 'this returned null before, which is why the rent could not be entered');
+  assert.equal(t.perYear, 324000, '27,000 a month is 324,000 a year');
+  assert.equal(t.schedule.perPayment, 27000);
+  assert.equal(t.schedule.payout, 'monthly');
+  // And the number he never had: what the flat actually returns.
+  assert.equal(t.yieldPct, 12, '324,000 on 2,700,000 is 12% — the same question a deposit rate answers');
+
+  // A rate still wins where there is one; the yield is only derived when there is not.
+  assert.equal(depositProgress(cleanAccount({ kind: 'deposit', currency: 'EGP', value: 100000, ratePct: 15 })).yieldPct, null);
+  // And an asset with neither still produces nothing, rather than a zero pretending to be one.
+  assert.equal(depositProgress(cleanAccount({ kind: 'property', currency: 'EGP', value: 2700000 })), null);
+  assert.equal(depositProgress(cleanAccount({ kind: 'property', currency: 'EGP', value: 2700000, payment: 27000 })), null, 'an amount with no frequency is not an income');
+});
+
+test('a tenancy with no start date still pays, anchored to the day it was added', () => {
+  const added = utc(2025, 1, 2);
+  const a = cleanAccount({ id: 'p2', kind: 'property', currency: 'EGP', value: 1000000, payout: 'monthly', payment: 8000, at: added });
+  const t = depositProgress(a, utc(2026, 9, 20));
+  assert.ok(t.schedule, 'a tenancy he has had for years has no interesting beginning');
+  assert.equal(t.schedule.start, added);
+  assert.equal(new Date(t.schedule.next).getUTCDate(), 2, 'and it pays on the same day each month');
+});
+
+test('rent lands in the month as rent, and counts towards the goal', () => {
+  const w = { from: utc(2026, 9, 1), to: utc(2026, 10, 1) - 1 };
+  const [rent] = scheduledFlows([FLAT()], w, { now: utc(2026, 9, 20) });
+  assert.equal(rent.dir, 'in');
+  assert.equal(rent.amount, 27000);
+  assert.equal(rent.category, 'rent', 'not "interest" — a month has to read as what happened');
+  assert.equal(rent.passive, true, 'which is exactly what the 2,000 a month goal measures');
+
+  // A portfolio pays dividends, a deposit pays interest. The word matters because the category
+  // is what he reads in the list.
+  const port = cleanAccount({ kind: 'portfolio', currency: 'USD', value: 10000, payout: 'quarterly', payment: 90, startsAt: utc(2024, 6, 1) });
+  assert.equal(scheduledFlows([port], w, { now: utc(2026, 9, 20) })[0].category, 'dividend');
+});
+
+test('rent he types by hand is not counted twice', () => {
+  // THE HAZARD THIS FEATURE CREATED. He has typed the Cairo rent every month for a year; those
+  // flows carry no schedule id, so the exact-id guard cannot see them. The day the flat learned
+  // to produce its own rent, every one of those months would have counted it twice.
+  const w = { from: utc(2026, 9, 1), to: utc(2026, 10, 1) - 1 };
+  const now = utc(2026, 9, 20);
+  const byHand = cleanFlow({ dir: 'in', category: 'rent', amount: 27000, currency: 'EGP', ts: utc(2026, 9, 3), recurring: true });
+
+  assert.equal(scheduledFlows([FLAT()], w, { now }).length, 1, 'without the hand-typed one, the flat pays');
+  assert.deepEqual(scheduledFlows([FLAT()], w, { now, flows: [byHand] }), [], 'with it, the projection steps aside');
+
+  // The match has to be tight, or it swallows genuinely separate money.
+  const differentAmount = cleanFlow({ dir: 'in', category: 'rent', amount: 19000, currency: 'EGP', ts: utc(2026, 9, 3) });
+  const differentMonth = cleanFlow({ dir: 'in', category: 'rent', amount: 27000, currency: 'EGP', ts: utc(2026, 9, 22) });
+  const differentCurrency = cleanFlow({ dir: 'in', category: 'rent', amount: 27000, currency: 'EUR', ts: utc(2026, 9, 3) });
+  const wrongWay = cleanFlow({ dir: 'out', category: 'rent', amount: 27000, currency: 'EGP', ts: utc(2026, 9, 3) });
+  for (const [what, f] of [['amount', differentAmount], ['date', differentMonth], ['currency', differentCurrency], ['direction', wrongWay]]) {
+    assert.equal(scheduledFlows([FLAT()], w, { now, flows: [f] }).length, 1, `a different ${what} is different money`);
+  }
+});

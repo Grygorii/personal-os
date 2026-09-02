@@ -30,7 +30,8 @@ const accounts = [
   cleanAccount({ id: 'a2', label: 'Cairo CD', kind: 'deposit', currency: 'EGP', value: 495000, ratePct: 20, payout: 'quarterly', startsAt: utc(2024, 5, 28), endsAt: utc(2027, 5, 28) }),
   cleanAccount({ id: 'a3', label: 'Old CD', kind: 'deposit', currency: 'EGP', value: 100000, ratePct: 15, payout: 'maturity', startsAt: utc(2020, 1, 1), endsAt: utc(2021, 1, 1) }),
   cleanAccount({ id: 'a4', label: 'Soon CD', kind: 'deposit', currency: 'EGP', value: 50000, ratePct: 18, payout: 'monthly', startsAt: utc(2025, 1, 1), endsAt: utc(2026, 11, 1) }),
-  cleanAccount({ id: 'a5', label: 'Cairo flat', kind: 'property', currency: 'EGP', value: 2700000 }),
+  // A flat has no rate — it has rent. This is the case he could not enter at all.
+  cleanAccount({ id: 'a5', label: 'Cairo flat', kind: 'property', currency: 'EGP', value: 2700000, payout: 'monthly', payment: 27000, startsAt: utc(2023, 6, 1) }),
   cleanAccount({ id: 'a6', label: 'Visa', kind: 'card', currency: 'EUR', value: 1200, ratePct: 19 }),
   // His real car loan, with the instalment off his own statement. The app used to show 26,700 a
   // quarter here — interest only, about half the real bill — and count all 445,000 as still owed
@@ -133,7 +134,9 @@ function must(el, panel, needles, label) {
     must(el, 'p-month', ['Repeats — not recorded yet', 'Yes, add it', 'Left over', 'September',
       'scheduled', 'Still due this month', 'After these, the month ends at'], 'this month');
     must(el, 'p-worth', ['Cairo CD', 'earned so far', 'quarterly', 'matured on', 'matures in', 'Not counted:',
-      'and you spend EUR', 'of everything you own'], 'this month');
+      'and you spend EUR', 'of everything you own',
+      // The flat and its rent, and the yield it works out to.
+      'Cairo flat', '27,000 EGP', '12.0% a year'], 'this month');
     // A loan must never be described in the language of a deposit.
     const worth = el('p-worth').innerHTML;
     // lastIndexOf, not indexOf: the pay-this-first warnings name the same loans further up the
@@ -160,6 +163,19 @@ function must(el, panel, needles, label) {
     }
     const egp = S.interest.foreign.find((f) => f.currency === 'EGP');
     if (!egp || !(egp.breakEvenFallPct > 0)) fail('foreign interest must say how far the currency can fall');
+
+    // The flat: rent in, a yield worked out, and none of it treated as interest.
+    const flat = S.accounts.find((a) => a.label === 'Cairo flat');
+    if (!flat.term) fail('a flat that pays rent must produce something — this is what he could not add');
+    if (Math.round(flat.term.perYear) !== 324000) fail(`27,000 a month is 324,000 a year, got ${flat.term.perYear}`);
+    if (Math.abs(flat.term.yieldPct - 12) > 0.01) fail(`324,000 on 2,700,000 is a 12% yield, got ${flat.term.yieldPct}`);
+    // Rent is not interest. The two live certificates pay 99,000 + 9,000 EGP = 2,000 EUR a year;
+    // if the flat's 324,000 EGP of rent leaked in, this would read 8,000.
+    if (Math.round(S.interest.earned) !== 2000) fail(`interest is the deposits alone (2,000), got ${Math.round(S.interest.earned)}`);
+    if (!S.contracted.streams.some((r) => r.label === 'Cairo flat')) fail('rent is contracted income');
+    const rent = S.flows.find((f) => f.scheduled && f.label === 'Cairo flat');
+    if (!rent) fail('the rent should land in the month on its own');
+    if (rent.category !== 'rent' || !rent.passive) fail('rent is rent, and it is passive — that is what the goal counts');
     const l2 = S.accounts.find((a) => a.label === 'Loan 2');
     if (!l2.term.schedule.estimated) fail('with no stated payment the figure is an estimate and must say so');
     if (Math.round(l2.term.schedule.perPayment) <= Math.round(513000 * 0.28 / 12)) {
@@ -178,7 +194,8 @@ function must(el, panel, needles, label) {
   if (S.missing.some((r) => r.category === 'salary')) fail('the salary WAS recorded this month and must not be listed again');
   if (!S.terms.matured.some((t) => t.label === 'Old CD')) fail('a matured certificate should be surfaced');
   if (!S.interest.ended.includes('Old CD')) fail('a term that ended must not still count as earning');
-  if (Math.round(S.contracted.perMonth) !== 167) fail(`contracted income should be 167/month, got ${Math.round(S.contracted.perMonth)}`);
+  // 167 from the two live certificates, plus 500 of rent from the flat.
+  if (Math.round(S.contracted.perMonth) !== 667) fail(`contracted income should be 667/month, got ${Math.round(S.contracted.perMonth)}`);
 
   // Subscriptions, normalised. 12.99 monthly = 155.88; 90 yearly = 90; 4,500 EGP quarterly =
   // 18,000 EGP = 333.33; 20 USD monthly = 240 USD = 222.22. The cancelled one counts nothing.
@@ -204,7 +221,12 @@ function must(el, panel, needles, label) {
   // 3,200 EUR salary + 27,000 EGP rent = 3,700, PLUS the two deposit coupons that actually paid
   // in August: 24,750 EGP from the Cairo certificate on the 28th and 750 EGP from Soon CD on the
   // 1st — 472.22 EUR. A month that leaves those out is not a picture of the month.
+  // 3,700 typed plus 472 of coupons. NOT 5,172: he types the Cairo rent by hand every month, and
+  // the flat now produces its own — the near-match guard is the only thing keeping that at one.
   if (Math.round(S.month.income) !== 4172) fail(`August: 3,700 typed plus 472 of coupons = 4,172, got ${S.month.income}`);
+  if (S.flows.filter((f) => f.dir === 'in' && Math.round(f.amount) === 27000).length !== 1) {
+    fail('the Cairo rent appears twice — once typed, once projected');
+  }
   if (!S.flows.some((f) => f.scheduled && f.label === 'Cairo CD')) fail('the coupon should appear in the list, marked scheduled');
   if (S.month.passive < 400) fail('a deposit coupon is passive income and must count towards the goal');
 }

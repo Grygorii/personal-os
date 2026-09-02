@@ -73,7 +73,7 @@ out 40 food
 in 27000 EGP rent
 out 1 200,50 flights            European decimals work
 add deposit 540000 EGP Cairo savings
-add property 2700000 EGP apartment
+add property 2700000 EGP apartment pays 27000 monthly
 add portfolio 1000 USD eToro
 goal 2000
 ```
@@ -191,10 +191,10 @@ a price without one: it looks current.
 2. Railway → same project → **New Service** → same repo.
 3. Start command: `npm run start:pocket`.
 4. Env vars above, `DB_NAME=pocket` among them.
-5. Look for `[boot] pocket-7 · db=pocket · base=EUR`.
+5. Look for `[boot] pocket-8 · db=pocket · base=EUR`.
 
 **Which build is actually serving?** `GET /health` (or `/version`) answers without Telegram —
-`{"ok":true,"app":"pocket","version":"pocket-7"}`. The marker lives in `src/pocket/version.js`;
+`{"ok":true,"app":"pocket","version":"pocket-8"}`. The marker lives in `src/pocket/version.js`;
 bump it on every deploy. Kept has `GET /version` for exactly the same reason: "is my change even
 out there yet" is the first question of every deploy, and guessing at it wastes an evening.
 
@@ -290,6 +290,40 @@ Other decisions:
 
 `out 40 monthly gym` is still a spend called "monthly gym". The two shapes stay apart, or every
 gym bill becomes a commitment.
+
+## A flat, and the rent it pays
+
+He could not add his apartment with its rent, and the reason was structural: an account only
+produced anything if it had a **rate**. A deposit is described by a percentage; **a flat is not**.
+He knows the rent is 27,000 EGP a month, not what fraction of the building's value that happens to
+be. So the income had nowhere to go and the flat sat in his net worth doing nothing.
+
+Either now describes an income — a rate, *or* an amount and how often it arrives:
+
+```
+add property 2700000 EGP apartment pays 27000 monthly
+```
+
+From that one line the app gets everything: the rent appears on the Worth row, it lands in every
+month as `rent` (which is passive, so it counts towards the €2,000 goal), it joins "already
+contracted", and it produces the number he never had — **12% a year on what the flat is worth**.
+That is the same question the app asks of a deposit rate, asked of bricks, and it is how a lazy
+building gets noticed. Below 4% it says so.
+
+A tenancy he has had for years has no interesting start date, so with none given the schedule is
+anchored to the day he added it. Better than refusing to show the rent at all.
+
+### The hazard this created, and the guard for it
+
+He has typed the Cairo rent by hand every month for a year. Those flows carry no `schedId`, so
+the exact-id guard cannot see them — and the day the flat learned to produce its own rent, every
+one of those months would have counted it **twice**.
+
+So a recorded flow that *looks like* a scheduled one is treated as it: same direction, same
+currency, the same amount within 1%, within five days of the date. The match is deliberately
+tight — a different amount, month, currency or direction is different money. Suppressing a real
+projection is a small loss; double-counting the rent is a wrong total, and a wrong total gets
+believed while a missing one gets noticed.
 
 ## What the month already knows
 
