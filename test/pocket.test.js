@@ -1626,3 +1626,83 @@ test('the backup is a real backup: nothing internal, everything of his', () => {
   assert.match(bot, /backup\|export/, 'and he can ask for it in one word');
   assert.match(bot, /sendDocument/, 'as a file, so it lands in a chat he keeps — not in the database being backed up');
 });
+
+// ---- One rate for a whole position ----
+//
+// "Why count from 2 of September? Count from the first day of the first deposit in Egypt — anyway
+//  all money was exchanged from euro."
+//
+// Both right. September was the day this app started keeping a diary, which is a fact about the
+// app and not about his money. And he did not EARN Egyptian pounds: he took euro and converted
+// them, so the whole position has one known cost, and asking for a starting rate inside five
+// separate holdings was asking five times for one fact.
+
+const EGP_NOW = { base: 'EUR', rates: { EUR: 1, EGP: 58.96 }, at: Date.now() };
+const EGP_HOLDINGS = () => [
+  cleanAccount({ id: 'd1', label: 'Deposit 1', kind: 'deposit', currency: 'EGP', value: 495000, ratePct: 20, startsAt: utc(2024, 5, 28) }),
+  cleanAccount({ id: 'd2', label: 'Deposit 2', kind: 'deposit', currency: 'EGP', value: 450000, ratePct: 22.5, startsAt: utc(2024, 5, 26) }),
+  cleanAccount({ id: 'l1', label: 'Loan', kind: 'loan', currency: 'EGP', value: 513000, startsAt: utc(2024, 10, 26) }),
+];
+
+test('one rate he exchanged at covers every holding that has none of its own', () => {
+  const [egp] = currencyPicture(EGP_HOLDINGS(), EGP_NOW, 'EUR', {
+    basis: { EGP: { rateThen: 48, at: utc(2024, 5, 26) } },
+  });
+  assert.equal(egp.told, 3, 'all three, from one number typed once');
+  assert.equal(egp.untold, 0);
+  assert.ok(egp.holdings.every((h) => h.rateSource === 'basis'));
+  assert.ok(Math.abs(egp.changePct - 22.83) < 0.05, '48 to 58.96 is the pound 22.8% weaker');
+  // What he paid, against what it is worth. Not an estimate of anything: both are known.
+  // 495,000 + 450,000 at 48 to the euro, less the 513,000 he owes in it: 10,313 + 9,375 − 10,688.
+  assert.equal(Math.round(egp.investedInBase), 9000);
+  assert.ok(egp.exposureInBase < egp.investedInBase);
+  assert.ok(egp.movedInBase < 0);
+  // The rate reaches realReturn too, so a 20% deposit finally gets judged in euro.
+  assert.ok(egp.holdings.find((h) => h.label === 'Deposit 1').real.realPct < 20);
+});
+
+test('the comparison runs from when he bought in, not from when the app started watching', () => {
+  const history = [{ base: 'EUR', rates: { EUR: 1, EGP: 58.96 }, at: utc(2026, 9, 2) }];
+  // The diary alone: one day on record, so nothing to compare against — "0.0% since Sep 2" is a
+  // fact about this app, not about his money.
+  const [diary] = currencyPicture(EGP_HOLDINGS(), EGP_NOW, 'EUR', { history });
+  assert.equal(diary.sinceIsBasis, false);
+  assert.equal(Math.round(diary.changePct), 0, 'which is exactly why it was useless');
+
+  const [real] = currencyPicture(EGP_HOLDINGS(), EGP_NOW, 'EUR', {
+    history, basis: { EGP: { rateThen: 48, at: utc(2024, 5, 26) } },
+  });
+  assert.equal(real.sinceIsBasis, true);
+  assert.equal(real.since, utc(2024, 5, 26));
+  assert.ok(real.changePct > 20, 'the number he actually wanted');
+  // The diary is still kept, for when it has something to say.
+  assert.equal(Math.round(real.recordedChangePct), 0);
+});
+
+test('the date defaults to the day he first held the currency', () => {
+  const [egp] = currencyPicture(EGP_HOLDINGS(), EGP_NOW, 'EUR');
+  assert.equal(egp.firstHeld, utc(2024, 5, 26), 'the earliest of the three, so the only thing to type is a rate');
+  // With a basis but no date, that day is what it runs from.
+  const [dated] = currencyPicture(EGP_HOLDINGS(), EGP_NOW, 'EUR', { basis: { EGP: { rateThen: 48 } } });
+  assert.equal(dated.since, utc(2024, 5, 26));
+});
+
+test('a holding that bought in at its own rate keeps it', () => {
+  const accounts = EGP_HOLDINGS();
+  accounts[0] = cleanAccount({ ...accounts[0], rateThen: 33 });   // bought much earlier
+  const [egp] = currencyPicture(accounts, EGP_NOW, 'EUR', { basis: { EGP: { rateThen: 48 } } });
+  const own = egp.holdings.find((h) => h.label === 'Deposit 1');
+  assert.equal(own.rateThen, 33);
+  assert.equal(own.rateSource, 'holding', 'a certificate bought in a different year was bought at a different rate');
+  assert.equal(egp.holdings.find((h) => h.label === 'Deposit 2').rateSource, 'basis');
+});
+
+test('with neither a basis nor a diary, nothing is invented', () => {
+  const [egp] = currencyPicture(EGP_HOLDINGS(), EGP_NOW, 'EUR');
+  assert.equal(egp.changePct, null);
+  assert.equal(egp.investedInBase, null);
+  assert.equal(egp.movedInBase, null);
+  assert.equal(egp.untold, 3, 'named, not guessed');
+  // But the size of the bet needs no history at all, and is still there.
+  assert.ok(egp.sensitivity[0].deltaInBase < 0);
+});

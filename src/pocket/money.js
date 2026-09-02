@@ -1631,7 +1631,7 @@ export function scheduledFlows(accounts, window = {}, { now = Date.now(), record
 /** What each currency he holds is doing to him.
  *
  *  `history` is a list of dated rate tables, oldest first, as recorded day by day. */
-export function currencyPicture(accounts, table, base = 'EUR', { history = [], now = Date.now() } = {}) {
+export function currencyPicture(accounts, table, base = 'EUR', { history = [], now = Date.now(), basis = {} } = {}) {
   const rateOf = (t, cur) => (cur === (t?.base || base) ? 1 : Number(t?.rates?.[cur]));
   const rows = [];
 
@@ -1646,6 +1646,17 @@ export function currencyPicture(accounts, table, base = 'EUR', { history = [], n
 
   for (const [currency, list] of Object.entries(byCurrency)) {
     const rateNow = rateOf(table, currency);
+    // ONE RATE FOR THE WHOLE POSITION, because that is how the money got there.
+    //
+    // He did not earn Egyptian pounds. He took euro and exchanged them, so every pound he holds
+    // has a known euro cost — and asking him to type a starting rate into five separate holdings
+    // was asking five times for one fact. A currency-level basis stands in wherever a holding has
+    // no rate of its own; a holding that does have one always wins, because a certificate bought
+    // in a different year really was bought at a different rate.
+    const b = basis?.[currency] || null;
+    // And the date it is measured from is the day he first moved money into that currency —
+    // not the day this app started keeping a diary, which is what "0.0% since Sep 2" was.
+    const firstHeld = Math.min(...list.map(({ a }) => a.startsAt || a.at || now));
     if (!(rateNow > 0)) {
       rows.push({ currency, rateNow: null, unconverted: true, holdings: [], exposureInBase: null });
       continue;
@@ -1655,7 +1666,9 @@ export function currencyPicture(accounts, table, base = 'EUR', { history = [], n
       const nowInBase = held / rateNow;
       // What that same money was worth in euro on the day he got it. Only where he has said so —
       // a made-up starting rate would produce a made-up gain, which is worse than no answer.
-      const thenInBase = a.rateThen > 0 ? held / a.rateThen : null;
+      const rateThen = a.rateThen > 0 ? a.rateThen : (b?.rateThen > 0 ? b.rateThen : null);
+      const rateSource = a.rateThen > 0 ? 'holding' : (b?.rateThen > 0 ? 'basis' : null);
+      const thenInBase = rateThen > 0 ? held / rateThen : null;
       // A weakening currency erodes a holding and, in exactly the same measure, erodes a DEBT in
       // his favour. Same arithmetic, opposite sign, and getting the sign wrong here would tell
       // him a falling pound was costing him money it was actually saving him.
@@ -1663,12 +1676,12 @@ export function currencyPicture(accounts, table, base = 'EUR', { history = [], n
       return {
         id: a.id, label: a.label || a.kind, kind: a.kind, owed,
         value: held, currency,
-        rateThen: a.rateThen || null,
+        rateThen, rateSource,
         nowInBase, thenInBase, moveInBase,
         movePct: thenInBase ? ((nowInBase - thenInBase) / thenInBase) * 100 : null,
         // For a holding that also pays a rate, the question the app was built to ask: is 20% in
         // a currency that fell still 20%?
-        real: a.ratePct != null && a.rateThen > 0 ? realReturn({ nominalPct: a.ratePct, rateThen: a.rateThen, rateNow }) : null,
+        real: a.ratePct != null && rateThen > 0 ? realReturn({ nominalPct: a.ratePct, rateThen, rateNow }) : null,
       };
     });
 
@@ -1681,7 +1694,11 @@ export function currencyPicture(accounts, table, base = 'EUR', { history = [], n
       .filter((x) => x.rate > 0)
       .sort((a2, b2) => a2.at - b2.at);
     const first = series[0];
-    const changePct = first && first.rate > 0 ? ((rateNow - first.rate) / first.rate) * 100 : null;
+    const recordedChangePct = first && first.rate > 0 ? ((rateNow - first.rate) / first.rate) * 100 : null;
+    // What the rate has done since he BOUGHT IN — the comparison he actually wants — falling back
+    // to the recorded diary only when he has not said what he exchanged at.
+    const sinceAt = b?.rateThen > 0 ? (b.at || firstHeld) : (first ? first.at : null);
+    const changePct = b?.rateThen > 0 ? ((rateNow - b.rateThen) / b.rateThen) * 100 : recordedChangePct;
 
     rows.push({
       currency,
@@ -1693,8 +1710,18 @@ export function currencyPicture(accounts, table, base = 'EUR', { history = [], n
       told: known.length,
       untold: holdings.length - known.length,
       series,
-      since: first ? first.at : null,
+      since: sinceAt,
+      sinceIsBasis: !!(b?.rateThen > 0),
+      basisRate: b?.rateThen || null,
+      basisAt: b?.at || null,
+      // The day he first put money into this currency — the honest default for the basis date,
+      // so the only thing he has to type is the rate.
+      firstHeld,
       changePct,
+      recordedChangePct,
+      // WHAT HE PUT IN, AND WHAT IT IS NOW. Every pound came from euro, so this is not an
+      // estimate of anything — it is the price he paid against the price today.
+      investedInBase: known.length ? known.reduce((t, h) => t + (h.owed ? -h.thenInBase : h.thenInBase), 0) : null,
       // WHAT A MOVE WOULD DO. No forecast and no history needed — just the size of the bet he is
       // already holding, which is the number that decides whether it is one he wants.
       sensitivity: [10, 20].map((pct) => ({

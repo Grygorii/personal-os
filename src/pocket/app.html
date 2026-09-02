@@ -885,22 +885,40 @@ function drawFx() {
     <div class="card">
       <h2>${esc(c.currency)}</h2>
       <div class="big">${c.rateNow.toLocaleString(undefined, { maximumFractionDigits: 2 })}<span style="font-size:15px;color:var(--dim);font-weight:400"> ${esc(c.currency)} to 1 ${esc(S.base)}</span></div>
-      <div class="sub">${esc(S.ratesAge || '')}${c.changePct != null ? ` · ${pctFmt(c.changePct)} since ${dd(c.since)}` : ''}</div>
-      ${c.series.length < 2 ? `<div class="note">The rate is recorded once a day from now on. There
-        ${c.series.length === 1 ? 'is one day' : 'are no days'} on record so far, so there is nothing
-        to compare today against yet — that fills in on its own.</div>` : ''}
+      <div class="sub">${esc(S.ratesAge || '')}${c.changePct != null
+        ? ` · ${pctFmt(c.changePct)} since ${dd(c.since)}${c.sinceIsBasis ? '' : ' — when this app started keeping a record'}`
+        : ''}</div>
+      ${!c.sinceIsBasis && c.series.length < 2 ? `<div class="note">Nothing to compare today against
+        yet. Rather than wait for a diary to fill up, tell it what you exchanged at — you bought
+        these ${esc(c.currency)} with ${esc(S.base)}, so you already know.</div>` : ''}
 
+      ${/* WHAT HE PUT IN, AGAINST WHAT IT IS WORTH. Every pound came from euro, so this is not an
+            estimate of anything: it is the price he paid beside the price today, and it is the
+            question the whole tab exists for. */ ''}
+      ${c.investedInBase != null ? `
+      <div class="row" style="margin-top:12px">
+        <div class="rmain"><div class="rlabel">You put in</div>
+          <div class="rmeta">at ${c.basisRate ? c.basisRate.toLocaleString(undefined, { maximumFractionDigits: 2 }) : '—'} ${esc(c.currency)} to the ${esc(S.base)}, from ${dd(c.since)}</div></div>
+        <div class="ramt">${money(c.investedInBase)}</div>
+      </div>
+      <div class="row">
+        <div class="rmain"><div class="rlabel">It is worth</div>
+          <div class="rmeta">today, at ${c.rateNow.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div></div>
+        <div class="ramt ${c.exposureInBase >= 0 ? 'in' : 'out'}">${money(c.exposureInBase)}</div>
+      </div>
+      <div class="row">
+        <div class="rmain"><div class="rlabel">The rate has ${c.movedInBase >= 0 ? 'given you' : 'taken'}</div>
+          <div class="rmeta">${pctFmt(c.changePct)} on the ${esc(c.currency)}${c.untold ? ` · ${c.untold} holding${c.untold === 1 ? '' : 's'} not counted` : ''}</div></div>
+        <div class="ramt ${c.movedInBase >= 0 ? 'in' : 'out'}">${money(c.movedInBase)}</div>
+      </div>` : `
       <div class="row" style="margin-top:12px">
         <div class="rmain"><div class="rlabel">What you hold in ${esc(c.currency)}</div>
           <div class="rmeta">assets minus what you owe in it</div></div>
         <div class="ramt ${c.exposureInBase >= 0 ? 'in' : 'out'}">${money(c.exposureInBase)}</div>
-      </div>
-
-      ${c.movedInBase != null ? `<div class="row">
-        <div class="rmain"><div class="rlabel">What the rate has done to that</div>
-          <div class="rmeta">since you got it${c.untold ? ` · ${c.untold} holding${c.untold === 1 ? '' : 's'} not counted, no starting rate` : ''}</div></div>
-        <div class="ramt ${c.movedInBase >= 0 ? 'in' : 'out'}">${money(c.movedInBase)}</div>
-      </div>` : ''}
+      </div>`}
+      <button class="add" data-fx="${esc(c.currency)}" style="margin-top:10px">
+        ${c.basisRate ? `Change what you exchanged at (${c.basisRate.toLocaleString(undefined, { maximumFractionDigits: 2 })})` : `What did you exchange at?`}
+      </button>
 
       <div class="note" style="margin-top:12px"><b>If ${esc(c.currency)} weakens ${c.sensitivity[0].weakensPct}% against ${esc(S.base)},
       you are ${money(Math.abs(c.sensitivity[0].deltaInBase))} ${c.sensitivity[0].deltaInBase < 0 ? 'poorer' : 'richer'};
@@ -917,8 +935,8 @@ function drawFx() {
           <div class="rmain">
             <div class="rlabel">${esc(h.label)}</div>
             <div class="rmeta">${h.rateThen
-              ? `got it at ${h.rateThen.toLocaleString(undefined, { maximumFractionDigits: 2 })} · worth ${money(h.thenInBase)} then`
-              : 'no starting rate — tap ✎ on it in Worth and fill in “Rate when you got it”'}</div>
+              ? `at ${h.rateThen.toLocaleString(undefined, { maximumFractionDigits: 2 })}${h.rateSource === 'basis' ? ' (what you exchanged at)' : ' (its own rate)'} · worth ${money(h.thenInBase)} then`
+              : 'no starting rate — say what you exchanged at above, or tap ✎ on it in Worth for its own'}</div>
             ${h.real ? `<div class="rmeta ${h.real.realPct >= 0 ? 'in' : 'out'}">Its ${h.kind === 'loan' || h.kind === 'card' ? 'cost' : 'return'} is
               <b>${h.real.realPct.toFixed(1)}% a year in ${esc(S.base)}</b>, not the headline —
               the rate moved ${h.real.currencyMovePct.toFixed(1)}% under it.</div>` : ''}
@@ -930,7 +948,8 @@ function drawFx() {
         </div>`).join('')}
       ${untold.length ? `<div class="note">A holding with no starting rate is shown at what it is
       worth today. The app will not invent a rate you did not pay — a made-up starting point makes
-      a made-up gain, which is worse than no answer.</div>` : ''}
+      a made-up gain, which is worse than no answer. One that bought in at a different time can
+      have its own: tap ✎ on it in Worth.</div>` : ''}
     </div>`;
   }).join('') + `
     <div class="note">A high local rate and a falling currency are not two separate facts: the
@@ -1094,6 +1113,30 @@ function openExtraPayment(accountId) {
   $('esheet').hidden = false;
 }
 
+/** "I exchanged at 48, from May 2024." One fact for the whole position, because that is how the
+ *  money got there — he took euro and converted them, and asking for a starting rate inside five
+ *  separate holdings was asking five times for the same thing.
+ *
+ *  The date defaults to the day he first held that currency, so the only thing to type is a rate. */
+function openFxBasis(currency) {
+  const c = (S.currencies || []).find((x) => x.currency === currency);
+  if (!c) return;
+  editing = { kind: 'fxBasis', id: currency };
+  $('etitle').textContent = `What did you exchange ${currency} at?`;
+  $('eerr').hidden = true;
+  $('efields').innerHTML = `
+    <div class="two">
+      ${field(`${esc(currency)} to 1 ${esc(S.base)}`, input('rateThen', c.basisRate ?? '', 'inputmode="decimal" placeholder="e.g. 48"'))}
+      ${field('From', input('at', isoOf(c.basisAt || c.firstHeld), 'type="date"'))}
+    </div>
+    <div class="note" style="margin-top:0">Today it is
+    <b>${c.rateNow.toLocaleString(undefined, { maximumFractionDigits: 2 })}</b>. The date is filled in with
+    the day you first held ${esc(currency)} — change it if you moved the money over at a different time.
+    <br><br>This stands in for every ${esc(currency)} holding that has no rate of its own; one you bought
+    in at a different rate can still have its own, on its ✎ in Worth. Leave the rate empty to clear it.</div>`;
+  $('esheet').hidden = false;
+}
+
 function openEdit(kind, id) {
   const it = kind === 'flow' ? S.flows.find((f) => f.id === id)
     : kind === 'sub' ? (S.subs?.rows || []).find((r) => r.id === id)
@@ -1118,6 +1161,19 @@ $('efields').onclick = (e) => {
 
 $('esave').onclick = async () => {
   if (!editing) return;
+  if (editing.kind === 'fxBasis') {
+    const v = {};
+    $('efields').querySelectorAll('[data-k]').forEach((el) => { v[el.dataset.k] = el.value.trim(); });
+    $('esave').disabled = true;
+    try {
+      S = await api('/api/fxbasis', { currency: editing.id, rateThen: v.rateThen === '' ? 0 : Number(v.rateThen), at: v.at });
+      draw(); closeEdit();
+      tg?.HapticFeedback?.notificationOccurred?.('success');
+    } catch (err) { $('eerr').textContent = err.message; $('eerr').hidden = false; }
+    finally { $('esave').disabled = false; }
+    return;
+  }
+
   if (editing.kind === 'extraPayment') {
     const v = {};
     $('efields').querySelectorAll('[data-k]').forEach((el) => { v[el.dataset.k] = el.value.trim(); });
@@ -1251,6 +1307,9 @@ document.body.addEventListener('click', async (e) => {
     await work(() => api('/api/payment', { id: payDel.dataset.acct, remove: payDel.dataset.payDel }));
     return;
   }
+
+  const fxBtn = e.target.closest('[data-fx]');
+  if (fxBtn) { openFxBasis(fxBtn.dataset.fx); return; }
 
   const chg = e.target.closest('[data-charge]');
   if (chg) {

@@ -133,6 +133,34 @@ export async function removeSub(id) {
   return r.deletedCount > 0;
 }
 
+// ---- What he exchanged at ----
+//
+// He did not earn Egyptian pounds; he took euro and converted them. So the whole position has one
+// known cost, and asking him to type a starting rate into five separate holdings was asking five
+// times for one fact. Kept per currency, and any holding with a rate of its own still wins.
+export async function getFxBasis() {
+  const doc = await col('settings').findOne({ _id: 'fx' });
+  const out = {};
+  for (const [cur, v] of Object.entries(doc || {})) {
+    if (cur === '_id' || !v || typeof v !== 'object') continue;
+    if (Number(v.rateThen) > 0) out[cur] = { rateThen: Number(v.rateThen), at: Number(v.at) || null };
+  }
+  return out;
+}
+
+export async function setFxBasis(currency, rateThen, at) {
+  const cur = String(currency || '').toUpperCase().slice(0, 3);
+  if (!/^[A-Z]{3}$/.test(cur)) return null;
+  // A rate of nothing is not a rate; clearing it is done by sending nothing at all.
+  if (!(Number(rateThen) > 0)) {
+    await col('settings').updateOne({ _id: 'fx' }, { $unset: { [cur]: '' } }, { upsert: true });
+    return null;
+  }
+  const val = { rateThen: Number(rateThen), at: Number(at) || Date.now() };
+  await col('settings').updateOne({ _id: 'fx' }, { $set: { [cur]: val } }, { upsert: true });
+  return val;
+}
+
 export async function getGoal() {
   const doc = await col('settings').findOne({ _id: 'goal' });
   return doc ? { monthly: Number(doc.monthly) || 0, currency: doc.currency || 'EUR' } : null;

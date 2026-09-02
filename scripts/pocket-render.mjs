@@ -68,6 +68,8 @@ const subs = [
   cleanSub({ id: 's4', label: 'Some AI thing', amount: 20, currency: 'USD', every: 'monthly', startsAt: utc(2026, 9, 1), trialEndsAt: utc(2026, 9, 20) }),
   cleanSub({ id: 's5', label: 'Old magazine', amount: 8, currency: 'EUR', every: 'monthly', startsAt: utc(2023, 1, 1), endsAt: utc(2026, 4, 1) }),
 ];
+// Everything he holds in EGP was bought with euro at one rate, on one day.
+const basis = { EGP: { rateThen: 48, at: utc(2024, 5, 26) } };
 const goal = { monthly: 2000, currency: 'EUR' };
 // The plan in his own words: "500 from salary, rent from apartment 1, deposit 10000 under 2%,
 // and in year 3 I will add another apartment".
@@ -139,7 +141,7 @@ function must(el, panel, needles, label) {
 
 // ---- This month, everything present ----
 {
-  const S = buildState({ base: 'EUR', table: T, accounts, spanFlows, subs, goal, events, now: NOW });
+  const S = buildState({ base: 'EUR', table: T, accounts, spanFlows, subs, goal, events, basis, now: NOW });
   const el = render(S, 'this month');
   if (el) {
     // Mid-September: the Soon CD coupon has landed (1st), Loan 2's instalment has not (26th).
@@ -230,7 +232,7 @@ function must(el, panel, needles, label) {
       fail('the rent is in this month exactly once');
     }
     // July: he typed a spend and nothing else, so the flat is on its own there.
-    const jul = buildState({ base: 'EUR', table: T, monthKey: '2026-07', accounts, spanFlows, subs, goal, events, now: NOW });
+    const jul = buildState({ base: 'EUR', table: T, monthKey: '2026-07', accounts, spanFlows, subs, goal, events, basis, now: NOW });
     const autoRent = jul.flows.find((f) => f.scheduled && f.label === 'Cairo flat');
     if (!autoRent) fail('in a month he typed nothing, the flat should produce its own rent');
     if (autoRent.category !== 'rent' || !autoRent.passive) fail('rent is rent, and it is passive — that is what the goal counts');
@@ -257,8 +259,12 @@ function must(el, panel, needles, label) {
       'at your own 2%'], 'this month');
     must(el, 'p-subs', ['Every subscription, per year', 'What that costs in capital', 'Netflix',
       'free trial', 'Old magazine'], 'this month');
-    must(el, 'p-fx', ['EGP', 'to 1 EUR', 'What you hold in EGP', 'weakens 10%',
-      'Holding by holding', 'got it at'], 'this month');
+    must(el, 'p-fx', ['EGP', 'to 1 EUR', 'You put in', 'It is worth', 'The rate has',
+      'weakens 10%', 'Holding by holding', 'what you exchanged at'], 'this month');
+    const fx = el('p-fx').innerHTML;
+    if (fx.includes('when this app started keeping a record')) {
+      fail('with a rate he actually exchanged at, the comparison is to that — not to the diary');
+    }
   }
   if (S.months.length !== 12) fail('the strip should hold twelve months');
   if (S.monthKey !== '2026-09') fail('it should open on the month he is in');
@@ -296,10 +302,26 @@ function must(el, panel, needles, label) {
   if (!egpFx) fail('the currency he mostly holds has to appear');
   if (!(egpFx.exposureInBase > 0)) fail('assets minus debts in EGP is what he is exposed to');
   if (egpFx.sensitivity[0].deltaInBase >= 0) fail('a weakening EGP makes a euro household poorer, not richer');
-  // Only the two holdings he gave a starting rate for are counted; the rest are named, not guessed.
-  if (egpFx.told !== 2) fail(`two holdings have a starting rate, got ${egpFx.told}`);
-  if (!(egpFx.untold > 0)) fail('and the rest must be reported as not counted, never invented');
+  // One rate he exchanged at covers every EGP holding without one of its own.
+  if (egpFx.untold !== 0) fail('the shared basis should cover everything that has no rate of its own');
+  if (!egpFx.sinceIsBasis) fail('the comparison runs from the day he bought in, not from a diary');
+  if (egpFx.since !== utc(2024, 5, 26)) fail('and from the date he gave');
+  if (!(egpFx.investedInBase > 0)) fail('he paid euro for these pounds and the app should say how many');
   if (!(egpFx.movedInBase < 0)) fail('the pound fell against the euro — that has cost him');
+  if (!(egpFx.exposureInBase < egpFx.investedInBase)) fail('worth less now than he put in');
+  // A holding with its OWN rate still wins over the shared one.
+  const cdRate = egpFx.holdings.find((h) => h.label === 'Cairo CD');
+  if (cdRate.rateThen !== 48 || cdRate.rateSource !== 'holding') fail('a holding that states its own rate keeps it');
+  const flatRate = egpFx.holdings.find((h) => h.label === 'Cairo flat');
+  if (flatRate.rateSource !== 'holding') fail('the flat also has one of its own in this fixture');
+  const loanRate = egpFx.holdings.find((h) => h.owed);
+  if (loanRate.rateSource !== 'basis') fail('everything else falls back to what he exchanged at');
+
+  // With no basis and no diary, nothing is invented.
+  const bare = buildState({ base: 'EUR', table: T, accounts, spanFlows, subs, goal, events, basis: {}, now: NOW });
+  const bareEgp = bare.currencies.find((c) => c.currency === 'EGP');
+  if (bareEgp.changePct != null) fail('no basis and no history means no change to report');
+  if (!(bareEgp.untold > 0)) fail('and the holdings without a rate are named, not guessed');
   // The function this app was built around, finally running: a 20% deposit in a currency that
   // fell is not a 20% return.
   const cd = egpFx.holdings.find((h) => h.label === 'Cairo CD');
@@ -333,7 +355,7 @@ function must(el, panel, needles, label) {
 
 // ---- A month he scrolled back to ----
 {
-  const S = buildState({ base: 'EUR', table: T, monthKey: '2026-08', accounts, spanFlows, subs, goal, events, now: NOW });
+  const S = buildState({ base: 'EUR', table: T, monthKey: '2026-08', accounts, spanFlows, subs, goal, events, basis, now: NOW });
   const el = render(S, 'a past month');
   if (el) must(el, 'p-month', ['August', 'salary'], 'a past month');
   if (S.monthKey !== '2026-08') fail('the month asked for is the month shown');
@@ -351,7 +373,7 @@ function must(el, panel, needles, label) {
 }
 {
   // The two halves of the rule, on one month: what has passed is counted, what is ahead is not.
-  const S = buildState({ base: 'EUR', table: T, accounts, spanFlows, subs, goal, events, now: NOW });
+  const S = buildState({ base: 'EUR', table: T, accounts, spanFlows, subs, goal, events, basis, now: NOW });
   const landed = S.flows.filter((f) => f.scheduled);
   if (!landed.length) fail('the coupon that paid on 1 September should be in the month');
   if (landed.some((f) => f.ts > NOW)) fail('nothing dated after today may be counted as having happened');
@@ -361,12 +383,12 @@ function must(el, panel, needles, label) {
     fail('an instalment still to come has to leave the month ending lower');
   }
   // The plan must not be rebuilt from whichever month he happens to be reading.
-  const now = buildState({ base: 'EUR', table: T, accounts, spanFlows, subs, goal, events, now: NOW });
+  const now = buildState({ base: 'EUR', table: T, accounts, spanFlows, subs, goal, events, basis, now: NOW });
   if (S.forecast.mid.endCapital !== now.forecast.mid.endCapital) fail('reading August rewrote the ten-year plan');
 }
 {
   // The plan is built from named pieces, each at its own rate.
-  const S = buildState({ base: 'EUR', table: T, accounts, spanFlows, subs, goal, events, now: NOW });
+  const S = buildState({ base: 'EUR', table: T, accounts, spanFlows, subs, goal, events, basis, now: NOW });
   const mid = S.forecast.mid;
   if (!mid.ownRate.length) fail('the 2% deposit must grow at 2%, not at the market yield');
   if (Math.round(mid.ownRate[0].ratePct) !== 2) fail('and be reported at the rate it was given');
@@ -390,7 +412,7 @@ function must(el, panel, needles, label) {
 
 // ---- A month he typed nothing into still knows what his holdings did ----
 {
-  const S = buildState({ base: 'EUR', table: T, monthKey: '2026-02', accounts, spanFlows, subs, goal, events, now: NOW });
+  const S = buildState({ base: 'EUR', table: T, monthKey: '2026-02', accounts, spanFlows, subs, goal, events, basis, now: NOW });
   const el = render(S, 'a month he typed nothing into');
   if (el) must(el, 'p-month', ['scheduled', 'Loan 1'], 'a month he typed nothing into');
   if (!S.flows.length) fail('February had a coupon and two instalments — it is not empty');
@@ -414,7 +436,7 @@ function must(el, panel, needles, label) {
   // Same certificate, same day, entered manually with its schedule id: the month must count it
   // once. Double-counting a coupon is worse than never showing it.
   const w = { from: utc(2026, 8, 1), to: utc(2026, 9, 1) - 1 };
-  const before = buildState({ base: 'EUR', table: T, monthKey: '2026-08', accounts, spanFlows, subs, goal, events, now: NOW });
+  const before = buildState({ base: 'EUR', table: T, monthKey: '2026-08', accounts, spanFlows, subs, goal, events, basis, now: NOW });
   const byHand = cleanFlow({
     id: 'fx1', dir: 'in', category: 'interest', amount: 24750, currency: 'EGP',
     ts: utc(2026, 8, 28), passive: true, schedId: 'a2:2026-08-28',
@@ -432,7 +454,7 @@ function must(el, panel, needles, label) {
 
 // ---- No exchange rates: nothing is totalled, and the page says so ----
 {
-  const S = buildState({ base: 'EUR', table: null, accounts, spanFlows, subs, goal, events, now: NOW });
+  const S = buildState({ base: 'EUR', table: null, accounts, spanFlows, subs, goal, events, basis, now: NOW });
   const el = render(S, 'no rates');
   if (el) must(el, 'p-month', ['Exchange rates are unreachable'], 'no rates');
   if (S.ratesAvailable !== false) fail('with no rate table nothing may claim to be converted');
@@ -440,7 +462,7 @@ function must(el, panel, needles, label) {
 
 // ---- Nothing entered at all: the first thing he ever sees ----
 {
-  const S = buildState({ base: 'EUR', table: T, accounts: [], spanFlows: [], subs: [], goal: null, events: { years: 10, list: [] }, now: NOW });
+  const S = buildState({ base: 'EUR', table: T, accounts: [], spanFlows: [], subs: [], basis: {}, goal: null, events: { years: 10, list: [] }, now: NOW });
   const el = render(S, 'a brand new Pocket');
   if (el) {
     must(el, 'p-month', ['Nothing recorded in'], 'a brand new Pocket');

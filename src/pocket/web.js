@@ -90,7 +90,7 @@ export function spanFor(monthKey, now = Date.now()) {
 /** Everything the page draws, from data already loaded. Pure on purpose: no database, no clock
  *  of its own, no network — so the entire payload the browser receives can be built from
  *  fixtures and checked, which is how the drawing code gets tested at all. */
-export function buildState({ base = 'EUR', table, monthKey, accounts = [], spanFlows = [], subs = [], goal = null, events = { years: 10, list: [] }, history = [], now = Date.now() }) {
+export function buildState({ base = 'EUR', table, monthKey, accounts = [], spanFlows = [], subs = [], goal = null, events = { years: 10, list: [] }, history = [], basis = {}, now = Date.now() }) {
   const { w, strip, span } = spanFor(monthKey, now);
   const flows = spanFlows.filter((f) => f.ts >= w.from && f.ts <= w.to);
 
@@ -249,7 +249,7 @@ export function buildState({ base = 'EUR', table, monthKey, accounts = [], spanF
     // WHAT THE CURRENCY ITSELF IS DOING TO HIM. Nine tenths of what he owns is in a currency he
     // does not spend, and until now the app could convert that money without ever saying what
     // holding it had cost or made him.
-    currencies: currencyPicture(accounts, table, base, { history, now }),
+    currencies: currencyPicture(accounts, table, base, { history, now, basis }),
     ratesAt: table.at || null,
     // Things that repeat and have not been entered again. A list to confirm, never a total.
     missing: missingRecurring(spanFlows, w),
@@ -355,11 +355,12 @@ async function state(monthKey) {
   // One snapshot a day, so that in a month there is something to compare today against. Never
   // allowed to break a page load — a rate the app failed to file away is not worth an error.
   if (table) store.recordRates(table).catch((e) => console.error('[pocket] rate snapshot:', e.message));
-  const [accounts, spanFlows, subs, goal, events, history] = await Promise.all([
+  const [accounts, spanFlows, subs, goal, events, history, basis] = await Promise.all([
     store.accounts(), store.flows(span), store.subs(), store.getGoal(), store.getPlanEvents(),
     table ? store.rateHistory().catch(() => []) : Promise.resolve([]),
+    store.getFxBasis().catch(() => ({})),
   ]);
-  return buildState({ base, table, monthKey, accounts, spanFlows, subs, goal, events, history });
+  return buildState({ base, table, monthKey, accounts, spanFlows, subs, goal, events, history, basis });
 }
 
 export function startWeb(port = process.env.PORT || 3000) {
@@ -414,6 +415,14 @@ export function startWeb(port = process.env.PORT || 3000) {
           else if (body.useMeasured !== undefined) await store.setPlanBase(body.useMeasured);
           else if (body.edit) await store.updatePlanEvent(String(body.edit), body.patch || {});
           else await store.addPlanEvent(body);
+          return json(res, 200, await state(asked()));
+        }
+
+        // "I exchanged at 48 in May 2024." One fact, typed once, standing in for every holding
+        // in that currency that has no rate of its own.
+        if (url.pathname === '/api/fxbasis' && req.method === 'POST') {
+          const body = await readBody(req);
+          await store.setFxBasis(body.currency, body.rateThen, parseDate(body.at) ?? undefined);
           return json(res, 200, await state(asked()));
         }
 

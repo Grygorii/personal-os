@@ -231,10 +231,10 @@ a price without one: it looks current.
 2. Railway → same project → **New Service** → same repo.
 3. Start command: `npm run start:pocket`.
 4. Env vars above, `DB_NAME=pocket` among them.
-5. Look for `[boot] pocket-14 · db=pocket · base=EUR`.
+5. Look for `[boot] pocket-15 · db=pocket · base=EUR`.
 
 **Which build is actually serving?** `GET /health` (or `/version`) answers without Telegram —
-`{"ok":true,"app":"pocket","version":"pocket-14"}`. The marker lives in `src/pocket/version.js`;
+`{"ok":true,"app":"pocket","version":"pocket-15"}`. The marker lives in `src/pocket/version.js`;
 bump it on every deploy. Kept has `GET /version` for exactly the same reason: "is my change even
 out there yet" is the first question of every deploy, and guessing at it wastes an evening.
 
@@ -430,10 +430,19 @@ convert his money for months without ever saying what the currency itself had co
 **`realReturn()` had been in `src/fx.js` since the first week and had never once run.** Nothing
 ever passed it a rate from the past. So:
 
-- **A holding can carry the rate he got it at** — "54 EGP to the euro in May 2024". From that the
-  tab gives what it was worth then, what it is worth now, and the difference; and for anything
-  paying a rate, what its return really is. His 20% certificate, bought at 48 and marked today at
-  59, has returned **−2.4% a year in euro.**
+- **One rate for the whole position, because that is how the money got there.** He did not *earn*
+  Egyptian pounds — he took euro and exchanged them, so every pound has a known euro cost, and
+  asking him to type a starting rate into five separate holdings was asking five times for one
+  fact. `What did you exchange EGP at?` on the Rates tab takes it once and stands in for every
+  holding without a rate of its own; a certificate bought in a different year can still carry
+  its own, and always wins.
+- **Measured from the day he bought in, not from the day this app started watching.** The first
+  version compared today against the oldest daily snapshot, which on day one read *"0.0% since
+  Sep 2"* — a fact about the app, not about his money. The date now defaults to the earliest
+  holding in that currency, so the only thing he types is a rate.
+- **What he put in, against what it is worth.** Neither is an estimate: he knows what he paid and
+  the app knows today's rate. His 20% certificate, bought at 48 and marked at 59, has returned
+  **−2.4% a year in euro.**
 - **A falling currency erodes a foreign DEBT in his favour** — same arithmetic, opposite sign.
   Getting that backwards would tell him a falling pound was costing him money it is saving him.
 - **The size of the bet, with no forecast in it.** "If EGP weakens 10% you are €4,130 poorer; at
