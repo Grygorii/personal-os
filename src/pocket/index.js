@@ -55,6 +55,7 @@ async function main() {
     { command: 'worth', description: '🏦 What you own, in one currency' },
     { command: 'subs', description: '🔁 What you subscribe to, per year' },
     { command: 'goal', description: '🎯 Passive income, and how far' },
+    { command: 'backup', description: '💾 Everything, as a file' },
     { command: 'help', description: '❓ Everything I understand' },
   ]);
 

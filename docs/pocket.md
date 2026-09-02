@@ -194,6 +194,21 @@ was shown — same arithmetic, one optimistic yield, presented as a fact.
 picking does.** Going from €1,000 to €1,400 a month shortens the road by years; beating the
 index by 1% on €25,000 is worth €250 a year. `goal` says so.
 
+## The backup
+
+His whole household — four certificates, four loans, a flat, the subscriptions, the plan — lives
+in one collection on a free-tier cluster shared with a live shop, behind delete buttons that have
+no undo. Until now there was **no way to get the data out at all**. That was the largest remaining
+risk in this app, and it is not a money bug: a mistake or a bad day for Atlas takes the lot.
+
+```
+backup
+```
+
+The bot sends everything as a dated JSON file — holdings, entries, subscriptions, goal, plan, with
+Mongo's own keys stripped so a person can read it. It lands in a chat he keeps for ever, which is
+the point: **a backup must not live inside the thing being backed up.**
+
 ## Environment
 
 ```
@@ -216,10 +231,10 @@ a price without one: it looks current.
 2. Railway → same project → **New Service** → same repo.
 3. Start command: `npm run start:pocket`.
 4. Env vars above, `DB_NAME=pocket` among them.
-5. Look for `[boot] pocket-13 · db=pocket · base=EUR`.
+5. Look for `[boot] pocket-14 · db=pocket · base=EUR`.
 
 **Which build is actually serving?** `GET /health` (or `/version`) answers without Telegram —
-`{"ok":true,"app":"pocket","version":"pocket-13"}`. The marker lives in `src/pocket/version.js`;
+`{"ok":true,"app":"pocket","version":"pocket-14"}`. The marker lives in `src/pocket/version.js`;
 bump it on every deploy. Kept has `GET /version` for exactly the same reason: "is my change even
 out there yet" is the first question of every deploy, and guessing at it wastes an evening.
 
@@ -365,6 +380,34 @@ has had this month's payment and not a twentieth of next month's.
 The warnings follow. A certificate maturing says the capital is idle and asks where it goes next.
 A tenancy ending says the opposite: *you still own it, nothing came back and nothing is idle — but
 it pays you nothing until it is let again.*
+
+### What a review turned up
+
+Two correctness bugs, both found by reading rather than by using:
+
+**Ids collided inside a millisecond.** `Date.now().toString(36)` gives one id fifty times if you
+call it fifty times in a row. Flows, accounts and subs all carry a *unique* index on `id` — so
+that is either a 500 he sees, or, for an account (saved by upsert **on that id**), the second one
+silently replacing the first. A holding lost without an error is the worst thing this code can do.
+`newId()` adds a counter and a random tail; 5,000 in a tight loop are now 5,000 distinct.
+
+**A tenancy that had run out was still reported as income.** Collateral damage from the fix above
+it: narrowing `matured` to mean "the money came back" (only ever true of a certificate) left
+`contractedIncome` gating on it, so every *ended* arrangement stayed on the books for ever. A let
+that expired in 2024 was still reporting €305 a month. Exactly the failure this app exists to
+prevent, introduced by the change that fixed the one beside it.
+
+And two things that were simply in the way:
+
+- **The Add button sat on top of the content**, centred, covering the middle of whatever row was
+  under it — the part of a line that carries the words. It is in the corner now.
+- **Worth was one long list** ordered by kind, so reaching the loans meant scrolling past four
+  certificates, and neither side had a subtotal: "how much do I owe" could only be answered by
+  adding rows up in his head. **What you own** and **what you owe** are now two sections, each
+  with its total in the heading.
+
+*(Measured, not assumed: `buildState` takes 22 ms with nine holdings, three hundred entries and
+eight subscriptions. Performance needed no work, so none was done.)*
 
 ### The hazard this created, and the guard for it
 

@@ -16,6 +16,15 @@
 
 import { toBase, cleanCurrency, isKnownCurrency, realReturn } from '../fx.js';
 
+/** An id that is unique even twice in the same millisecond.
+ *
+ *  `Date.now().toString(36)` is not: fifty of them made back to back are one id fifty times. With
+ *  a unique index on flows, accounts and subs that is either a 500 he sees, or — for an account,
+ *  which is saved by upsert on its id — the SECOND one silently overwriting the first. A lost
+ *  holding that never reported an error is the worst outcome this file can produce. */
+let idSeq = 0;
+export const newId = () => `${Date.now().toString(36)}${(idSeq = (idSeq + 1) % 1296).toString(36).padStart(2, '0')}${Math.floor(Math.random() * 1296).toString(36).padStart(2, '0')}`;
+
 const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
 const txt = (v, n) => String(v == null ? '' : v).replace(/\s+/g, ' ').trim().slice(0, n);
 
@@ -54,7 +63,7 @@ export const PAYOUT_MONTHS = { monthly: 1, quarterly: 3, yearly: 12 };
 
 export function cleanPayment(p) {
   return {
-    id: txt(p?.id, 32) || Date.now().toString(36),
+    id: txt(p?.id, 32) || newId(),
     at: num(p?.at) || Date.now(),
     amount: Math.max(0, num(p?.amount)),
     note: txt(p?.note, 120),
@@ -63,7 +72,7 @@ export function cleanPayment(p) {
 
 export function cleanAccount(a) {
   return {
-    id: txt(a?.id, 32) || Date.now().toString(36),
+    id: txt(a?.id, 32) || newId(),
     label: txt(a?.label, 80),
     kind: ACCOUNT_KINDS.includes(a?.kind) ? a.kind : 'cash',
     currency: cleanCurrency(a?.currency) || 'EUR',
@@ -123,7 +132,7 @@ export function parseDate(raw) {
 export function cleanFlow(f) {
   const category = txt(f?.category, 40).toLowerCase();
   return {
-    id: txt(f?.id, 32) || Date.now().toString(36),
+    id: txt(f?.id, 32) || newId(),
     dir: f?.dir === 'out' ? 'out' : 'in',
     category,
     amount: Math.abs(num(f?.amount)),
@@ -653,7 +662,7 @@ export const EVENT_KINDS = ['contribution', 'lump', 'income', 'spending'];
 export function cleanEvent(e) {
   const atYear = Math.max(1, Math.min(60, Math.round(num(e?.atYear)) || 1));
   return {
-    id: txt(e?.id, 32) || Date.now().toString(36),
+    id: txt(e?.id, 32) || newId(),
     // Which year of the plan it takes effect. Year 1 is the next twelve months.
     atYear,
     // And when it stops, if it does. "Rent until year 10" — a lease that ends, a loan that gets
@@ -1207,7 +1216,11 @@ export function contractedIncome(accounts, now = Date.now()) {
   const streams = [], lumps = [];
   for (const a of accounts) {
     const t = depositProgress(a, now);
-    if (!t || !t.schedule || t.matured) continue;
+    // `ended`, not `matured`. Narrowing `matured` to things that are actually redeemed left this
+    // gate open for everything that is not: a tenancy that ran out in 2024 went on being reported
+    // as 305 a month of contracted income. Exactly the failure this app exists to prevent, and
+    // introduced by the change that fixed the one next to it.
+    if (!t || !t.schedule || t.ended || t.matured) continue;
     const row = {
       label: a.label || a.kind,
       currency: a.currency,
@@ -1286,7 +1299,7 @@ const WEEK = 7 * DAY;
 
 export function cleanSub(s) {
   return {
-    id: txt(s?.id, 32) || Date.now().toString(36),
+    id: txt(s?.id, 32) || newId(),
     label: txt(s?.label, 80) || 'subscription',
     amount: Math.max(0, num(s?.amount)),
     currency: cleanCurrency(s?.currency) || 'EUR',

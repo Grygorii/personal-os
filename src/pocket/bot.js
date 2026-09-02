@@ -8,7 +8,7 @@
 // Single user, like the steward. It holds his household's finances and has no business being
 // open to anybody.
 
-import { send, sendLong, sendKeyboard } from '../telegram.js';
+import { send, sendLong, sendKeyboard, sendDocument } from '../telegram.js';
 import { config } from '../config.js';
 import * as fx from '../fx.js';
 import * as store from './store.js';
@@ -190,6 +190,7 @@ What you subscribe to:
   worth    — net worth in ${'{base}'}, and what currency it's really in
   goal 2000 — target monthly passive income
   goal     — how far along, and honestly how long
+  backup   — everything, as a file, into this chat
 
 Everything is stored in the currency it's actually in. Nothing is converted until it's shown.`;
 
@@ -205,6 +206,19 @@ export async function handle(text, chatId) {
   if (/^\/?(month|spending|income)\b/.test(low)) return cmdMonth();
   if (/^\/?(worth|net worth|accounts?)\b/.test(low)) return cmdWorth();
   if (/^\/?subs(criptions?)?$/.test(low)) return cmdSubs();
+
+  // A copy of everything, as a file, into a chat he keeps for ever. The backup must not live in
+  // the thing being backed up.
+  if (/^\/?(backup|export)\b/.test(low)) {
+    const data = await store.exportAll();
+    const json = JSON.stringify(data, null, 2);
+    const name = `pocket-${new Date().toISOString().slice(0, 10)}.json`;
+    await sendDocument(name, json,
+      `Everything: ${data.counts.accounts} holdings, ${data.counts.flows} entries, ${data.counts.subs} subscriptions.\n`
+      + 'Keep it. Deleting something here has no undo, and this file is the only copy that is not in the database.',
+      chatId);
+    return null;
+  }
 
   let m;
   if ((m = s.match(/^\/?goal\s+(\d+(?:[.,]\d+)?)\s*([A-Za-z]{3})?$/i))) {

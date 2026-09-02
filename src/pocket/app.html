@@ -133,9 +133,12 @@
   .empty{color:var(--dim);text-align:center;padding:26px 10px;font-size:14px}
 
   /* ---- Add ---- */
-  .fab{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(18px + env(safe-area-inset-bottom));
-    background:var(--accent);color:var(--on-accent);border:0;border-radius:26px;height:50px;padding:0 26px;
-    font:700 15px/1 inherit;box-shadow:0 6px 22px rgba(0,0,0,.4);cursor:pointer;z-index:20}
+  /* Bottom RIGHT, not centred. Centred, it sat squarely on top of the middle of whatever row was
+     under it — the part of a line that carries the words. In the corner it covers a margin. */
+  .fab{position:fixed;right:14px;bottom:calc(18px + env(safe-area-inset-bottom));
+    background:var(--accent);color:var(--on-accent);border:0;border-radius:26px;height:50px;padding:0 22px;
+    font:700 15px/1 inherit;box-shadow:0 6px 22px rgba(0,0,0,.45);cursor:pointer;z-index:20}
+  @media (min-width:668px){ .fab{right:calc(50% - 320px + 14px)} }
   .sheet{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:30;display:flex;align-items:flex-end}
   .sheet[hidden]{display:none}
   .sheetbox{background:var(--card);width:100%;border-radius:18px 18px 0 0;padding:18px 16px calc(18px + env(safe-area-inset-bottom));max-width:640px;margin:0 auto}
@@ -407,7 +410,7 @@ function drawMonth() {
 function drawWorth() {
   const w = S.worth;
   const order = { cash: 0, deposit: 1, portfolio: 2, property: 3, card: 4, loan: 5, other: 6 };
-  const rows = [...S.accounts].sort((a, b) => (order[a.kind] ?? 9) - (order[b.kind] ?? 9)).map((a) => {
+  const drawRow = (a) => {
     const t = a.term;
     // How often the money actually MOVES, which is the part he can plan around. A rate is a
     // property of the paper; a payment is a date and an amount.
@@ -509,7 +512,23 @@ function drawWorth() {
       </div>
       ${term}
     </div>`;
-  }).join('');
+  };
+
+  /* OWNED and OWED, in two lists with their own totals.
+     One list ordered by kind meant scrolling past four certificates to reach the loans, and no
+     subtotal anywhere — so "how much do I owe" could only be answered by adding the rows up in
+     his head. They are different questions and they get different sections. */
+  const sorted = (list) => [...list].sort((a, b) => (order[a.kind] ?? 9) - (order[b.kind] ?? 9));
+  const owned = sorted(S.accounts.filter((a) => !a.liability));
+  const owed = sorted(S.accounts.filter((a) => a.liability));
+  const section = (title, list, total, cls) => !list.length ? '' : `
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:baseline">
+        <h2 style="margin-bottom:0">${title}</h2>
+        <span class="${cls}" style="font-weight:700;font-variant-numeric:tabular-nums">${cls === 'out' ? '−' : ''}${money(total)}</span>
+      </div>
+      ${list.map(drawRow).join('')}
+    </div>`;
 
   $('p-worth').innerHTML = `
     <div class="card">
@@ -555,7 +574,9 @@ function drawWorth() {
       ${(S.interest.notStarted || []).length ? `<div class="note">Not counted yet: ${esc(S.interest.notStarted.join(', '))} — it has not started.</div>` : ''}
       ${(S.payFirst || []).length ? '<div class="note">What you pay is charged on what you still owe, at the rate your payments actually imply — the same figure as the warning above, not the headline.</div>' : ''}
       </div>` : ''}
-    <div class="card"><h2>What you hold</h2>${rows || '<div class="empty">Nothing yet. Tap Add.</div>'}</div>
+    ${section(`What you own · ${owned.length}`, owned, w.assets, 'in')}
+    ${section(`What you owe · ${owed.length}`, owed, w.debts, 'out')}
+    ${!S.accounts.length ? '<div class="card"><div class="empty">Nothing yet. Tap Add.</div></div>' : ''}
     ${w.exposure.length > 1 ? `<div class="card"><h2>Currency it's in</h2>${w.exposure.map((e) => `
       <div style="margin-bottom:10px">
         <div style="display:flex;justify-content:space-between;font-size:14px"><span>${esc(e.currency)}</span><span>${e.pct.toFixed(0)}%</span></div>

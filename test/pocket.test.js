@@ -1382,7 +1382,7 @@ test('monthOf: the split follows the source, but the list keeps his name for it'
 // what he has AGREED to pay and a flow is what has LEFT. That was over-careful, and it made the
 // month wrong: a household paying for Netflix and a gym showed OUT of nothing.
 
-import { subChargeDates, currencyPicture, REDEEMABLE_KINDS, depositsSummary } from '../src/pocket/money.js';
+import { subChargeDates, currencyPicture, REDEEMABLE_KINDS, depositsSummary, newId } from '../src/pocket/money.js';
 
 test('subChargeDates: when a subscription actually bills', () => {
   const netflix = cleanSub({ id: 's1', amount: 12.99, currency: 'EUR', every: 'monthly', startsAt: utc(2024, 3, 5) });
@@ -1571,4 +1571,58 @@ test('a holding with no end date is unchanged by any of this', () => {
   assert.equal(t.matured, undefined);
   assert.equal(t.schedule.total, null, 'no end, no last payment');
   assert.equal(t.yieldPct, 13.5, '216,000 a year on 1,600,000');
+});
+
+// ---- What a review turned up ----
+
+test('newId: unique even twice in the same millisecond', () => {
+  // Date.now().toString(36) is not: fifty made back to back are one id fifty times. With a unique
+  // index on flows that is a 500 he sees; with accounts, which are saved by upsert ON THAT ID,
+  // it is the second one silently REPLACING the first. A holding lost without an error is the
+  // worst thing this file can do.
+  const ids = new Set();
+  for (let i = 0; i < 5000; i++) ids.add(newId());
+  assert.equal(ids.size, 5000);
+
+  const a = cleanAccount({ label: 'one', kind: 'cash', currency: 'EUR', value: 1 });
+  const b = cleanAccount({ label: 'two', kind: 'cash', currency: 'EUR', value: 2 });
+  assert.notEqual(a.id, b.id, 'two accounts added together must not become one');
+  assert.notEqual(cleanFlow({ dir: 'in', amount: 1 }).id, cleanFlow({ dir: 'in', amount: 1 }).id);
+  assert.notEqual(cleanSub({ amount: 1 }).id, cleanSub({ amount: 1 }).id);
+  // An id he already has is always kept.
+  assert.equal(cleanAccount({ id: 'keep-me' }).id, 'keep-me');
+});
+
+test('contractedIncome: an arrangement that has run out is not still paying him', () => {
+  // The regression that narrowing `matured` introduced. `matured` now means "the money came back",
+  // which is only ever true of a certificate — so gating on it left every ENDED tenancy counted as
+  // contracted income for ever. A let that expired in 2024 was still reporting 305 a month.
+  const expired = cleanAccount({
+    id: 'p1', label: 'old let', kind: 'property', currency: 'EGP', value: 1600000,
+    payout: 'monthly', payment: 18000, startsAt: utc(2022, 1, 1), endsAt: utc(2024, 1, 1),
+  });
+  assert.deepEqual(contractedIncome([expired], utc(2026, 9, 15)).streams, []);
+
+  // A certificate that matured was already excluded, and still is.
+  const done = cleanAccount({ kind: 'deposit', currency: 'EGP', value: 100000, ratePct: 15, payout: 'monthly', startsAt: utc(2020, 1, 1), endsAt: utc(2021, 1, 1) });
+  assert.deepEqual(contractedIncome([done], utc(2026, 9, 15)).streams, []);
+
+  // And a live one is untouched.
+  const live = cleanAccount({ kind: 'property', currency: 'EGP', value: 1600000, payout: 'monthly', payment: 18000, startsAt: utc(2025, 4, 1), endsAt: utc(2027, 4, 1) });
+  assert.equal(contractedIncome([live], utc(2026, 9, 15)).streams.length, 1);
+});
+
+test('the backup is a real backup: nothing internal, everything of his', () => {
+  // Shape-checked without a database. exportAll strips Mongo's _id and keeps only what he typed,
+  // so the file can be read by a human and, one day, put back.
+  const src = readFileSync(new URL('../src/pocket/store.js', import.meta.url), 'utf8');
+  assert.match(src, /export async function exportAll/);
+  for (const c of ['accounts', 'flows', 'subs', 'settings']) {
+    assert.ok(src.includes(`col('${c}')`), `the backup has to include ${c} — a missing collection is a silent hole`);
+  }
+  assert.match(src, /const \{ _id, \.\.\.rest \} = d/, "Mongo's own key is not his data");
+
+  const bot = readFileSync(new URL('../src/pocket/bot.js', import.meta.url), 'utf8');
+  assert.match(bot, /backup\|export/, 'and he can ask for it in one word');
+  assert.match(bot, /sendDocument/, 'as a file, so it lands in a chat he keeps — not in the database being backed up');
 });

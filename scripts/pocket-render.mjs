@@ -146,7 +146,9 @@ function must(el, panel, needles, label) {
     // One of each, which is exactly the pair this feature has to keep apart.
     must(el, 'p-month', ['Repeats — not recorded yet', 'Yes, add it', 'Left over', 'September',
       'scheduled', 'Still due this month', 'After these, the month ends at'], 'this month');
-    must(el, 'p-worth', ['Cairo CD', 'earned so far', 'quarterly', 'matured on', 'matures in', 'Not counted:',
+    // Owned and owed are separate sections with their own totals, not one long mixed list.
+    must(el, 'p-worth', ['What you own', 'What you owe',
+      'Cairo CD', 'earned so far', 'quarterly', 'matured on', 'matures in', 'Not counted:',
       'and you spend EUR', 'of everything you own',
       // The flat and its rent, and the yield it works out to.
       'Cairo flat', '27,000 EGP', '12.0% a year'], 'this month');
@@ -165,6 +167,10 @@ function must(el, panel, needles, label) {
     if (flatRow.includes('at maturity')) fail('a flat is not redeemed — "pays back X at maturity" describes a certificate');
     if (!flatRow.includes('is when the tenancy ends')) fail('the end date is the tenancy ending, and it has to say so');
     if (!flatRow.includes('12.0% a year')) fail('a flat with a tenancy still has a yield worth knowing');
+    // Every loan sits under "what you owe" and no asset does.
+    const owedSection = worth.slice(worth.indexOf('What you owe'));
+    if (!owedSection.includes('Loan 1') || !owedSection.includes('Visa')) fail('debts belong in the debts section');
+    if (owedSection.includes('Cairo flat')) fail('and nothing he owns does');
     if (!el('p-worth').innerHTML.includes('Estimated —')) fail('a loan with no stated payment must say its figure is an estimate');
     if (!worth.includes('+ I paid extra')) fail('every loan needs a way to record an overpayment');
     if (!worth.includes('months early')) fail('overpaying has to say what it bought');

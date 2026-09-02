@@ -260,7 +260,10 @@ export function buildState({ base = 'EUR', table, monthKey, accounts = [], spanF
       const sum = subsSummary(subs, table, base, now);
       // Which ones have already been charged into the month on screen, so the tab can show
       // what is still outstanding rather than asking him to remember.
-      const paidThisMonth = new Set(flows.filter((f) => f.subId).map((f) => f.subId));
+      // Charged already this month — whether he recorded it or the schedule produced it. Without
+      // the second half, every subscription kept offering a ✓ for a charge the month had already
+      // counted, which reads as "this has not been paid" about money that has.
+      const paidThisMonth = new Set([...flows, ...landed(sched)].filter((f) => f.subId).map((f) => f.subId));
       return { ...sum, rows: sum.rows.map((r) => ({ ...r, paidThisMonth: paidThisMonth.has(r.id) })) };
     })(),
     payFirst: debtVsInvesting(accounts, { expectedYieldPct: 7, now }).filter((d) => d.payFirst),

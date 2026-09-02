@@ -18,7 +18,7 @@
 // had that call not existed it would have crashed later on the first save instead, which is a
 // worse place to find out.
 import { rawCol as col } from '../db.js';
-import { cleanAccount, cleanFlow, cleanEvent, cleanSub, cleanPayment } from './money.js';
+import { cleanAccount, cleanFlow, cleanEvent, cleanSub, cleanPayment, newId } from './money.js';
 
 export async function accounts() {
   return (await col('accounts').find({}).toArray()).map(cleanAccount);
@@ -36,7 +36,7 @@ export async function saveAccount(a) {
 export async function addPayment(id, payment) {
   const doc = await col('accounts').findOne({ id: String(id || '') });
   if (!doc) return null;
-  const clean = cleanPayment({ ...payment, id: Date.now().toString(36) });
+  const clean = cleanPayment({ ...payment, id: newId() });
   if (!(clean.amount > 0)) return null;
   const merged = cleanAccount({ ...doc, payments: [...(doc.payments || []), clean] });
   await col('accounts').updateOne({ id: doc.id }, { $set: merged });
@@ -171,6 +171,34 @@ export async function rateHistory(days = 400) {
   return docs.map((d) => ({ base: d.base, rates: d.rates, at: d.at })).sort((a, b) => a.at - b.at);
 }
 
+/** EVERYTHING, in one object.
+ *
+ *  His whole household — four certificates, four loans, a flat, the subscriptions, the plan — now
+ *  lives in one collection on a free-tier cluster shared with a live shop, with delete buttons
+ *  that have no undo and no way at all to get the data out. That is the largest remaining risk in
+ *  this app and it is not a money bug; it is that a mistake or a bad day for Atlas takes the lot.
+ *
+ *  Sent to his own Telegram as a file, so the backup lives in a chat history he keeps for ever
+ *  and not in the thing being backed up. */
+export async function exportAll() {
+  const [accounts, flows, subs, settings] = await Promise.all([
+    col('accounts').find({}).toArray(),
+    col('flows').find({}).sort({ ts: -1 }).toArray(),
+    col('subs').find({}).toArray(),
+    col('settings').find({}).toArray(),
+  ]);
+  const strip = (d) => { const { _id, ...rest } = d; return rest; };
+  return {
+    app: 'pocket',
+    exportedAt: new Date().toISOString(),
+    counts: { accounts: accounts.length, flows: flows.length, subs: subs.length },
+    accounts: accounts.map(strip),
+    flows: flows.map(strip),
+    subs: subs.map(strip),
+    settings: settings.map((d) => ({ id: d._id, ...strip(d) })),
+  };
+}
+
 export async function ensureIndexes() {
   await col('accounts').createIndex({ id: 1 }, { unique: true });
   await col('flows').createIndex({ ts: -1 });
@@ -215,7 +243,7 @@ export async function updatePlanEvent(id, patch) {
 }
 
 export async function addPlanEvent(e) {
-  const clean = cleanEvent({ ...e, id: Date.now().toString(36) });
+  const clean = cleanEvent({ ...e, id: newId() });
   await col('settings').updateOne({ _id: 'plan' }, { $push: { list: clean } }, { upsert: true });
   return clean;
 }
