@@ -18,7 +18,7 @@
 // had that call not existed it would have crashed later on the first save instead, which is a
 // worse place to find out.
 import { rawCol as col } from '../db.js';
-import { cleanAccount, cleanFlow, cleanEvent } from './money.js';
+import { cleanAccount, cleanFlow, cleanEvent, cleanSub } from './money.js';
 
 export async function accounts() {
   return (await col('accounts').find({}).toArray()).map(cleanAccount);
@@ -86,6 +86,32 @@ export async function recurring() {
   return (await col('flows').find({ recurring: true }).toArray()).map(cleanFlow);
 }
 
+// ---- Subscriptions ----
+// Their own collection, not a flavour of flow: a flow is a thing that happened, a subscription
+// is a thing that keeps happening. It exists before its first charge and outlives its last.
+export async function subs() {
+  return (await col('subs').find({}).toArray()).map(cleanSub);
+}
+
+export async function saveSub(s) {
+  const clean = cleanSub(s);
+  await col('subs').updateOne({ id: clean.id }, { $set: clean }, { upsert: true });
+  return clean;
+}
+
+export async function updateSub(id, patch) {
+  const doc = await col('subs').findOne({ id: String(id || '') });
+  if (!doc) return null;
+  const clean = cleanSub({ ...doc, ...patch, id: doc.id });
+  await col('subs').updateOne({ id: doc.id }, { $set: clean });
+  return clean;
+}
+
+export async function removeSub(id) {
+  const r = await col('subs').deleteOne({ id: String(id || '') });
+  return r.deletedCount > 0;
+}
+
 export async function getGoal() {
   const doc = await col('settings').findOne({ _id: 'goal' });
   return doc ? { monthly: Number(doc.monthly) || 0, currency: doc.currency || 'EUR' } : null;
@@ -102,6 +128,8 @@ export async function ensureIndexes() {
   await col('flows').createIndex({ ts: -1 });
   await col('flows').createIndex({ id: 1 }, { unique: true });
   await col('flows').createIndex({ recurring: 1 });
+  await col('flows').createIndex({ subId: 1 });
+  await col('subs').createIndex({ id: 1 }, { unique: true });
 }
 
 // ---- The plan's future events ----

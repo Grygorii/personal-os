@@ -22,7 +22,7 @@ import * as bot from './bot.js';
 import { ensureIndexes } from './store.js';
 import { startWeb } from './web.js';
 
-const VERSION = 'pocket-3';
+const VERSION = 'pocket-4';
 
 process.on('unhandledRejection', (reason) => {
   console.error('[fatal] unhandled rejection:', reason instanceof Error ? reason.stack : reason);
@@ -54,6 +54,7 @@ async function main() {
   await setCommands([
     { command: 'month', description: '💶 In, out, and what is left' },
     { command: 'worth', description: '🏦 What you own, in one currency' },
+    { command: 'subs', description: '🔁 What you subscribe to, per year' },
     { command: 'goal', description: '🎯 Passive income, and how far' },
     { command: 'help', description: '❓ Everything I understand' },
   ]);

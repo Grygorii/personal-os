@@ -32,7 +32,7 @@
 
   /* ---- Tabs ---- */
   .tabs{display:flex;gap:4px;background:var(--card);border-radius:12px;padding:4px;margin-bottom:16px;position:sticky;top:8px;z-index:5}
-  .tab{flex:1;border:0;background:none;color:var(--dim);font:600 13px/1 inherit;padding:11px 4px;border-radius:9px;cursor:pointer}
+  .tab{flex:1;border:0;background:none;color:var(--dim);font:600 13px/1 inherit;padding:11px 2px;border-radius:9px;cursor:pointer;white-space:nowrap}
   .tab.on{background:var(--bg);color:var(--ink)}
   .panel[hidden]{display:none}
 
@@ -145,12 +145,14 @@
   <div class="tabs" role="tablist">
     <button class="tab on" data-tab="month" role="tab">Month</button>
     <button class="tab" data-tab="worth" role="tab">Worth</button>
+    <button class="tab" data-tab="subs" role="tab">Subs</button>
     <button class="tab" data-tab="goal" role="tab">Goal</button>
     <button class="tab" data-tab="plan" role="tab">Plan</button>
   </div>
 
   <div class="panel" id="p-month"></div>
   <div class="panel" id="p-worth" hidden></div>
+  <div class="panel" id="p-subs" hidden></div>
   <div class="panel" id="p-goal" hidden></div>
   <div class="panel" id="p-plan" hidden></div>
 </div>
@@ -233,10 +235,10 @@ async function api(path, body) {
 function draw() {
   if (!S.ratesAvailable) {
     const msg = '<div class="card"><div class="empty">Exchange rates are unreachable, so nothing is totalled. Numbers you have entered are safe — this only affects the view.</div></div>';
-    $('p-month').innerHTML = msg; $('p-worth').innerHTML = msg; $('p-goal').innerHTML = msg; $('p-plan').innerHTML = msg;
+    for (const name of TABS) $('p-' + name).innerHTML = msg;
     return;
   }
-  drawMonth(); drawWorth(); drawGoal(); drawPlan();
+  drawMonth(); drawWorth(); drawSubs(); drawGoal(); drawPlan();
 }
 
 const dd = (ms) => new Date(ms).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
@@ -440,6 +442,70 @@ function drawWorth() {
     ${w.unconverted.length ? `<div class="warn">No exchange rate for ${esc(w.unconverted.join(', '))} — not in the total.</div>` : ''}`;
 }
 
+/* Subscriptions.
+   The one category of spending nobody decides to make twice: agreed once, then charged for
+   ever. So the list is not the point — these two numbers are:
+
+     - EVERYTHING PER YEAR. A yearly bill and a monthly one cannot be compared until both are
+       annual. 90 a year is cheaper than 9 a month and does not look it.
+     - WHAT IT COSTS IN CAPITAL. A bill that never ends has to be funded by capital that never
+       ends, so the same 200 a month that reads as small is 34,000-69,000 he has to build before
+       the goal is real. Cancelling one is worth years of contributions, and no expense tracker
+       ever says so.
+
+   Nothing here is added to any total elsewhere. A subscription is what he has AGREED to pay;
+   the Month tab counts what actually left. Doing both would double-count every charge. */
+function drawSubs() {
+  const S_ = S.subs || { rows: [] };
+  const rows = (S_.rows || []).map((r) => `
+    <div class="row" style="${r.ended ? 'opacity:.45' : ''}">
+      <span class="dot out"></span>
+      <div class="rmain">
+        <div class="rlabel">${esc(r.label)}${r.inTrial ? ' <span class="pill out">free trial</span>' : ''}${r.paidThisMonth ? ' <span class="pill">paid</span>' : ''}</div>
+        <div class="rmeta">${esc(Math.round(r.amount).toLocaleString())} ${esc(r.currency)} ${esc(r.every)}${
+          r.ended ? ' · ended ' + dd(r.endsAt)
+          : r.inTrial ? ' · free until ' + dd(r.trialEndsAt)
+          : r.next ? ' · next ' + dd(r.next) : ''}</div>
+      </div>
+      <div class="ramt out">−${money(r.perYearInBase)}<span class="rorig">a year</span></div>
+      ${!r.ended && !r.paidThisMonth ? `<button class="edit" data-charge="${esc(r.id)}" title="Record this charge" aria-label="Record this charge">✓</button>` : ''}
+      <button class="edit" data-edit="sub" data-id="${esc(r.id)}" aria-label="Edit">✎</button>
+      <button class="del" data-del="sub" data-id="${esc(r.id)}" aria-label="Remove">×</button>
+    </div>`).join('');
+
+  const cap = S_.capitalNeeded || [];
+  const shareOfIncome = S.month && S.month.income > 0 ? (S_.perMonth / S.month.income) * 100 : null;
+
+  $('p-subs').innerHTML = `
+    <div class="card">
+      <h2>Every subscription, per year</h2>
+      <div class="big out">${money(S_.perYear)}</div>
+      <div class="sub">${money(S_.perMonth)} a month across ${S_.count} ${S_.count === 1 ? 'subscription' : 'subscriptions'}${
+        shareOfIncome != null ? ` · ${shareOfIncome.toFixed(0)}% of what came in this month` : ''}</div>
+    </div>
+    ${cap.length ? `<div class="card">
+      <h2>What that costs in capital</h2>
+      <div class="sub" style="font-size:15px;color:var(--ink)">To pay this bill for ever without working, you need
+        <b>${money(cap[1].capital)} to ${money(cap[0].capital)}</b> invested behind it.</div>
+      <div class="note">At ${cap[1].yieldPct}% and ${cap[0].yieldPct}% a year — the same yields the Goal tab uses.
+      That is the real price of a subscription: not the charge, the capital it permanently ties up.
+      <b>Cancelling ${money(S_.perMonth / 4)} a month of this is worth about ${money((S_.perYear / 4) / 0.05)} of investing you never have to do.</b></div>
+    </div>` : ''}
+    ${(S_.trials || []).length ? `<div class="warn"><b>${S_.trials.map((t) => esc(t.label)).join(', ')} ${S_.trials.length === 1 ? 'is' : 'are'} still free.</b>
+      ${S_.trials.map((t) => `${esc(t.label)} starts charging ${money(t.perYearInBase / (t.every === 'yearly' ? 1 : t.every === 'quarterly' ? 4 : t.every === 'weekly' ? 52 : 12))} on ${dd(t.trialEndsAt)}`).join('. ')}.
+      This is how subscriptions actually cost people money — not by being expensive, by starting.</div>` : ''}
+    ${(S_.dueSoon || []).length ? `<div class="card"><h2>Charging in the next two weeks</h2>
+      ${S_.dueSoon.map((r) => `<div class="row">
+        <div class="rmain"><div class="rlabel">${esc(r.label)}</div><div class="rmeta">${dd(r.next)}</div></div>
+        <div class="ramt out">−${money(r.amountInBase)}</div>
+      </div>`).join('')}</div>` : ''}
+    <div class="card"><h2>What you subscribe to</h2>
+      ${rows || `<div class="empty">Nothing yet. Tap Add and type <b>sub 12.99 netflix monthly</b>.</div>`}
+      ${rows ? '<div class="note">✓ records a charge into the month. Nothing is ever recorded on its own — a subscription is what you agreed to pay, and the Month tab counts what actually left.</div>' : ''}
+    </div>
+    ${(S_.unconverted || []).length ? `<div class="warn">No exchange rate for ${esc(S_.unconverted.join(', '))} — not in the totals above.</div>` : ''}`;
+}
+
 function drawGoal() {
   if (!S.goal) {
     const c0 = S.contracted;
@@ -564,14 +630,15 @@ function drawPlan() {
 }
 
 // ---- Tabs ----
+const TABS = ['month', 'worth', 'subs', 'goal', 'plan'];
 document.querySelectorAll('.tab').forEach((t) => t.onclick = () => {
   document.querySelectorAll('.tab').forEach((x) => x.classList.toggle('on', x === t));
-  for (const name of ['month','worth','goal','plan']) $('p-' + name).hidden = (name !== t.dataset.tab);
+  for (const name of TABS) $('p-' + name).hidden = (name !== t.dataset.tab);
   tg?.HapticFeedback?.selectionChanged?.();
 });
 
 // ---- Add ----
-const CHIPS = ['out 40 food', 'in 3200 salary', 'in 27000 EGP rent', 'add card 1200 EUR 19% visa', 'add loan 445000 EGP 24% quarterly pays 58063.45 start 28.11.2024 end 28.05.2027', 'add deposit 495000 EGP 20% quarterly start 28.05.2024 end 28.05.2027', 'goal 2000'];
+const CHIPS = ['out 40 food', 'in 3200 salary', 'in 27000 EGP rent', 'sub 12.99 netflix monthly', 'sub 90 icloud yearly', 'add card 1200 EUR 19% visa', 'add loan 445000 EGP 24% quarterly pays 58063.45 start 28.11.2024 end 28.05.2027', 'add deposit 495000 EGP 20% quarterly start 28.05.2024 end 28.05.2027', 'goal 2000'];
 $('chips').innerHTML = CHIPS.map((c) => `<button class="chip">${esc(c)}</button>`).join('');
 $('chips').onclick = (e) => { if (e.target.classList.contains('chip')) { $('entry').value = e.target.textContent; $('entry').focus(); } };
 
@@ -667,13 +734,38 @@ function accountFields(a) {
     a loan repays principal as well as interest, and only your statement knows the exact figure.</div>`;
 }
 
+function subFields(r) {
+  return `
+    ${field('Name', input('label', r.label))}
+    <div class="two">
+      ${field('Amount', input('amount', r.amount, 'inputmode="decimal"'))}
+      ${field('Currency', select('currency', currencyOptions(r.currency), r.currency))}
+    </div>
+    <div class="two">
+      ${field('Billed', select('every', S.billingPeriods || ['monthly'], r.every))}
+      ${field('Category', input('category', r.category))}
+    </div>
+    ${field('Started', input('startsAt', isoOf(r.startsAt), 'type="date"'))}
+    <div class="two">
+      ${field('Free until', input('trialEndsAt', isoOf(r.trialEndsAt), 'type="date"'))}
+      ${field('Cancelled from', input('endsAt', isoOf(r.endsAt), 'type="date"'))}
+    </div>
+    <div class="note" style="margin-top:0">Set <b>Cancelled from</b> the day you cancel rather than
+    deleting it — a subscription that still bills until March is money you owe, and the row is the
+    only record that you stopped it.</div>`;
+}
+
 function openEdit(kind, id) {
-  const it = kind === 'flow' ? S.flows.find((f) => f.id === id) : S.accounts.find((a) => a.id === id);
+  const it = kind === 'flow' ? S.flows.find((f) => f.id === id)
+    : kind === 'sub' ? (S.subs?.rows || []).find((r) => r.id === id)
+    : S.accounts.find((a) => a.id === id);
   if (!it) return;
   editing = { kind, id };
-  $('etitle').textContent = kind === 'flow' ? 'Edit this entry' : 'Edit what you hold';
+  $('etitle').textContent = kind === 'flow' ? 'Edit this entry'
+    : kind === 'sub' ? 'Edit this subscription' : 'Edit what you hold';
   $('eerr').hidden = true;
-  $('efields').innerHTML = kind === 'flow' ? flowFields(it) : accountFields(it);
+  $('efields').innerHTML = kind === 'flow' ? flowFields(it)
+    : kind === 'sub' ? subFields(it) : accountFields(it);
   $('esheet').hidden = false;
 }
 const closeEdit = () => { $('esheet').hidden = true; editing = null; };
@@ -764,6 +856,17 @@ document.body.addEventListener('click', async (e) => {
     return;
   }
 
+  // A subscription charged. It becomes a real spend in the month, tagged with the subscription
+  // it came from — never on a schedule, because a charge can fail, be refunded, or be cancelled
+  // the week before, and the app must not invent spending that did not happen.
+  const chg = e.target.closest('[data-charge]');
+  if (chg) {
+    if (await work(() => api('/api/charge', { id: chg.dataset.charge }))) {
+      tg?.HapticFeedback?.notificationOccurred?.('success');
+    }
+    return;
+  }
+
   const planDel = e.target.closest('[data-plan-del]');
   if (planDel) {
     if (!await ask('Remove this change from the plan?')) return;
@@ -776,7 +879,9 @@ document.body.addEventListener('click', async (e) => {
   // wrong row gets deleted, and there is no undo behind it.
   const what = btn.dataset.del === 'flow'
     ? (S.flows.find((f) => f.id === btn.dataset.id)?.category || 'this entry')
-    : (S.accounts.find((a) => a.id === btn.dataset.id)?.label || 'this holding');
+    : btn.dataset.del === 'sub'
+      ? ((S.subs?.rows || []).find((r) => r.id === btn.dataset.id)?.label || 'this subscription')
+      : (S.accounts.find((a) => a.id === btn.dataset.id)?.label || 'this holding');
   if (!await ask(`Delete “${what}”? This cannot be undone.`)) return;
   await work(() => api('/api/remove', { kind: btn.dataset.del, id: btn.dataset.id }));
 });

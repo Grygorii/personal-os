@@ -18,7 +18,7 @@
 import { readFileSync } from 'fs';
 import vm from 'vm';
 import { buildState } from '../src/pocket/web.js';
-import { cleanAccount, cleanFlow } from '../src/pocket/money.js';
+import { cleanAccount, cleanFlow, cleanSub } from '../src/pocket/money.js';
 
 const utc = (y, m, d) => Date.UTC(y, m - 1, d);
 const NOW = utc(2026, 9, 15);
@@ -46,6 +46,13 @@ const spanFlows = [
   cleanFlow({ id: 'f4', dir: 'out', category: 'food', amount: 52, currency: 'EUR', ts: utc(2026, 9, 4) }),
   cleanFlow({ id: 'f5', dir: 'in', category: 'salary', amount: 3200, currency: 'EUR', ts: utc(2026, 9, 1), recurring: true }),
   cleanFlow({ id: 'f6', dir: 'out', category: 'flights', amount: 640, currency: 'EUR', ts: utc(2026, 7, 12) }),
+];
+const subs = [
+  cleanSub({ id: 's1', label: 'Netflix', amount: 12.99, currency: 'EUR', every: 'monthly', startsAt: utc(2024, 3, 5) }),
+  cleanSub({ id: 's2', label: 'iCloud', amount: 90, currency: 'EUR', every: 'yearly', startsAt: utc(2025, 9, 20) }),
+  cleanSub({ id: 's3', label: 'Gym', amount: 4500, currency: 'EGP', every: 'quarterly', startsAt: utc(2025, 1, 10) }),
+  cleanSub({ id: 's4', label: 'Some AI thing', amount: 20, currency: 'USD', every: 'monthly', startsAt: utc(2026, 9, 1), trialEndsAt: utc(2026, 9, 20) }),
+  cleanSub({ id: 's5', label: 'Old magazine', amount: 8, currency: 'EUR', every: 'monthly', startsAt: utc(2023, 1, 1), endsAt: utc(2026, 4, 1) }),
 ];
 const goal = { monthly: 2000, currency: 'EUR' };
 const events = { years: 10, list: [{ id: 'e1', atYear: 3, kind: 'income', amount: 400, label: 'second rental' }] };
@@ -106,7 +113,7 @@ function must(el, panel, needles, label) {
 
 // ---- This month, everything present ----
 {
-  const S = buildState({ base: 'EUR', table: T, accounts, spanFlows, goal, events, now: NOW });
+  const S = buildState({ base: 'EUR', table: T, accounts, spanFlows, subs, goal, events, now: NOW });
   const el = render(S, 'this month');
   if (el) {
     must(el, 'p-month', ['Repeats — not recorded yet', 'Yes, add it', 'Left over', 'September'], 'this month');
@@ -137,6 +144,8 @@ function must(el, panel, needles, label) {
     }
     must(el, 'p-goal', ['Already contracted', 'a month is scheduled'], 'this month');
     must(el, 'p-plan', ['Year by year', 'second rental'], 'this month');
+    must(el, 'p-subs', ['Every subscription, per year', 'What that costs in capital', 'Netflix',
+      'free trial', 'Old magazine'], 'this month');
   }
   if (S.months.length !== 12) fail('the strip should hold twelve months');
   if (S.monthKey !== '2026-09') fail('it should open on the month he is in');
@@ -145,30 +154,44 @@ function must(el, panel, needles, label) {
   if (!S.terms.matured.some((t) => t.label === 'Old CD')) fail('a matured certificate should be surfaced');
   if (!S.interest.ended.includes('Old CD')) fail('a term that ended must not still count as earning');
   if (Math.round(S.contracted.perMonth) !== 167) fail(`contracted income should be 167/month, got ${Math.round(S.contracted.perMonth)}`);
+
+  // Subscriptions, normalised. 12.99 monthly = 155.88; 90 yearly = 90; 4,500 EGP quarterly =
+  // 18,000 EGP = 333.33; 20 USD monthly = 240 USD = 222.22. The cancelled one counts nothing.
+  const sub = S.subs;
+  if (sub.count !== 4) fail(`four live subscriptions, got ${sub.count}`);
+  if (Math.round(sub.perYear) !== 801) fail(`801 a year across the four, got ${Math.round(sub.perYear)}`);
+  if (!sub.ended.some((r) => r.label === 'Old magazine')) fail('a cancelled subscription is kept, not deleted');
+  if (!sub.trials.some((r) => r.label === 'Some AI thing')) fail('a free trial should be flagged before it starts charging');
+  if (sub.capitalNeeded.length !== 2) fail('the capital cost is a range, never one number');
+  if (Math.round(sub.capitalNeeded[0].capital) !== Math.round(sub.perYear / 0.035)) fail('capital at the low yield');
+  // The biggest one first, so the thing worth cancelling is the thing he sees.
+  const live = sub.rows.filter((r) => !r.ended);
+  if (live[0].label !== 'Gym') fail(`the most expensive should lead, got ${live[0].label}`);
+  if (sub.rows[sub.rows.length - 1].label !== 'Old magazine') fail('a cancelled one sinks to the bottom');
 }
 
 // ---- A month he scrolled back to ----
 {
-  const S = buildState({ base: 'EUR', table: T, monthKey: '2026-08', accounts, spanFlows, goal, events, now: NOW });
+  const S = buildState({ base: 'EUR', table: T, monthKey: '2026-08', accounts, spanFlows, subs, goal, events, now: NOW });
   const el = render(S, 'a past month');
   if (el) must(el, 'p-month', ['August', 'salary'], 'a past month');
   if (S.monthKey !== '2026-08') fail('the month asked for is the month shown');
   if (S.month.income !== 3700) fail(`August took in 3,200 EUR and 27,000 EGP = 3,700, got ${S.month.income}`);
   // The plan must not be rebuilt from whichever month he happens to be reading.
-  const now = buildState({ base: 'EUR', table: T, accounts, spanFlows, goal, events, now: NOW });
+  const now = buildState({ base: 'EUR', table: T, accounts, spanFlows, subs, goal, events, now: NOW });
   if (S.forecast.mid.endCapital !== now.forecast.mid.endCapital) fail('reading August rewrote the ten-year plan');
 }
 
 // ---- A month with nothing in it ----
 {
-  const S = buildState({ base: 'EUR', table: T, monthKey: '2026-02', accounts, spanFlows, goal, events, now: NOW });
+  const S = buildState({ base: 'EUR', table: T, monthKey: '2026-02', accounts, spanFlows, subs, goal, events, now: NOW });
   const el = render(S, 'an empty month');
   if (el) must(el, 'p-month', ['Nothing recorded in'], 'an empty month');
 }
 
 // ---- No exchange rates: nothing is totalled, and the page says so ----
 {
-  const S = buildState({ base: 'EUR', table: null, accounts, spanFlows, goal, events, now: NOW });
+  const S = buildState({ base: 'EUR', table: null, accounts, spanFlows, subs, goal, events, now: NOW });
   const el = render(S, 'no rates');
   if (el) must(el, 'p-month', ['Exchange rates are unreachable'], 'no rates');
   if (S.ratesAvailable !== false) fail('with no rate table nothing may claim to be converted');
@@ -176,12 +199,13 @@ function must(el, panel, needles, label) {
 
 // ---- Nothing entered at all: the first thing he ever sees ----
 {
-  const S = buildState({ base: 'EUR', table: T, accounts: [], spanFlows: [], goal: null, events: { years: 10, list: [] }, now: NOW });
+  const S = buildState({ base: 'EUR', table: T, accounts: [], spanFlows: [], subs: [], goal: null, events: { years: 10, list: [] }, now: NOW });
   const el = render(S, 'a brand new Pocket');
   if (el) {
     must(el, 'p-month', ['Nothing recorded in'], 'a brand new Pocket');
     must(el, 'p-worth', ['Nothing yet. Tap Add.'], 'a brand new Pocket');
     must(el, 'p-goal', ['No goal set'], 'a brand new Pocket');
+    must(el, 'p-subs', ['Nothing yet'], 'a brand new Pocket');
   }
 }
 

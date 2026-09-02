@@ -24,7 +24,7 @@ import {
   netWorth, monthOf, goalProgress, yearsToGoal, interestPicture, debtVsInvesting,
   parseEntry, ACCOUNT_KINDS, PAYOUT_KINDS, isLiability, forecastRange, depositProgress,
   monthWindowOf, recentMonths, monthsSummary, patchFrom, depositsSummary, contractedIncome,
-  missingRecurring, cleanFlow, balanceNow,
+  missingRecurring, cleanFlow, balanceNow, subsSummary, BILLING_PERIODS, cleanSub,
 } from './money.js';
 
 const json = (res, code, body) => {
@@ -88,14 +88,14 @@ export function spanFor(monthKey, now = Date.now()) {
 /** Everything the page draws, from data already loaded. Pure on purpose: no database, no clock
  *  of its own, no network — so the entire payload the browser receives can be built from
  *  fixtures and checked, which is how the drawing code gets tested at all. */
-export function buildState({ base = 'EUR', table, monthKey, accounts = [], spanFlows = [], goal = null, events = { years: 10, list: [] }, now = Date.now() }) {
+export function buildState({ base = 'EUR', table, monthKey, accounts = [], spanFlows = [], subs = [], goal = null, events = { years: 10, list: [] }, now = Date.now() }) {
   const { w, strip } = spanFor(monthKey, now);
   const flows = spanFlows.filter((f) => f.ts >= w.from && f.ts <= w.to);
 
   // Without rates nothing can be totalled honestly, so the page is told so rather than being
   // handed numbers that quietly exclude two of three currencies.
   if (!table) {
-    return { base, ratesAvailable: false, accounts, flows, goal, kinds: ACCOUNT_KINDS, events: events.list };
+    return { base, ratesAvailable: false, accounts, flows, subs: { rows: [] }, goal, kinds: ACCOUNT_KINDS, events: events.list };
   }
 
   const n = netWorth(accounts, table, base, now);
@@ -194,6 +194,16 @@ export function buildState({ base = 'EUR', table, monthKey, accounts = [], spanF
     })(),
     // Things that repeat and have not been entered again. A list to confirm, never a total.
     missing: missingRecurring(spanFlows, w),
+    billingPeriods: BILLING_PERIODS,
+    // Every subscription, normalised to a year so a monthly one and a yearly one can be
+    // compared at all, plus what the whole bill would cost in capital to fund for ever.
+    subs: (() => {
+      const sum = subsSummary(subs, table, base, now);
+      // Which ones have already been charged into the month on screen, so the tab can show
+      // what is still outstanding rather than asking him to remember.
+      const paidThisMonth = new Set(flows.filter((f) => f.subId).map((f) => f.subId));
+      return { ...sum, rows: sum.rows.map((r) => ({ ...r, paidThisMonth: paidThisMonth.has(r.id) })) };
+    })(),
     payFirst: debtVsInvesting(accounts, { expectedYieldPct: 7, now }).filter((d) => d.payFirst),
     goal: g,
     plan: g ? yearsToGoal({ invested, monthlyContribution: Math.max(0, cur.surplus), goalMonthly: goal.monthly }) : null,
@@ -219,10 +229,10 @@ async function state(monthKey) {
   try { table = await fx.rates(base); } catch (e) { table = null; }
 
   const { span } = spanFor(monthKey);
-  const [accounts, spanFlows, goal, events] = await Promise.all([
-    store.accounts(), store.flows(span), store.getGoal(), store.getPlanEvents(),
+  const [accounts, spanFlows, subs, goal, events] = await Promise.all([
+    store.accounts(), store.flows(span), store.subs(), store.getGoal(), store.getPlanEvents(),
   ]);
-  return buildState({ base, table, monthKey, accounts, spanFlows, goal, events });
+  return buildState({ base, table, monthKey, accounts, spanFlows, subs, goal, events });
 }
 
 export function startWeb(port = process.env.PORT || 3000) {
@@ -255,6 +265,7 @@ export function startWeb(port = process.env.PORT || 3000) {
           if (!parsed) return json(res, 400, { error: "Didn't understand that. Try “out 40 food”." });
           if (parsed.badKind) return json(res, 400, { error: `Unknown kind “${parsed.badKind}”. One of: ${ACCOUNT_KINDS.join(', ')}.` });
           if (parsed.type === 'account') await store.saveAccount(parsed);
+          else if (parsed.type === 'sub') await store.saveSub(parsed);
           else await store.addFlow(parsed);
           return json(res, 200, await state(asked()));
         }
@@ -297,18 +308,40 @@ export function startWeb(port = process.env.PORT || 3000) {
           return json(res, 200, await state(asked()));
         }
 
+        // A subscription charged. One tap turns the commitment into a real spend in the month,
+        // tagged with the subscription it came from so the two tabs can never disagree.
+        //
+        // Never automatic. A subscription is what he has AGREED to pay; a flow is what has
+        // actually left. Stamping charges on a schedule would fill his months with spending that
+        // may have failed, been refunded, or been cancelled the week before.
+        if (url.pathname === '/api/charge' && req.method === 'POST') {
+          const body = await readBody(req);
+          const sub = (await store.subs()).find((x) => x.id === String(body.id || ''));
+          if (!sub) return json(res, 404, { error: 'No subscription with that id' });
+          const w = monthWindowOf(asked());
+          const now = Date.now();
+          const inThisMonth = now >= w.from && now <= w.to;
+          await store.addFlow(cleanFlow({
+            dir: 'out', category: sub.category || 'subscriptions', note: sub.label,
+            amount: sub.amount, currency: sub.currency,
+            ts: inThisMonth ? now : w.from,
+            subId: sub.id,
+          }));
+          return json(res, 200, await state(asked()));
+        }
+
         // Correcting something already recorded. Deliberately field-by-field rather than by
         // retyping the line: a mistyped amount fixed by retyping "out 40 food" produces a
         // SECOND entry, and a tracker that double-counts is worse than one that is wrong once.
         if (url.pathname === '/api/edit' && req.method === 'POST') {
           const body = await readBody(req);
-          const kind = body.kind === 'flow' ? 'flow' : 'account';
+          const kind = ['flow', 'sub'].includes(body.kind) ? body.kind : 'account';
           // patchFrom is the whitelist: only fields it knows reach storage, and an absent
           // field means "not being changed", never "delete it".
           const patch = patchFrom(kind, body.patch || {});
           if (!Object.keys(patch).length) return json(res, 400, { error: 'Nothing to change.' });
-          const saved = kind === 'flow'
-            ? await store.updateFlow(String(body.id || ''), patch)
+          const saved = kind === 'flow' ? await store.updateFlow(String(body.id || ''), patch)
+            : kind === 'sub' ? await store.updateSub(String(body.id || ''), patch)
             : await store.updateAccount(String(body.id || ''), patch);
           if (!saved) return json(res, 404, { error: 'Nothing with that id' });
           return json(res, 200, await state(asked()));
@@ -317,7 +350,9 @@ export function startWeb(port = process.env.PORT || 3000) {
         if (url.pathname === '/api/remove' && req.method === 'POST') {
           const body = await readBody(req);
           const id = String(body.id || '');
-          const gone = body.kind === 'flow' ? await store.removeFlow(id) : await store.removeAccount(id);
+          const gone = body.kind === 'flow' ? await store.removeFlow(id)
+            : body.kind === 'sub' ? await store.removeSub(id)
+            : await store.removeAccount(id);
           if (!gone) return json(res, 404, { error: 'Nothing with that id' });
           return json(res, 200, await state(asked()));
         }

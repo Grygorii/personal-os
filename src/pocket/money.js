@@ -100,6 +100,11 @@ export function cleanFlow(f) {
     ts: num(f?.ts) || Date.now(),
     // Repeats every month unless he says otherwise — salary, rent, a subscription.
     recurring: !!f?.recurring,
+    // Which subscription this charge belongs to, when it came from one. It keeps the Subs tab
+    // and the Month tab telling the same story — and it is why a subscription charge is not
+    // also flagged `recurring`: the subscription IS the recurring record, and having both would
+    // put the same bill in two "you have not entered this yet" lists.
+    subId: txt(f?.subId, 32) || null,
     // Passive is set explicitly, but a category that is obviously passive defaults to true so
     // he does not have to remember a flag for the thing the whole goal is about.
     passive: f?.passive == null ? PASSIVE_KINDS.includes(category) : !!f.passive,
@@ -283,7 +288,10 @@ export function parseEntry(text, base = 'EUR') {
   // has to retype.
   const flow = s.match(/^\/?(in|out)\s+[-+]?\s*(\d[\d\s.,]*)\s*(.*)$/i);
   const acct = s.match(/^\/?add\s+(\w+)\s+[-+]?\s*(\d[\d\s.,]*)\s*(.*)$/i);
-  if (!flow && !acct) return null;
+  // "sub 12.99 EUR monthly netflix" — its own shape, because a subscription is not a spend that
+  // happened, it is a spend that will keep happening until someone stops it.
+  const sub = s.match(/^\/?subs?\s+[-+]?\s*(\d[\d\s.,]*)\s*(.*)$/i);
+  if (!flow && !acct && !sub) return null;
 
   // "12,50" and "1 200,50" and "1,200.50" all mean what he thinks they mean.
   const amountOf = (raw) => {
@@ -302,14 +310,14 @@ export function parseEntry(text, base = 'EUR') {
   // `payouts` is off for a flow on purpose. This helper is shared by both shapes, and a spend
   // is allowed to be called "monthly gym" — swallowing that word as a payout frequency would
   // quietly rename the category to "gym".
-  const split = (rest, { payouts = false } = {}) => {
+  const split = (rest, { payouts = false, periods = false } = {}) => {
     const words = String(rest || '').trim().split(/\s+/).filter(Boolean);
     let currency = base;
     if (words.length && isKnownCurrency(words[0])) currency = words.shift().toUpperCase();
     // A rate can sit anywhere in what is left — "20%", "20 %", "at 20%". Pulled out rather
     // than positional, because nobody remembers a field order.
     let ratePct = null;
-    let startsAt = null, endsAt = null, payout = null, payment = null;
+    let startsAt = null, endsAt = null, payout = null, payment = null, every = null;
     const keep = [];
     // "start 28.05.2024 end 28.05.2027" — the keyword claims the date that follows it, and
     // BOTH are removed from what is left, so neither ends up in the label. A bare date with no
@@ -331,10 +339,25 @@ export function parseEntry(text, base = 'EUR') {
       // His own word for it, because the app should read what he types and not what a form
       // expects: he says "kvartally", and a line he has to retype is a line he stops typing.
       if (payouts && payout == null && /^kvartal(ly|ny)?$/i.test(w)) { payout = 'quarterly'; continue; }
+      if (periods && every == null && BILLING_PERIODS.includes(w.toLowerCase())) { every = w.toLowerCase(); continue; }
+      if (periods && every == null && /^(annually?|yearly|per\s*year|\/year|\/yr)$/i.test(w)) { every = 'yearly'; continue; }
+      if (periods && every == null && /^kvartal(ly|ny)?$/i.test(w)) { every = 'quarterly'; continue; }
       keep.push(w);
     }
-    return { currency, ratePct, startsAt, endsAt, payout, payment, rest: keep.join(' ') };
+    return { currency, ratePct, startsAt, endsAt, payout, payment, every, rest: keep.join(' ') };
   };
+
+  if (sub) {
+    const amount = amountOf(sub[1]);
+    if (amount == null) return null;
+    const { currency, startsAt, endsAt, every, rest } = split(sub[2], { periods: true });
+    return {
+      type: 'sub', amount, currency,
+      every: every || 'monthly',
+      startsAt, endsAt,
+      label: rest || 'subscription',
+    };
+  }
 
   if (acct) {
     const kind = acct[1].toLowerCase();
@@ -851,6 +874,18 @@ export function patchFrom(kind, raw = {}) {
     return out;
   }
 
+  if (kind === 'sub') {
+    if (given('label')) out.label = String(raw.label);
+    if (given('amount')) { const n = amount(raw.amount); if (n != null) out.amount = n; }
+    if (given('currency')) out.currency = String(raw.currency);
+    if (given('every') && BILLING_PERIODS.includes(raw.every)) out.every = raw.every;
+    if (given('category')) out.category = String(raw.category);
+    for (const k of ['startsAt', 'endsAt', 'trialEndsAt']) {
+      if (raw[k] !== undefined) out[k] = raw[k] === '' ? null : parseDate(raw[k]);
+    }
+    return out;
+  }
+
   if (given('label')) out.label = String(raw.label);
   if (given('kind') && ACCOUNT_KINDS.includes(raw.kind)) out.kind = raw.kind;
   if (given('value')) { const n = amount(raw.value); if (n != null) out.value = n; }
@@ -934,4 +969,129 @@ export function missingRecurring(flows, { from, to } = {}) {
       day: new Date(f.ts).getUTCDate(),
     }))
     .sort((a, b) => (a.dir === b.dir ? a.category.localeCompare(b.category) : a.dir === 'in' ? -1 : 1));
+}
+
+
+// ---- Subscriptions ----
+//
+// The only category of spending nobody decides to make twice. A subscription is agreed once and
+// then charges for ever, which is why it belongs here as a THING and not as a spend recorded
+// after the fact: what matters about Netflix is not the €12.99 that left last Tuesday, it is
+// that €155.88 a year is committed until someone actively stops it.
+//
+// Two numbers this exists to produce, and neither is visible from a list of charges:
+//
+//   1. THE NORMALISED COST. A subscription billed yearly and one billed monthly cannot be
+//      compared until both are per year. €90 a year is cheaper than €9 a month and it does not
+//      look it.
+//   2. WHAT IT COSTS IN CAPITAL. A bill that never ends has to be funded by capital that never
+//      ends. €200 a month of subscriptions is €2,400 a year, which at a sustainable withdrawal
+//      needs somewhere between €34,000 and €69,000 of capital behind it — money he has to build
+//      before the goal is real. Cancelling one is the same as saving years of contributions, and
+//      no expense tracker ever says so.
+
+export const BILLING_PERIODS = ['weekly', 'monthly', 'quarterly', 'yearly'];
+const PERIOD_MONTHS = { monthly: 1, quarterly: 3, yearly: 12 };
+const WEEK = 7 * DAY;
+
+export function cleanSub(s) {
+  return {
+    id: txt(s?.id, 32) || Date.now().toString(36),
+    label: txt(s?.label, 80) || 'subscription',
+    amount: Math.max(0, num(s?.amount)),
+    currency: cleanCurrency(s?.currency) || 'EUR',
+    every: BILLING_PERIODS.includes(s?.every) ? s.every : 'monthly',
+    // When it started charging. Defaults to now so a subscription added today has a next date
+    // without him having to remember when he signed up.
+    startsAt: s?.startsAt == null ? null : num(s.startsAt) || null,
+    // When it stops. Set this the day he cancels — a cancelled subscription that still bills
+    // until March is money he owes, and deleting the row loses that.
+    endsAt: s?.endsAt == null ? null : num(s.endsAt) || null,
+    // Free until this date, then it charges. This is how subscriptions actually cost people
+    // money: not by being expensive, by starting.
+    trialEndsAt: s?.trialEndsAt == null ? null : num(s.trialEndsAt) || null,
+    category: txt(s?.category, 40).toLowerCase() || 'subscriptions',
+    note: txt(s?.note, 300),
+    at: num(s?.at) || Date.now(),
+  };
+}
+
+/** What it costs in a year, in its own currency.
+ *
+ *  Weekly is 52 times, not 4 × 12. Treating a week as a quarter of a month understates a weekly
+ *  bill by 8% — which is small enough to look right and wrong every single time. */
+export function subPerYear(s) {
+  if (!s || !(s.amount > 0)) return 0;
+  if (s.every === 'weekly') return s.amount * 52;
+  const months = PERIOD_MONTHS[s.every] || 1;
+  return s.amount * (12 / months);
+}
+
+/** The next time it charges, walking the calendar from the day it started.
+ *
+ *  Null when it has ended, or when the trial has not run out yet — a free trial is not a charge,
+ *  and counting one as due would put money in the next-seven-days list that nobody will take. */
+export function nextCharge(s, now = Date.now()) {
+  if (!s || !(s.amount > 0)) return null;
+  const start = s.startsAt || s.at || now;
+  if (s.endsAt && now >= s.endsAt) return null;
+  // A trial pushes the first real charge out to the day it expires.
+  const first = s.trialEndsAt && s.trialEndsAt > start ? s.trialEndsAt : start;
+  if (now < first) return s.endsAt && first > s.endsAt ? null : first;
+
+  let at;
+  if (s.every === 'weekly') {
+    const periods = Math.floor((now - first) / WEEK) + 1;
+    at = first + periods * WEEK;
+  } else {
+    const step = PERIOD_MONTHS[s.every] || 1;
+    let i = 1;
+    while (i < 2400 && addMonths(first, i * step) <= now) i++;
+    at = addMonths(first, i * step);
+  }
+  return s.endsAt && at > s.endsAt ? null : at;
+}
+
+/** Everything at once, in one currency, with the two lines that make it worth having.
+ *
+ *  Anything without a rate is excluded from the totals and named, exactly as everywhere else —
+ *  a subscription bill that quietly drops the one billed in dollars is worse than no bill. */
+export function subsSummary(subs, table, base = 'EUR', now = Date.now()) {
+  const rows = (subs || []).map((s) => {
+    const perYear = subPerYear(s);
+    const next = nextCharge(s, now);
+    const ended = !!(s.endsAt && now >= s.endsAt);
+    return {
+      ...s,
+      perYear,
+      perMonth: perYear / 12,
+      next,
+      ended,
+      // Still inside a free trial: costing nothing yet, and about to cost something.
+      inTrial: !!(s.trialEndsAt && now < s.trialEndsAt),
+      perYearInBase: toBase(perYear, s.currency, table),
+      amountInBase: toBase(s.amount, s.currency, table),
+    };
+  });
+  // A subscription that has ended is history, not a bill. It stays in the list, greyed, so
+  // cancelling something shows up as an act rather than as a row disappearing.
+  const live = rows.filter((r) => !r.ended);
+  const known = live.filter((r) => r.perYearInBase != null);
+  const perYear = known.reduce((n, r) => n + r.perYearInBase, 0);
+
+  return {
+    base,
+    rows: rows.sort((a, b) => (a.ended === b.ended ? (b.perYearInBase || 0) - (a.perYearInBase || 0) : a.ended ? 1 : -1)),
+    count: live.length,
+    perYear,
+    perMonth: perYear / 12,
+    // The next fortnight, so a charge is never a surprise.
+    dueSoon: live.filter((r) => r.next && r.next - now <= 14 * DAY).sort((a, b) => a.next - b.next),
+    trials: live.filter((r) => r.inTrial).sort((a, b) => a.trialEndsAt - b.trialEndsAt),
+    ended: rows.filter((r) => r.ended),
+    unconverted: live.filter((r) => r.perYearInBase == null).map((r) => `${r.label} (${r.currency})`),
+    // What a bill that never ends costs in capital that never ends. A range, at the same yields
+    // the goal uses, because one number here would be a promise about the next thirty years.
+    capitalNeeded: perYear > 0 ? [0.035, 0.07].map((y) => ({ yieldPct: y * 100, capital: perYear / y })) : [],
+  };
 }

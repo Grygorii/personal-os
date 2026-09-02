@@ -12,7 +12,7 @@ import { send, sendLong, sendKeyboard } from '../telegram.js';
 import { config } from '../config.js';
 import * as fx from '../fx.js';
 import * as store from './store.js';
-import { netWorth, monthOf, goalProgress, yearsToGoal, ACCOUNT_KINDS, parseEntry, interestPicture, debtVsInvesting, isLiability } from './money.js';
+import { netWorth, monthOf, goalProgress, yearsToGoal, ACCOUNT_KINDS, parseEntry, interestPicture, debtVsInvesting, isLiability, subPerYear, subsSummary } from './money.js';
 
 const BASE = () => (config.baseCurrency || 'EUR');
 const fmt = (n, cur = BASE()) =>
@@ -128,6 +128,26 @@ async function cmdGoal() {
   return out.join('\n');
 }
 
+async function cmdSubs() {
+  const t = await table();
+  if (!t) return "Can't reach the exchange rates right now, so I won't total anything I'd have to guess at.";
+  const list = await store.subs();
+  if (!list.length) return 'Nothing yet. Try "sub 12.99 netflix monthly".';
+  const s = subsSummary(list, t, BASE());
+
+  const out = s.rows.filter((r) => !r.ended).map((r) =>
+    `${r.label}  ${r.amount} ${r.currency} ${r.every}  →  ${fmt(r.perYearInBase)}/yr${r.next ? `  (next ${new Date(r.next).toISOString().slice(0, 10)})` : ''}`);
+  out.push('', `${s.count} subscriptions · ${fmt(s.perYear)} a year · ${fmt(s.perMonth)} a month`);
+  if (s.capitalNeeded.length) {
+    // The line an expense tracker never says: a bill that never ends is funded by capital.
+    out.push('', `To pay that for ever without working you need ${fmt(s.capitalNeeded[1].capital)}–${fmt(s.capitalNeeded[0].capital)} invested behind it.`);
+    out.push('Cancelling one is worth years of contributions.');
+  }
+  if (s.trials.length) out.push('', `⚠ Still free: ${s.trials.map((r) => `${r.label} until ${new Date(r.trialEndsAt).toISOString().slice(0, 10)}`).join(', ')}`);
+  if (s.unconverted.length) out.push('', `⚠ No rate for ${s.unconverted.join(', ')} — not in the totals.`);
+  return out.join('\n');
+}
+
 const HELP = `Pocket — what comes in, what goes out, and what it adds up to.
 
 Money moving:
@@ -151,6 +171,18 @@ What you own:
                             and the payment is what reveals the real rate.)
   accounts                 — list them, with ids to remove
 
+What you subscribe to:
+  sub 12.99 netflix monthly
+  sub 90 icloud yearly
+  sub 4500 EGP kvartally gym
+  sub 45 EUR quarterly gym from 01.03.2025
+                           (a subscription is agreed once and charges for ever, so it
+                            is a thing here and not a spend. The app normalises them
+                            all to a year — 90 a year is cheaper than 9 a month and
+                            does not look it — and says what the whole bill costs in
+                            capital, because a bill that never ends needs capital that
+                            never ends.)
+
   month    — in, out, surplus, where it went
   worth    — net worth in ${'{base}'}, and what currency it's really in
   goal 2000 — target monthly passive income
@@ -169,6 +201,7 @@ export async function handle(text, chatId) {
   }
   if (/^\/?(month|spending|income)\b/.test(low)) return cmdMonth();
   if (/^\/?(worth|net worth|accounts?)\b/.test(low)) return cmdWorth();
+  if (/^\/?subs(criptions?)?$/.test(low)) return cmdSubs();
 
   let m;
   if ((m = s.match(/^\/?goal\s+(\d+(?:[.,]\d+)?)\s*([A-Za-z]{3})?$/i))) {
@@ -182,6 +215,14 @@ export async function handle(text, chatId) {
   const p = parseEntry(s, BASE());
   if (!p) return 'Not sure what that is. "in 3200 salary", "out 40 food", or "help".';
   const t = await table();
+
+  if (p.type === 'sub') {
+    const saved = await store.saveSub(p);
+    const perYear = subPerYear(saved);
+    const shown = t ? fx.describeAmount(perYear, saved.currency, t, BASE()) : `${perYear} ${saved.currency}`;
+    // The yearly figure, always, because the monthly one is the number that hides the decision.
+    return `Subscribed: ${saved.label} — ${saved.amount} ${saved.currency} ${saved.every}.\nThat is ${shown} a year.`;
+  }
 
   if (p.type === 'account') {
     if (p.badKind) return `I don't know the kind "${p.badKind}". One of: ${ACCOUNT_KINDS.join(', ')}.`;

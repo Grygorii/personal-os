@@ -184,7 +184,7 @@ a price without one: it looks current.
 src/fx.js                shared: rates, conversion, the known-currency list, realReturn()
 src/pocket/money.js      pure: accounts, flows, net worth, the month, the goal, parseEntry()
 src/pocket/store.js      Mongo, whitelisted in and out
-src/pocket/bot.js        Telegram — the grammar, the four buttons
+src/pocket/bot.js        Telegram — the grammar, the buttons, /subs
 src/pocket/index.js      boot and the DB_NAME guard
 src/pocket/web.js        the Mini App server; buildState() is pure and fixture-testable
 src/pocket/app.html      the Mini App itself — four tabs, the month strip, the edit sheet
@@ -196,7 +196,7 @@ scripts/pocket-render.mjs  does the page actually DRAW? (npm run render:pocket)
 `ReferenceError` in one line of an inline script does not fail softly — it kills the whole script
 and serves a blank page with every unit test still green. `scripts/pocket-render.mjs` builds the
 real `/api/state` payload from fixtures, runs `app.html`'s script against a small DOM shim, and
-checks that all four panels drew, across five states: this month, a month scrolled back to, an
+checks that all five panels drew, across five states: this month, a month scrolled back to, an
 empty month, no exchange rates, and a brand new Pocket with nothing in it. Same reason
 `scripts/smoke.mjs` exists on the Kept side.
 
@@ -223,7 +223,53 @@ apps import `rawCol`.
 
 Chat is the fastest way to **record** something and a poor way to **look** at anything: no
 tabs, no colour, no way to scan a month. So the bot keeps the typing and a Telegram Mini App
-serves the seeing — four tabs: **Month · Worth · Goal · Plan**.
+serves the seeing — five tabs: **Month · Worth · Subs · Goal · Plan**.
+
+## Subscriptions
+
+The only category of spending nobody decides to make twice. It is agreed once and then charges
+for ever, which is why it is a **thing** in this app and not a spend recorded after the fact:
+what matters about Netflix is not the €12.99 that left last Tuesday, it is that €155.88 a year
+is committed until someone actively stops it.
+
+```
+sub 12.99 netflix monthly
+sub 90 icloud yearly
+sub 4500 EGP kvartally gym
+sub 45 EUR quarterly gym from 01.03.2025
+```
+
+Two numbers the Subs tab exists to produce, and neither is visible from a list of charges:
+
+**1. Everything per year.** A yearly bill and a monthly one cannot be compared until both are
+annual — €90 a year is cheaper than €9 a month and does not look it. Weekly is ×52, not ×4×12;
+treating a week as a quarter of a month understates a weekly bill by 8%, which is small enough to
+look right and wrong every single time.
+
+**2. What the bill costs in capital.** A bill that never ends has to be funded by capital that
+never ends. €48 a month is €579 a year, which at the same yields the Goal tab uses needs
+**€8,000–€16,500 invested behind it** — money he has to build before the goal is real. Cancelling
+a quarter of it is worth years of contributions, and no expense tracker ever says so. It is the
+same question the app already asks of a deposit and a loan, pointed at spending.
+
+Other decisions:
+
+- **A cancelled subscription is kept, greyed, not deleted.** `endsAt` is set the day he cancels.
+  One that still bills until March is money he owes, and the row is the only record that he
+  stopped it — deleting it makes cancelling look like nothing happened.
+- **A free trial is not a charge.** `trialEndsAt` pushes the first real charge out to the day it
+  expires and raises a warning before it does, because that is how subscriptions actually cost
+  people money: not by being expensive, by starting.
+- **Nothing is ever recorded automatically.** ✓ turns a subscription into a real spend in the
+  month, tagged with `subId`. Stamping charges on a schedule would fill his months with spending
+  that may have failed, been refunded, or been cancelled the week before.
+- **A charge is tagged but not flagged `recurring`.** The subscription *is* the recurring record;
+  both would put the same bill in two separate "you have not entered this yet" lists.
+- **Nothing here is added to any total elsewhere.** A subscription is what he has agreed to pay;
+  the Month tab counts what actually left. Doing both would double-count every charge.
+
+`out 40 monthly gym` is still a spend called "monthly gym". The two shapes stay apart, or every
+gym bill becomes a commitment.
 
 ### The year along the top
 

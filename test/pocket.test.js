@@ -414,7 +414,7 @@ test('cleanEvent: years and kinds are bounded, never trusted', () => {
 
 import {
   parseDate, depositProgress, addMonths, yearsBetween, payoutSchedule, PAYOUT_KINDS,
-  monthKey, monthWindowOf, recentMonths, monthsSummary, patchFrom,
+  monthKey, monthWindowOf, recentMonths, monthsSummary, patchFrom, missingRecurring,
 } from '../src/pocket/money.js';
 
 const utc = (y, m, d) => Date.UTC(y, m - 1, d);
@@ -784,4 +784,122 @@ test('parseEntry: the instalment can be typed on the line', () => {
   assert.equal(patchFrom('account', { payment: '' }).payment, null, 'and it can be cleared again');
   // "pays" with nothing usable after it is just a word.
   assert.match(parseEntry('add loan 1000 EUR pays the bank', 'EUR').label, /pays the bank/);
+});
+
+// ---- Subscriptions ----
+//
+// The only spending nobody decides to make twice. What matters about Netflix is not the €12.99
+// that left last Tuesday, it is that €155.88 a year is committed until someone actively stops it
+// — and that a bill which never ends has to be funded by capital that never ends.
+
+import { cleanSub, subPerYear, nextCharge, subsSummary, BILLING_PERIODS } from '../src/pocket/money.js';
+
+test('subPerYear: a yearly bill and a monthly one cannot be compared until both are annual', () => {
+  assert.equal(subPerYear(cleanSub({ amount: 12.99, every: 'monthly' })), 155.88);
+  assert.equal(subPerYear(cleanSub({ amount: 90, every: 'yearly' })), 90);
+  assert.equal(subPerYear(cleanSub({ amount: 45, every: 'quarterly' })), 180);
+  // 52, not 4 × 12. A week treated as a quarter of a month understates a weekly bill by 8% —
+  // small enough to look right, and wrong every single time.
+  assert.equal(subPerYear(cleanSub({ amount: 8, every: 'weekly' })), 416);
+  assert.notEqual(subPerYear(cleanSub({ amount: 8, every: 'weekly' })), 8 * 4 * 12);
+  assert.equal(subPerYear(cleanSub({ amount: 0, every: 'monthly' })), 0);
+  assert.deepEqual(BILLING_PERIODS, ['weekly', 'monthly', 'quarterly', 'yearly']);
+  assert.equal(cleanSub({ every: 'fortnightly' }).every, 'monthly', 'a period it does not know is not one');
+});
+
+test('nextCharge: the next time it actually takes money', () => {
+  const s = cleanSub({ amount: 12.99, every: 'monthly', startsAt: utc(2024, 3, 5) });
+  assert.equal(nextCharge(s, utc(2026, 9, 15)), utc(2026, 10, 5));
+  assert.equal(nextCharge(s, utc(2026, 9, 4)), utc(2026, 9, 5), 'the day before is still this month');
+
+  const y = cleanSub({ amount: 90, every: 'yearly', startsAt: utc(2025, 9, 20) });
+  assert.equal(nextCharge(y, utc(2026, 9, 15)), utc(2026, 9, 20));
+
+  const w = cleanSub({ amount: 8, every: 'weekly', startsAt: utc(2026, 9, 1) });
+  assert.equal(nextCharge(w, utc(2026, 9, 15)), utc(2026, 9, 22));
+
+  // A free trial is not a charge. Counting one as due puts money in the next-fortnight list
+  // that nobody is going to take.
+  const trial = cleanSub({ amount: 20, every: 'monthly', startsAt: utc(2026, 9, 1), trialEndsAt: utc(2026, 9, 20) });
+  assert.equal(nextCharge(trial, utc(2026, 9, 15)), utc(2026, 9, 20), 'the first charge is the day it stops being free');
+
+  // Cancelled: nothing more is ever taken.
+  const gone = cleanSub({ amount: 8, every: 'monthly', startsAt: utc(2023, 1, 1), endsAt: utc(2026, 4, 1) });
+  assert.equal(nextCharge(gone, utc(2026, 9, 15)), null);
+  assert.equal(nextCharge(cleanSub({ amount: 0 }), utc(2026, 9, 15)), null);
+});
+
+test('subsSummary: the whole bill, normalised, and what it costs in capital', () => {
+  const now = utc(2026, 9, 15);
+  const subs = [
+    cleanSub({ id: 's1', label: 'Netflix', amount: 12.99, currency: 'EUR', every: 'monthly', startsAt: utc(2024, 3, 5) }),
+    cleanSub({ id: 's2', label: 'iCloud', amount: 90, currency: 'EUR', every: 'yearly', startsAt: utc(2025, 9, 20) }),
+    cleanSub({ id: 's3', label: 'Gym', amount: 4500, currency: 'EGP', every: 'quarterly', startsAt: utc(2025, 1, 10) }),
+    cleanSub({ id: 's5', label: 'Old magazine', amount: 8, currency: 'EUR', every: 'monthly', startsAt: utc(2023, 1, 1), endsAt: utc(2026, 4, 1) }),
+  ];
+  const s = subsSummary(subs, T, 'EUR', now);
+
+  // 155.88 + 90 + (18,000 EGP ÷ 54 = 333.33). The cancelled one adds nothing.
+  assert.equal(Math.round(s.perYear), 579);
+  assert.equal(Math.round(s.perMonth), 48);
+  assert.equal(s.count, 3, 'a cancelled subscription is not a bill');
+  assert.equal(s.ended.length, 1);
+  assert.equal(s.ended[0].label, 'Old magazine', 'but it is kept — cancelling should show as an act, not a row vanishing');
+
+  // The most expensive first, because the thing worth cancelling is the thing he should see.
+  assert.equal(s.rows[0].label, 'Gym');
+  assert.equal(s.rows[s.rows.length - 1].label, 'Old magazine', 'and the dead one sinks');
+
+  // A bill that never ends needs capital that never ends — as a range, never one number.
+  assert.equal(s.capitalNeeded.length, 2);
+  assert.equal(Math.round(s.capitalNeeded[0].capital), Math.round(s.perYear / 0.035));
+  assert.equal(Math.round(s.capitalNeeded[1].capital), Math.round(s.perYear / 0.07));
+  assert.ok(s.capitalNeeded[0].capital > 16000, '€48 a month is a five-figure capital commitment');
+});
+
+test('subsSummary: a subscription with no rate is excluded AND named, like everything else here', () => {
+  const s = subsSummary([
+    cleanSub({ label: 'Netflix', amount: 10, currency: 'EUR', every: 'monthly' }),
+    cleanSub({ label: 'Mystery', amount: 999, currency: 'XYZ', every: 'monthly' }),
+  ], T, 'EUR', utc(2026, 9, 15));
+  assert.equal(s.perYear, 120, 'the unconvertible one is not silently added at 1:1');
+  assert.deepEqual(s.unconverted, ['Mystery (XYZ)']);
+});
+
+test('parseEntry: a subscription is its own shape, and does not collide with a spend', () => {
+  assert.deepEqual(parseEntry('sub 12.99 EUR monthly netflix', 'EUR'), {
+    type: 'sub', amount: 12.99, currency: 'EUR', every: 'monthly', startsAt: null, endsAt: null, label: 'netflix',
+  });
+  assert.equal(parseEntry('sub 90 yearly icloud', 'EUR').every, 'yearly');
+  assert.equal(parseEntry('sub 8 weekly coffee', 'EUR').every, 'weekly');
+  assert.equal(parseEntry('sub 45 EGP kvartally gym', 'EUR').every, 'quarterly', 'his word for it');
+  assert.equal(parseEntry('sub 12.99 netflix', 'EUR').every, 'monthly', 'monthly is the sane default');
+  assert.equal(parseEntry('sub 45 EUR quarterly gym from 01.03.2025', 'EUR').startsAt, utc(2025, 3, 1));
+  assert.equal(parseEntry('sub 12.99 EUR monthly netflix', 'EUR').label, 'netflix', 'the period does not stay in the name');
+
+  // "out 40 monthly gym" is still a spend called "monthly gym" and must not become a
+  // subscription — the two shapes have to stay apart or every gym bill becomes a commitment.
+  const spend = parseEntry('out 40 monthly gym', 'EUR');
+  assert.equal(spend.type, 'flow');
+  assert.equal(spend.category, 'monthly');
+});
+
+test('patchFrom: editing a subscription, including cancelling one', () => {
+  const p = patchFrom('sub', { label: 'Netflix', amount: '15,99', every: 'monthly', endsAt: '01.03.2027', junk: 'x' });
+  assert.deepEqual(p, { label: 'Netflix', amount: 15.99, every: 'monthly', endsAt: utc(2027, 3, 1) });
+  assert.equal(patchFrom('sub', { every: 'fortnightly' }).every, undefined, 'an unknown period is ignored, not stored');
+  assert.equal(patchFrom('sub', { endsAt: '' }).endsAt, null, 'a cancellation can be undone');
+  assert.equal('ratePct' in patchFrom('sub', { ratePct: 20 }), false, 'a subscription has no interest rate');
+});
+
+test('a subscription charge is tagged, and is not also flagged recurring', () => {
+  // Both would put the same bill in two different "you have not entered this yet" lists.
+  const charge = cleanFlow({ dir: 'out', category: 'subscriptions', amount: 12.99, currency: 'EUR', subId: 's1', ts: utc(2026, 9, 5) });
+  assert.equal(charge.subId, 's1');
+  assert.equal(charge.recurring, false);
+  assert.equal(cleanFlow({ dir: 'out', amount: 1 }).subId, null);
+
+  const w = { from: utc(2026, 9, 1), to: utc(2026, 10, 1) - 1 };
+  const older = cleanFlow({ dir: 'out', category: 'subscriptions', amount: 12.99, currency: 'EUR', subId: 's1', ts: utc(2026, 8, 5) });
+  assert.deepEqual(missingRecurring([older, charge], w), [], 'the Subs tab reminds him, not the Month tab');
 });
