@@ -18,6 +18,7 @@
 import { readFileSync } from 'fs';
 import vm from 'vm';
 import { buildState } from '../src/pocket/web.js';
+import { balanceNow } from '../src/pocket/money.js';
 import { cleanAccount, cleanFlow, cleanSub } from '../src/pocket/money.js';
 
 const utc = (y, m, d) => Date.UTC(y, m - 1, d);
@@ -38,6 +39,16 @@ const accounts = [
   // while he was seven payments of ten through it.
   cleanAccount({ id: 'a8', label: 'Loan 1', kind: 'loan', currency: 'EGP', value: 445000, ratePct: 24, payout: 'quarterly', payment: 58063.45, startsAt: utc(2024, 11, 28), endsAt: utc(2027, 5, 28) }),
   cleanAccount({ id: 'a9', label: 'Loan 2', kind: 'loan', currency: 'EGP', value: 513000, ratePct: 28, payout: 'monthly', startsAt: utc(2024, 10, 26), endsAt: utc(2027, 5, 26) }),
+  // A euro loan he has been overpaying. The balance has to reflect what he actually paid, not
+  // what a borrower who paid exactly the schedule would owe.
+  cleanAccount({
+    id: 'a10', label: 'loan eur 1', kind: 'loan', currency: 'EUR', value: 9500, ratePct: 7.43,
+    payout: 'monthly', payment: 192, startsAt: utc(2025, 10, 11), endsAt: utc(2030, 2, 28),
+    payments: [
+      { id: 'x1', at: utc(2026, 3, 15), amount: 500, note: 'bonus' },
+      { id: 'x2', at: utc(2026, 7, 2), amount: 1000, note: 'extra' },
+    ],
+  }),
   cleanAccount({ id: 'a7', label: 'eToro', kind: 'portfolio', currency: 'USD', value: 1080 }),
 ];
 const spanFlows = [
@@ -147,6 +158,9 @@ function must(el, panel, needles, label) {
     if (!loanBlock.includes('still owed of the')) fail('a part-repaid loan must show what is left, not what was borrowed');
     if (!loanBlock.includes('% a year')) fail('a stated payment should reveal what the loan really costs');
     if (!el('p-worth').innerHTML.includes('Estimated —')) fail('a loan with no stated payment must say its figure is an estimate');
+    if (!worth.includes('+ I paid extra')) fail('every loan needs a way to record an overpayment');
+    if (!worth.includes('months early')) fail('overpaying has to say what it bought');
+    if (!worth.includes('bonus')) fail('an extra payment is listed, with what it was');
   }
   {
     // The numbers behind that block.
@@ -161,6 +175,15 @@ function must(el, panel, needles, label) {
     if (Math.abs(warned.effectiveCostPct - l1.term.implied.nominalPct) > 0.01) {
       fail('the pay-this-first warning and the loan disagree about its rate');
     }
+    // The overpaid euro loan: less owed than the schedule alone would say, and the consequence.
+    const eur = S.accounts.find((a) => a.label === 'loan eur 1');
+    const asScheduled = balanceNow({ ...eur, payments: [] }, NOW).amount;
+    if (!(eur.owedNow < asScheduled)) fail('1,500 paid on top has to reduce what is owed');
+    if (Math.round(asScheduled - eur.owedNow) < 1400) fail('and by roughly what he paid, plus the interest it saved');
+    if (eur.extraCount !== 2) fail('both extra payments should be counted');
+    if (!(eur.monthsEarly > 0)) fail('overpaying clears a loan earlier, and that is the point of doing it');
+    if (eur.paymentsLeft >= 52) fail('fewer instalments remain than the schedule alone would leave');
+
     const egp = S.interest.foreign.find((f) => f.currency === 'EGP');
     if (!egp || !(egp.breakEvenFallPct > 0)) fail('foreign interest must say how far the currency can fall');
 

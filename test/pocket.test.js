@@ -1192,3 +1192,91 @@ test('rent he types by hand is not counted twice', () => {
     assert.equal(scheduledFlows([FLAT()], w, { now, flows: [f] }).length, 1, `a different ${what} is different money`);
   }
 });
+
+// ---- Extra payments ----
+//
+// "I want to fix euro loan as I paid some extra already and it is less than it now shows. I need
+//  to be able to add extra payments when I want, and add past instalments so you count right."
+//
+// A balance derived only from dates says he owes what a borrower who never paid a penny extra
+// would owe. He has. So a loan carries its own history of what he actually paid, and the balance
+// is walked period by period over it rather than discounted from a schedule.
+
+const EURLOAN = (payments = []) => cleanAccount({
+  id: 'e1', label: 'loan eur 1', kind: 'loan', currency: 'EUR', value: 9500, ratePct: 7.43,
+  payout: 'monthly', payment: 192, startsAt: utc(2025, 10, 11), endsAt: utc(2030, 2, 28), payments,
+});
+const TODAY = utc(2026, 9, 15);
+
+test('the walked balance agrees with the discounted one when nothing extra was paid', () => {
+  // Two ways of asking the same question, and they have to give the same answer or the change
+  // that made overpayments possible quietly moved every loan in the app.
+  const b = balanceNow(LOAN1(), SEPT);
+  assert.equal(Math.round(b.amount), 157664);
+  assert.equal(b.paymentsMade, 7);
+  assert.equal(b.paymentsLeft, 3, 'three instalments left, not four — a float tail is not a payment');
+  assert.equal(b.extra, 0);
+  assert.equal(b.monthsEarly, 0, 'paying exactly the schedule finishes exactly on time');
+
+  // Still exact at both ends.
+  assert.equal(Math.round(balanceNow(LOAN1(), utc(2024, 12, 1)).amount), 445000);
+  assert.equal(balanceNow(LOAN1(), utc(2028, 1, 1)).amount, 0);
+});
+
+test('an extra payment comes straight off what is owed', () => {
+  const plain = balanceNow(EURLOAN(), TODAY);
+  const paid = balanceNow(EURLOAN([
+    { id: 'x1', at: utc(2026, 3, 15), amount: 500, note: 'bonus' },
+    { id: 'x2', at: utc(2026, 7, 2), amount: 1000 },
+  ]), TODAY);
+
+  assert.equal(paid.extra, 1500);
+  assert.equal(paid.extraCount, 2);
+  assert.ok(paid.amount < plain.amount, 'this is the whole complaint: it showed more than he owes');
+  // At least the 1,500 itself, and a little more for the interest it stopped accruing.
+  assert.ok(plain.amount - paid.amount >= 1500);
+  assert.equal(paid.paymentsMade, plain.paymentsMade, 'an overpayment is not an instalment');
+});
+
+test('overpaying buys months and interest, and the app says how many', () => {
+  const paid = balanceNow(EURLOAN([{ id: 'x1', at: utc(2026, 3, 15), amount: 1500 }]), TODAY);
+  assert.ok(paid.monthsEarly > 0, 'the number no lender puts on a statement');
+  assert.ok(paid.paymentsLeft < balanceNow(EURLOAN(), TODAY).paymentsLeft);
+  assert.ok(paid.interestSaved > 0);
+  // Same principal either way, so every euro of difference in what he hands over is interest.
+  assert.ok(paid.interestSaved < 1500, 'saving cannot exceed what he put in');
+});
+
+test('a payment dated in the future has not been made yet', () => {
+  const later = balanceNow(EURLOAN([{ id: 'x1', at: utc(2027, 6, 1), amount: 1000 }]), TODAY);
+  assert.equal(later.extra, 0, 'the app must not spend money he has not spent');
+  assert.equal(Math.round(later.amount), Math.round(balanceNow(EURLOAN(), TODAY).amount));
+});
+
+test('overpaying a loan into the ground settles it and never goes below nothing', () => {
+  const cleared = balanceNow(EURLOAN([{ id: 'x1', at: utc(2026, 3, 15), amount: 99999 }]), TODAY);
+  assert.equal(cleared.amount, 0);
+  assert.equal(cleared.settled, true);
+  assert.ok(cleared.amount >= 0, 'a debt cannot go negative — that would be an asset');
+  assert.ok(cleared.repaid <= 9500, 'and he cannot repay more than he borrowed, as far as the balance is concerned');
+});
+
+test('an extra payment on something with no schedule still reduces it', () => {
+  // A credit card he has been paying down: no term, no instalment, but the money left.
+  const card = cleanAccount({
+    kind: 'card', currency: 'EUR', value: 1200, ratePct: 19,
+    payments: [{ id: 'p1', at: utc(2026, 5, 1), amount: 300 }],
+  });
+  const b = balanceNow(card, TODAY);
+  assert.equal(b.amount, 900);
+  assert.equal(b.extra, 300);
+});
+
+test('cleanPayment: an extra payment is sanitised like everything else', () => {
+  assert.equal(cleanAccount({ kind: 'loan', payments: [{ amount: -5 }] }).payments.length, 0, 'a negative payment is not a payment');
+  assert.equal(cleanAccount({ kind: 'loan', payments: 'nonsense' }).payments.length, 0);
+  const two = cleanAccount({ kind: 'loan', payments: [{ at: 2000, amount: 1 }, { at: 1000, amount: 2 }] }).payments;
+  assert.equal(two[0].at, 1000, 'kept in date order, because the balance is walked through them');
+  // And an asset never grows one.
+  assert.equal(balanceNow(cleanAccount({ kind: 'property', currency: 'EGP', value: 100, payments: [{ at: 1, amount: 50 }] }), TODAY).amount, 100);
+});

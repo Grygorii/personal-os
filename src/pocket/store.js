@@ -18,7 +18,7 @@
 // had that call not existed it would have crashed later on the first save instead, which is a
 // worse place to find out.
 import { rawCol as col } from '../db.js';
-import { cleanAccount, cleanFlow, cleanEvent, cleanSub } from './money.js';
+import { cleanAccount, cleanFlow, cleanEvent, cleanSub, cleanPayment } from './money.js';
 
 export async function accounts() {
   return (await col('accounts').find({}).toArray()).map(cleanAccount);
@@ -28,6 +28,27 @@ export async function saveAccount(a) {
   const clean = cleanAccount(a);
   await col('accounts').updateOne({ id: clean.id }, { $set: clean }, { upsert: true });
   return clean;
+}
+
+/** An extra payment against a loan — an overpayment, a lump off the principal, an instalment the
+ *  start date does not account for. Appended to the account's own history, because a balance
+ *  derived only from dates says he owes what a borrower who never paid a penny extra would owe. */
+export async function addPayment(id, payment) {
+  const doc = await col('accounts').findOne({ id: String(id || '') });
+  if (!doc) return null;
+  const clean = cleanPayment({ ...payment, id: Date.now().toString(36) });
+  if (!(clean.amount > 0)) return null;
+  const merged = cleanAccount({ ...doc, payments: [...(doc.payments || []), clean] });
+  await col('accounts').updateOne({ id: doc.id }, { $set: merged });
+  return merged;
+}
+
+export async function removePayment(id, paymentId) {
+  const doc = await col('accounts').findOne({ id: String(id || '') });
+  if (!doc) return null;
+  const merged = cleanAccount({ ...doc, payments: (doc.payments || []).filter((p) => p.id !== String(paymentId)) });
+  await col('accounts').updateOne({ id: doc.id }, { $set: merged });
+  return merged;
 }
 
 export async function removeAccount(id) {

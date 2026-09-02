@@ -42,6 +42,15 @@ export const PASSIVE_KINDS = ['rent', 'interest', 'dividend'];
 export const PAYOUT_KINDS = ['monthly', 'quarterly', 'yearly', 'maturity'];
 export const PAYOUT_MONTHS = { monthly: 1, quarterly: 3, yearly: 12 };
 
+export function cleanPayment(p) {
+  return {
+    id: txt(p?.id, 32) || Date.now().toString(36),
+    at: num(p?.at) || Date.now(),
+    amount: Math.max(0, num(p?.amount)),
+    note: txt(p?.note, 120),
+  };
+}
+
 export function cleanAccount(a) {
   return {
     id: txt(a?.id, 32) || Date.now().toString(36),
@@ -66,6 +75,13 @@ export function cleanAccount(a) {
     // loan bills 58,063.45 a quarter, the best model here says 60,461, and the model is the one
     // that is wrong. Null means he has not said, and then it is derived and labelled as such.
     payment: a?.payment == null ? null : Math.max(0, num(a.payment)) || null,
+    // EVERY PAYMENT HE HAS ACTUALLY MADE beyond the schedule: an overpayment, a lump off the
+    // principal, an instalment the start date does not account for. A balance derived only from
+    // dates says he owes what a borrower who never paid a penny extra would owe — and he has.
+    // This is the account's own history, and it is what makes the balance his rather than the
+    // schedule's.
+    payments: (Array.isArray(a?.payments) ? a.payments : []).slice(0, 400)
+      .map(cleanPayment).filter((p) => p.amount > 0).sort((x, y) => x.at - y.at),
     note: txt(a?.note, 300),
     at: num(a?.at) || Date.now(),
   };
@@ -128,28 +144,98 @@ export function cleanFlow(f) {
  *  cost that. Everything else keeps the figure he typed, which is right for a credit-card
  *  balance, a deposit, a flat and a bank account alike.
  */
+// Below this, a balance is nought. Float, not judgement: half a cent is far under any real
+// residue and far over the 1e-11 that walking a loan leaves behind.
+const CENT = 0.005;
+
 export function balanceNow(a, now = Date.now()) {
   const entered = Math.max(0, num(a?.value));
-  if (!isLiability(a?.kind)) return { amount: entered, entered, settled: false, repaid: 0 };
+  const pays = (a?.payments || []).filter((p) => p.amount > 0);
+  const nil = { amount: entered, entered, settled: false, repaid: 0, extra: 0, extraCount: 0 };
+  if (!isLiability(a?.kind)) return nil;
+
   const t = depositProgress(a, now);
   const s = t?.schedule;
-  if (!t?.hasTerm || !s || !s.total) return { amount: entered, entered, settled: false, repaid: 0 };
-  const left = Math.max(0, s.total - s.made);
-  if (left === 0) return { amount: 0, entered, settled: true, repaid: entered, paymentsLeft: 0 };
 
-  // Discounted at the loan's OWN rate — the one its payments imply when he has stated them,
-  // and only otherwise the headline. Mixing the two (his instalment against the paperwork's
-  // rate) is two different loans, and it does not even return the principal on day one.
+  // No schedule to amortise against, but an overpayment still reduces what is owed. A credit
+  // card balance he has been paying down is exactly this case.
+  if (!t?.hasTerm || !s || !s.total || !s.every) {
+    const extra = pays.filter((p) => p.at <= now).reduce((n, p) => n + p.amount, 0);
+    const amount = Math.max(0, entered - extra);
+    return { ...nil, amount, settled: amount <= 0 && extra > 0, repaid: entered - amount, extra, extraCount: pays.filter((p) => p.at <= now).length };
+  }
+
+  // Discounted at the loan's OWN rate — the one its payments imply when he has stated them, and
+  // only otherwise the headline. Mixing the two (his instalment against the paperwork's rate) is
+  // two different loans, and it does not even return the principal on day one.
   const r = t.implied
     ? t.implied.perPeriodPct / 100
     : (s.every && entered > 0 && t.perYear ? (t.perYear / entered) * (s.every / 12) : 0);
-  const owed = r > 0
-    ? (s.perPayment * (1 - Math.pow(1 + r, -left))) / r
-    : s.perPayment * left;
-  // Never more than was borrowed: a payoff above the original principal would mean the app had
+
+  // WALKED, NOT DISCOUNTED. Present value gives the right answer for a borrower who paid exactly
+  // the schedule and nothing more; it has no way to hear about the 500 he put in last March.
+  // Walking the loan period by period does: interest, then the instalment, then whatever else he
+  // actually paid that period.
+  const dates = [];
+  for (let i = 1; i <= 2400; i++) {
+    const at = addMonths(s.start, i * s.every);
+    if (a.endsAt && at > a.endsAt) break;
+    dates.push(at);
+  }
+
+  let bal = entered, made = 0, extra = 0, extraCount = 0, pi = 0;
+  const sorted = [...pays].sort((x, y) => x.at - y.at);
+  let clearedAt = null;
+  for (const at of dates) {
+    if (at > now) break;
+    bal = bal * (1 + r);
+    while (pi < sorted.length && sorted[pi].at <= at) {
+      bal -= sorted[pi].amount; extra += sorted[pi].amount; extraCount++; pi++;
+    }
+    bal -= s.perPayment;
+    made++;
+    // ZERO, WITHIN REASON. Walking ten periods lands on 3.6e-11 rather than 0, and a balance of
+    // four hundred-billionths of a pound is still a balance to a `> 0` test — which quietly adds
+    // a whole extra instalment to how long the loan has left.
+    if (bal <= CENT) { bal = 0; clearedAt = at; break; }
+  }
+  // Anything paid since the last instalment fell due.
+  while (pi < sorted.length && sorted[pi].at <= now) {
+    bal = Math.max(0, bal - sorted[pi].amount); extra += sorted[pi].amount; extraCount++; pi++;
+    if (bal <= 0 && !clearedAt) clearedAt = sorted[pi - 1].at;
+  }
+
+  // Never more than was borrowed: a balance above the original principal would mean the app had
   // invented debt, and that is the direction a money app must never be wrong in.
-  const amount = Math.min(entered, owed);
-  return { amount, entered, settled: false, repaid: Math.max(0, entered - amount), paymentsLeft: left };
+  const amount = Math.max(0, Math.min(entered, bal));
+
+  // WHAT THE OVERPAYING BOUGHT HIM, which is the thing no lender ever puts on a statement.
+  // Keep walking with the instalment alone and see when it hits zero.
+  let left = 0;
+  if (amount > 0) {
+    let b = amount;
+    while (left < 2400 && b > CENT) { b = b * (1 + r) - s.perPayment; left++; if (s.perPayment <= b * r) { left = null; break; } }
+  }
+  const scheduledTotal = s.total;
+  const willTake = left == null ? null : made + left;
+  const monthsEarly = willTake == null ? null : Math.max(0, (scheduledTotal - willTake) * s.every);
+  // Same principal either way, so every euro of difference in what he hands over is interest.
+  const totalWithout = s.perPayment * scheduledTotal;
+  const totalWith = left == null ? null : s.perPayment * willTake + extra;
+  const interestSaved = totalWith == null ? null : Math.max(0, totalWithout - totalWith);
+
+  return {
+    amount, entered,
+    settled: amount <= 0,
+    repaid: Math.max(0, entered - amount),
+    paymentsMade: made,
+    extra, extraCount,
+    clearedAt,
+    // Nulls where overpaying has been so large the instalment no longer covers the interest, or
+    // so small it never will. Both are real answers and neither is a number.
+    monthsEarly, interestSaved,
+    paymentsLeft: left,
+  };
 }
 
 /** Everything he owns, in one currency. Anything without a rate is EXCLUDED from the total and

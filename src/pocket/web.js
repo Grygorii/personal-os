@@ -26,7 +26,7 @@ import {
   parseEntry, ACCOUNT_KINDS, PAYOUT_KINDS, isLiability, forecastRange, depositProgress,
   monthWindowOf, recentMonths, monthsSummary, patchFrom, depositsSummary, contractedIncome,
   missingRecurring, cleanFlow, balanceNow, subsSummary, BILLING_PERIODS, cleanSub,
-  scheduledFlows, EVENT_KINDS,
+  scheduledFlows, EVENT_KINDS, parseDate,
 } from './money.js';
 
 const json = (res, code, body) => {
@@ -149,6 +149,14 @@ export function buildState({ base = 'EUR', table, monthKey, accounts = [], spanF
       owedNow: bal.amount,
       repaidSoFar: bal.repaid,
       settled: bal.settled,
+      // What overpaying has bought him: months off the end, and interest he never has to pay.
+      // The one thing no lender puts on a statement.
+      extraPaid: bal.extra || 0,
+      extraCount: bal.extraCount || 0,
+      monthsEarly: bal.monthsEarly ?? null,
+      interestSavedInBase: bal.interestSaved == null ? null : fx.toBase(bal.interestSaved, a.currency, table),
+      paymentsMade: bal.paymentsMade ?? null,
+      paymentsLeft: bal.paymentsLeft ?? null,
       owedNowInBase: fx.toBase(bal.amount, a.currency, table),
       repaidInBase: fx.toBase(bal.repaid, a.currency, table),
       inBase: fx.toBase(bal.amount, a.currency, table),
@@ -328,6 +336,18 @@ export function startWeb(port = process.env.PORT || 3000) {
           else if (body.useMeasured !== undefined) await store.setPlanBase(body.useMeasured);
           else if (body.edit) await store.updatePlanEvent(String(body.edit), body.patch || {});
           else await store.addPlanEvent(body);
+          return json(res, 200, await state(asked()));
+        }
+
+        // An extra payment against a loan. This is the difference between what the schedule
+        // says he owes and what he actually owes, and only he knows about it.
+        if (url.pathname === '/api/payment' && req.method === 'POST') {
+          const body = await readBody(req);
+          const id = String(body.id || '');
+          const saved = body.remove
+            ? await store.removePayment(id, String(body.remove))
+            : await store.addPayment(id, { at: parseDate(body.at) ?? Date.now(), amount: body.amount, note: body.note });
+          if (!saved) return json(res, 400, { error: body.remove ? 'Nothing with that id' : 'That needs an amount.' });
           return json(res, 200, await state(asked()));
         }
 

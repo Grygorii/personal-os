@@ -371,7 +371,7 @@ function drawWorth() {
     const pays = owes ? 'You pay' : 'Pays you';
     const sched = !s ? '' : s.payout === 'maturity'
       ? `<div class="rmeta" style="margin-top:4px">All of it at the end — nothing ${owes ? 'is due' : 'lands'} before ${dd(t.end)}.</div>`
-      : `<div class="rmeta" style="margin-top:4px">${pays} <b>${Math.round(s.perPayment).toLocaleString()} ${esc(a.currency)}</b>${s.perPaymentInBase != null ? ` (${money(s.perPaymentInBase)})` : ''} ${esc(s.payout)}${s.next ? ` · next ${dd(s.next)}` : ''}${s.total ? ` · ${s.made} of ${s.total} so far` : ''}
+      : `<div class="rmeta" style="margin-top:4px">${pays} <b>${Math.round(s.perPayment).toLocaleString()} ${esc(a.currency)}</b>${s.perPaymentInBase != null ? ` (${money(s.perPaymentInBase)})` : ''} ${esc(s.payout)}${s.next ? ` · next ${dd(s.next)}` : ''}${s.total ? ` · ${(owes && a.paymentsMade != null) ? a.paymentsMade : s.made} of ${s.total} so far` : ''}${(owes && a.paymentsLeft != null && a.extraCount > 0) ? ` · ${a.paymentsLeft} left` : ''}
         ${s.estimated ? '<br><span class="out">Estimated — tap ✎ and enter what your statement actually says.</span>' : ''}</div>`;
 
     /* A LOAN IS NOT A DEPOSIT, and this block used to say it was: "3,191 EUR earned so far", in
@@ -390,6 +390,26 @@ function drawWorth() {
         <span style="color:var(--dim)">${money(t.remainingInBase)} still to come</span>
       </div>
       <div class="rmeta" style="margin-top:3px">Pays back ${Math.round(t.valueAtMaturity).toLocaleString()} ${esc(a.currency)} at maturity</div>`;
+
+    /* EXTRA PAYMENTS, and what they bought.
+       A balance derived only from dates says he owes what a borrower who never paid a penny
+       extra would owe — and he has. So a loan carries its own history of overpayments, and the
+       consequence is spelled out: months off the end and interest never paid, which is the one
+       thing no lender ever puts on a statement. */
+    const extras = !owes ? '' : `
+      <div style="margin-top:6px">
+        ${(a.payments || []).map((p) => `<div class="todo" style="padding:7px 0">
+          <div class="rmain">
+            <div class="rmeta">Extra payment · ${dd(p.at)}${p.note ? ' · ' + esc(p.note) : ''}</div>
+          </div>
+          <div class="ramt out" style="font-size:13px">−${esc(Math.round(p.amount).toLocaleString())} ${esc(a.currency)}</div>
+          <button class="del" data-pay-del="${esc(p.id)}" data-acct="${esc(a.id)}" aria-label="Remove">×</button>
+        </div>`).join('')}
+        ${a.extraPaid > 0 && a.monthsEarly ? `<div class="rmeta" style="margin-top:4px;color:var(--in)">
+          <b>${esc(Math.round(a.extraPaid).toLocaleString())} ${esc(a.currency)} paid on top clears this ${a.monthsEarly} months early${
+            a.interestSavedInBase > 0 ? `, saving ${money(a.interestSavedInBase)} of interest` : ''}.</b></div>` : ''}
+        <button class="add" data-pay-add="${esc(a.id)}" style="margin-top:6px">+ I paid extra</button>
+      </div>`;
 
     /* What it REALLY costs. A 24% loan whose instalments imply 20.6% is a 20.6% loan, and the
        gap between the paperwork and the payment is only ever visible from the payment. */
@@ -419,7 +439,8 @@ function drawWorth() {
         ${progress}
         ${sched}
         ${truth}
-      </div>` : (t ? `<div class="rmeta" style="margin-top:6px">${money(t.perYearInBase)} a year${t.hasTerm === false && t.start ? ' · running since ' + dd(t.start) : ''}</div>${sched}${yieldLine}` : '');
+        ${extras}
+      </div>` : (t ? `<div class="rmeta" style="margin-top:6px">${money(t.perYearInBase)} a year${t.hasTerm === false && t.start ? ' · running since ' + dd(t.start) : ''}</div>${sched}${yieldLine}${extras}` : '');
 
     return `
     <div style="padding:11px 0;border-top:1px solid var(--line)">
@@ -844,6 +865,27 @@ function subFields(r) {
     only record that you stopped it.</div>`;
 }
 
+/** "I paid extra." Date, amount, and a word about what it was — because in six months
+ *  "1,000 on 2 July" means nothing and "1,000, bonus" means everything. */
+function openExtraPayment(accountId) {
+  const a = S.accounts.find((x) => x.id === accountId);
+  if (!a) return;
+  editing = { kind: 'extraPayment', id: accountId };
+  $('etitle').textContent = `Extra payment on ${a.label || a.kind}`;
+  $('eerr').hidden = true;
+  $('efields').innerHTML = `
+    <div class="two">
+      ${field(`Amount in ${esc(a.currency)}`, input('amount', '', 'inputmode="decimal" placeholder="500"'))}
+      ${field('When', input('at', isoOf(Date.now()), 'type="date"'))}
+    </div>
+    ${field('What was it', input('note', '', 'placeholder="bonus"'))}
+    <div class="note" style="margin-top:0">Anything you paid beyond the instalment: an
+    overpayment, a lump off the principal, or an instalment from before the start date this loan
+    is set to. It comes straight off what you owe, and the app will tell you how many months
+    earlier this clears because of it.</div>`;
+  $('esheet').hidden = false;
+}
+
 function openEdit(kind, id) {
   const it = kind === 'flow' ? S.flows.find((f) => f.id === id)
     : kind === 'sub' ? (S.subs?.rows || []).find((r) => r.id === id)
@@ -868,6 +910,20 @@ $('efields').onclick = (e) => {
 
 $('esave').onclick = async () => {
   if (!editing) return;
+  if (editing.kind === 'extraPayment') {
+    const v = {};
+    $('efields').querySelectorAll('[data-k]').forEach((el) => { v[el.dataset.k] = el.value.trim(); });
+    if (!Number(v.amount)) { $('eerr').textContent = 'How much did you pay?'; $('eerr').hidden = false; return; }
+    $('esave').disabled = true;
+    try {
+      S = await api('/api/payment', { id: editing.id, amount: Number(v.amount), at: v.at, note: v.note });
+      draw(); closeEdit();
+      tg?.HapticFeedback?.notificationOccurred?.('success');
+    } catch (err) { $('eerr').textContent = err.message; $('eerr').hidden = false; }
+    finally { $('esave').disabled = false; }
+    return;
+  }
+
   if (editing.kind === 'planEvent') {
     const v = {};
     $('efields').querySelectorAll('[data-k]').forEach((el) => { v[el.dataset.k] = el.value.trim(); });
@@ -975,6 +1031,16 @@ document.body.addEventListener('click', async (e) => {
     if (await work(() => api('/api/confirm', { schedId: cfm.dataset.confirm }))) {
       tg?.HapticFeedback?.notificationOccurred?.('success');
     }
+    return;
+  }
+
+  // Recording money he put in beyond the schedule, and taking one back out again.
+  const payAdd = e.target.closest('[data-pay-add]');
+  if (payAdd) { openExtraPayment(payAdd.dataset.payAdd); return; }
+  const payDel = e.target.closest('[data-pay-del]');
+  if (payDel) {
+    if (!await ask('Remove this extra payment?')) return;
+    await work(() => api('/api/payment', { id: payDel.dataset.acct, remove: payDel.dataset.payDel }));
     return;
   }
 

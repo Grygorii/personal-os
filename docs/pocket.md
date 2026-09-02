@@ -56,6 +56,31 @@ buys his groceries. `breakEvenFall()` — the same arithmetic as `realReturn`, s
 it needs no forecast and no rate history. The rate is weighted by money, not by count: a rate on
 500,000 matters more than one on 5,000.
 
+### Extra payments
+
+He had been overpaying his euro loan, and the app showed him owing more than he did — because the
+balance was **derived from dates**: what a borrower who paid exactly the schedule and nothing more
+would owe. It had no way to hear about the 500 he put in last March.
+
+A liability now carries `payments[]`, its own history of everything paid beyond the instalment: an
+overpayment, a lump off the principal, an instalment from before the start date the loan is set
+to. `+ I paid extra` on any loan records one.
+
+So `balanceNow` **walks** the loan instead of discounting it — period by period, interest, then
+the instalment, then whatever else he actually paid that period. Present value gives the right
+answer only for a borrower who never deviated from the schedule; walking hears about every extra
+euro. The two agree exactly when there are none, which is the regression test.
+
+And then the number no lender ever puts on a statement: **how many months earlier this clears and
+how much interest he never pays.** Same principal either way, so every euro of difference in what
+he hands over is interest — €1,500 on that loan takes eight months off the end.
+
+A payment dated in the future has not been made. A balance never goes below nothing, and never
+above what was borrowed.
+
+*(Half a cent is treated as nought. Walking ten periods lands on 3.6e-11 rather than 0, and a `> 0`
+test on that quietly adds a whole extra instalment to how long the loan has left.)*
+
 ### One loan, one rate
 
 The card charged Loan 1 at the 24% on its paperwork, directly beneath a warning saying the loan
@@ -191,10 +216,10 @@ a price without one: it looks current.
 2. Railway → same project → **New Service** → same repo.
 3. Start command: `npm run start:pocket`.
 4. Env vars above, `DB_NAME=pocket` among them.
-5. Look for `[boot] pocket-8 · db=pocket · base=EUR`.
+5. Look for `[boot] pocket-9 · db=pocket · base=EUR`.
 
 **Which build is actually serving?** `GET /health` (or `/version`) answers without Telegram —
-`{"ok":true,"app":"pocket","version":"pocket-8"}`. The marker lives in `src/pocket/version.js`;
+`{"ok":true,"app":"pocket","version":"pocket-9"}`. The marker lives in `src/pocket/version.js`;
 bump it on every deploy. Kept has `GET /version` for exactly the same reason: "is my change even
 out there yet" is the first question of every deploy, and guessing at it wastes an evening.
 
