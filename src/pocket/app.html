@@ -31,8 +31,8 @@
   .wrap{max-width:640px;margin:0 auto;padding:14px}
 
   /* ---- Tabs ---- */
-  .tabs{display:flex;gap:4px;background:var(--card);border-radius:12px;padding:4px;margin-bottom:16px;position:sticky;top:8px;z-index:5}
-  .tab{flex:1;border:0;background:none;color:var(--dim);font:600 13px/1 inherit;padding:11px 2px;border-radius:9px;cursor:pointer;white-space:nowrap}
+  .tabs{display:flex;gap:2px;background:var(--card);border-radius:12px;padding:4px;margin-bottom:16px;position:sticky;top:8px;z-index:5}
+  .tab{flex:1;border:0;background:none;color:var(--dim);font:600 12px/1 inherit;padding:11px 1px;border-radius:9px;cursor:pointer;white-space:nowrap}
   .tab.on{background:var(--bg);color:var(--ink)}
   .panel[hidden]{display:none}
 
@@ -193,6 +193,7 @@
     <button class="tab" data-tab="subs" role="tab">Subs</button>
     <button class="tab" data-tab="goal" role="tab">Goal</button>
     <button class="tab" data-tab="plan" role="tab">Plan</button>
+    <button class="tab" data-tab="fx" role="tab">Rates</button>
   </div>
 
   <div class="panel" id="p-month"></div>
@@ -200,6 +201,7 @@
   <div class="panel" id="p-subs" hidden></div>
   <div class="panel" id="p-goal" hidden></div>
   <div class="panel" id="p-plan" hidden></div>
+  <div class="panel" id="p-fx" hidden></div>
 </div>
 
 <button class="fab" id="fab">+  Add</button>
@@ -283,7 +285,7 @@ function draw() {
     for (const name of TABS) $('p-' + name).innerHTML = msg;
     return;
   }
-  drawMonth(); drawWorth(); drawSubs(); drawGoal(); drawPlan();
+  drawMonth(); drawWorth(); drawSubs(); drawGoal(); drawPlan(); drawFx();
 }
 
 const dd = (ms) => new Date(ms).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
@@ -612,7 +614,7 @@ function drawSubs() {
       </div>`).join('')}</div>` : ''}
     <div class="card"><h2>What you subscribe to</h2>
       ${rows || `<div class="empty">Nothing yet. Tap Add and type <b>sub 12.99 netflix monthly</b>.</div>`}
-      ${rows ? '<div class="note">✓ records a charge into the month. Nothing is ever recorded on its own — a subscription is what you agreed to pay, and the Month tab counts what actually left.</div>' : ''}
+      ${rows ? '<div class="note">Every charge lands in the month on the day it bills, the same as a loan instalment or a deposit coupon — one still ahead shows under “still due”. ✓ confirms one early if it has already gone through.</div>' : ''}
     </div>
     ${(S_.unconverted || []).length ? `<div class="warn">No exchange rate for ${esc(S_.unconverted.join(', '))} — not in the totals above.</div>` : ''}`;
 }
@@ -818,8 +820,92 @@ function drawPlan() {
   $('addevent').onclick = () => openPlanEvent();
 }
 
+/* WHAT THE CURRENCY IS DOING TO HIM.
+   Nine tenths of what he owns is in Egyptian pounds and every bill he pays is in euro. That is
+   the largest single fact about this household — larger than which deposit pays what — and the
+   app could convert his money for months without ever saying what the currency itself had cost
+   him. The arithmetic for it (realReturn) has been in fx.js since the first week and had never
+   once run, because nothing ever passed it a rate from the past.
+
+   Nothing here is invented. Where he has not said what he paid for the money, it asks instead of
+   guessing; where there is no recorded history, it says the record starts today rather than
+   drawing a line through one point. */
+function drawFx() {
+  const list = S.currencies || [];
+  if (!list.length) {
+    $('p-fx').innerHTML = `<div class="card"><h2>Currencies</h2>
+      <div class="empty">Everything you hold is already in ${esc(S.base)}, so there is nothing here
+      to move against you.</div></div>`;
+    return;
+  }
+
+  const pctFmt = (v) => (v > 0 ? '+' : '') + v.toFixed(1) + '%';
+
+  $('p-fx').innerHTML = list.map((c) => {
+    if (c.unconverted) {
+      return `<div class="card"><h2>${esc(c.currency)}</h2>
+        <div class="warn">No rate for ${esc(c.currency)} today, so nothing it holds is in any total.</div></div>`;
+    }
+    const untold = c.holdings.filter((h) => h.rateThen == null);
+    return `
+    <div class="card">
+      <h2>${esc(c.currency)}</h2>
+      <div class="big">${c.rateNow.toLocaleString(undefined, { maximumFractionDigits: 2 })}<span style="font-size:15px;color:var(--dim);font-weight:400"> ${esc(c.currency)} to 1 ${esc(S.base)}</span></div>
+      <div class="sub">${esc(S.ratesAge || '')}${c.changePct != null ? ` · ${pctFmt(c.changePct)} since ${dd(c.since)}` : ''}</div>
+      ${c.series.length < 2 ? `<div class="note">The rate is recorded once a day from now on. There
+        ${c.series.length === 1 ? 'is one day' : 'are no days'} on record so far, so there is nothing
+        to compare today against yet — that fills in on its own.</div>` : ''}
+
+      <div class="row" style="margin-top:12px">
+        <div class="rmain"><div class="rlabel">What you hold in ${esc(c.currency)}</div>
+          <div class="rmeta">assets minus what you owe in it</div></div>
+        <div class="ramt ${c.exposureInBase >= 0 ? 'in' : 'out'}">${money(c.exposureInBase)}</div>
+      </div>
+
+      ${c.movedInBase != null ? `<div class="row">
+        <div class="rmain"><div class="rlabel">What the rate has done to that</div>
+          <div class="rmeta">since you got it${c.untold ? ` · ${c.untold} holding${c.untold === 1 ? '' : 's'} not counted, no starting rate` : ''}</div></div>
+        <div class="ramt ${c.movedInBase >= 0 ? 'in' : 'out'}">${money(c.movedInBase)}</div>
+      </div>` : ''}
+
+      <div class="note" style="margin-top:12px"><b>If ${esc(c.currency)} weakens ${c.sensitivity[0].weakensPct}% against ${esc(S.base)},
+      you are ${money(Math.abs(c.sensitivity[0].deltaInBase))} ${c.sensitivity[0].deltaInBase < 0 ? 'poorer' : 'richer'};
+      at ${c.sensitivity[1].weakensPct}%, ${money(Math.abs(c.sensitivity[1].deltaInBase))}.</b>
+      No forecast in that — it is the size of the bet you are already holding, which is what decides
+      whether it is one you want.</div>
+    </div>
+
+    <div class="card">
+      <h2>Holding by holding</h2>
+      ${c.holdings.map((h) => `
+        <div class="row">
+          <span class="dot ${h.owed ? 'out' : 'in'}"></span>
+          <div class="rmain">
+            <div class="rlabel">${esc(h.label)}</div>
+            <div class="rmeta">${h.rateThen
+              ? `got it at ${h.rateThen.toLocaleString(undefined, { maximumFractionDigits: 2 })} · worth ${money(h.thenInBase)} then`
+              : 'no starting rate — tap ✎ on it in Worth and fill in “Rate when you got it”'}</div>
+            ${h.real ? `<div class="rmeta ${h.real.realPct >= 0 ? 'in' : 'out'}">Its ${h.kind === 'loan' || h.kind === 'card' ? 'cost' : 'return'} is
+              <b>${h.real.realPct.toFixed(1)}% a year in ${esc(S.base)}</b>, not the headline —
+              the rate moved ${h.real.currencyMovePct.toFixed(1)}% under it.</div>` : ''}
+          </div>
+          <div class="ramt ${h.moveInBase == null ? '' : h.moveInBase >= 0 ? 'in' : 'out'}">
+            ${h.moveInBase == null ? money(h.nowInBase) : `${h.moveInBase >= 0 ? '+' : ''}${money(h.moveInBase)}`}
+            <span class="rorig">${h.moveInBase == null ? 'today' : 'from the rate'}</span>
+          </div>
+        </div>`).join('')}
+      ${untold.length ? `<div class="note">A holding with no starting rate is shown at what it is
+      worth today. The app will not invent a rate you did not pay — a made-up starting point makes
+      a made-up gain, which is worse than no answer.</div>` : ''}
+    </div>`;
+  }).join('') + `
+    <div class="note">A high local rate and a falling currency are not two separate facts: the
+    first is largely payment for the second. That is the same question this app asks of a 20%
+    deposit and of a 24% loan, asked of the money itself.</div>`;
+}
+
 // ---- Tabs ----
-const TABS = ['month', 'worth', 'subs', 'goal', 'plan'];
+const TABS = ['month', 'worth', 'subs', 'goal', 'plan', 'fx'];
 document.querySelectorAll('.tab').forEach((t) => t.onclick = () => {
   document.querySelectorAll('.tab').forEach((x) => x.classList.toggle('on', x === t));
   for (const name of TABS) $('p-' + name).hidden = (name !== t.dataset.tab);
@@ -920,12 +1006,16 @@ function accountFields(a) {
       ${field('Starts', input('startsAt', isoOf(a.startsAt), 'type="date"'))}
       ${field('Ends', input('endsAt', isoOf(a.endsAt), 'type="date"'))}
     </div>
+    ${a.currency !== S.base ? field(`Rate when you got it — ${esc(a.currency)} to 1 ${esc(S.base)}`,
+      input('rateThen', a.rateThen ?? '', 'inputmode="decimal" placeholder="e.g. 54"')) : ''}
     <div class="note" style="margin-top:0">Dates and how often it pays are what turn a rate into money
     on a date — leave them empty if you don't know them. The payment beats every calculation here:
     a loan repays principal as well as interest, and only your statement knows the exact figure.
     <br><br><b>A flat does not need a rate.</b> Put the rent in the payment box and set how often it
     arrives, and the app works the yield out for you — and drops the rent into each month as passive
-    income towards your goal.</div>`;
+    income towards your goal.
+    <br><br>The <b>rate when you got it</b> is what unlocks the Rates tab for this holding: what
+    the currency has done to it since, and what its return really is in ${esc(S.base)}.</div>`;
 }
 
 function subFields(r) {

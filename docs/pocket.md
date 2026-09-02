@@ -216,10 +216,10 @@ a price without one: it looks current.
 2. Railway → same project → **New Service** → same repo.
 3. Start command: `npm run start:pocket`.
 4. Env vars above, `DB_NAME=pocket` among them.
-5. Look for `[boot] pocket-11 · db=pocket · base=EUR`.
+5. Look for `[boot] pocket-12 · db=pocket · base=EUR`.
 
 **Which build is actually serving?** `GET /health` (or `/version`) answers without Telegram —
-`{"ok":true,"app":"pocket","version":"pocket-11"}`. The marker lives in `src/pocket/version.js`;
+`{"ok":true,"app":"pocket","version":"pocket-12"}`. The marker lives in `src/pocket/version.js`;
 bump it on every deploy. Kept has `GET /version` for exactly the same reason: "is my change even
 out there yet" is the first question of every deploy, and guessing at it wastes an evening.
 
@@ -241,7 +241,7 @@ scripts/pocket-render.mjs  does the page actually DRAW? (npm run render:pocket)
 `ReferenceError` in one line of an inline script does not fail softly — it kills the whole script
 and serves a blank page with every unit test still green. `scripts/pocket-render.mjs` builds the
 real `/api/state` payload from fixtures, runs `app.html`'s script against a small DOM shim, and
-checks that all five panels drew, across five states: this month, a month scrolled back to, an
+checks that all six panels drew, across five states: this month, a month scrolled back to, an
 empty month, no exchange rates, and a brand new Pocket with nothing in it. Same reason
 `scripts/smoke.mjs` exists on the Kept side.
 
@@ -268,7 +268,7 @@ apps import `rawCol`.
 
 Chat is the fastest way to **record** something and a poor way to **look** at anything: no
 tabs, no colour, no way to scan a month. So the bot keeps the typing and a Telegram Mini App
-serves the seeing — five tabs: **Month · Worth · Subs · Goal · Plan**.
+serves the seeing — six tabs: **Month · Worth · Subs · Goal · Plan · Rates**.
 
 ## Subscriptions
 
@@ -310,8 +310,12 @@ Other decisions:
   that may have failed, been refunded, or been cancelled the week before.
 - **A charge is tagged but not flagged `recurring`.** The subscription *is* the recurring record;
   both would put the same bill in two separate "you have not entered this yet" lists.
-- **Nothing here is added to any total elsewhere.** A subscription is what he has agreed to pay;
-  the Month tab counts what actually left. Doing both would double-count every charge.
+- **A charge lands in the month on the day it bills.** This was wrong at first: subscriptions were
+  deliberately kept out of the month's totals, on the reasoning that a subscription is what he has
+  *agreed* to pay and a flow is what has *left*. Over-careful, and it made the month wrong — a
+  household paying for Netflix and a gym showed OUT of nothing. A charge on the 14th is exactly as
+  real as a coupon on the 28th, so it goes through the same two rules as every other scheduled
+  payment: only a date that has passed counts, and recording one replaces it.
 
 `out 40 monthly gym` is still a spend called "monthly gym". The two shapes stay apart, or every
 gym bill becomes a commitment.
@@ -349,6 +353,29 @@ currency, the same amount within 1%, within five days of the date. The match is 
 tight — a different amount, month, currency or direction is different money. Suppressing a real
 projection is a small loss; double-counting the rent is a wrong total, and a wrong total gets
 believed while a missing one gets noticed.
+
+## The Rates tab
+
+Nine tenths of what he owns is in Egyptian pounds and every bill he pays is in euro. That is the
+largest single fact about this household — larger than which deposit pays what — and the app could
+convert his money for months without ever saying what the currency itself had cost him.
+
+**`realReturn()` had been in `src/fx.js` since the first week and had never once run.** Nothing
+ever passed it a rate from the past. So:
+
+- **A holding can carry the rate he got it at** — "54 EGP to the euro in May 2024". From that the
+  tab gives what it was worth then, what it is worth now, and the difference; and for anything
+  paying a rate, what its return really is. His 20% certificate, bought at 48 and marked today at
+  59, has returned **−2.4% a year in euro.**
+- **A falling currency erodes a foreign DEBT in his favour** — same arithmetic, opposite sign.
+  Getting that backwards would tell him a falling pound was costing him money it is saving him.
+- **The size of the bet, with no forecast in it.** "If EGP weakens 10% you are €4,130 poorer; at
+  20%, €7,572." That needs no history and no opinion — it is what he is already holding.
+- **The rate is recorded once a day** from now on (`meta`, one small document, written by the
+  first open of the day). Nothing is backfilled. With fewer than two days on record the tab says
+  the record starts today rather than drawing a line through one point.
+- **Where he has not said what he paid, it asks.** A made-up starting rate makes a made-up gain,
+  which is worse than no answer.
 
 ## What the month already knows
 

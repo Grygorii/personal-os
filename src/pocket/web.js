@@ -26,7 +26,7 @@ import {
   parseEntry, ACCOUNT_KINDS, PAYOUT_KINDS, isLiability, forecastRange, depositProgress,
   monthWindowOf, recentMonths, monthsSummary, patchFrom, depositsSummary, contractedIncome,
   missingRecurring, cleanFlow, balanceNow, subsSummary, BILLING_PERIODS, cleanSub,
-  scheduledFlows, EVENT_KINDS, parseDate, matchRecorded,
+  scheduledFlows, EVENT_KINDS, parseDate, matchRecorded, subChargeDates, currencyPicture,
 } from './money.js';
 
 const json = (res, code, body) => {
@@ -90,7 +90,7 @@ export function spanFor(monthKey, now = Date.now()) {
 /** Everything the page draws, from data already loaded. Pure on purpose: no database, no clock
  *  of its own, no network — so the entire payload the browser receives can be built from
  *  fixtures and checked, which is how the drawing code gets tested at all. */
-export function buildState({ base = 'EUR', table, monthKey, accounts = [], spanFlows = [], subs = [], goal = null, events = { years: 10, list: [] }, now = Date.now() }) {
+export function buildState({ base = 'EUR', table, monthKey, accounts = [], spanFlows = [], subs = [], goal = null, events = { years: 10, list: [] }, history = [], now = Date.now() }) {
   const { w, strip, span } = spanFor(monthKey, now);
   const flows = spanFlows.filter((f) => f.ts >= w.from && f.ts <= w.to);
 
@@ -110,7 +110,7 @@ export function buildState({ base = 'EUR', table, monthKey, accounts = [], spanF
   // and the week IS the flat's rent, and the split should colour it as such.
   const matched = matchRecorded(accounts, { from: span.from, to: span.to }, { now, flows: spanFlows });
   const withSource = (list) => list.map((f) => (matched.has(f.id) ? { ...f, source: matched.get(f.id).source } : f));
-  const spanSched = scheduledFlows(accounts, { from: span.from, to: span.to }, { now, recorded, flows: spanFlows });
+  const spanSched = scheduledFlows(accounts, { from: span.from, to: span.to }, { now, recorded, flows: spanFlows, subs });
   const sched = spanSched.filter((f) => f.ts >= w.from && f.ts <= w.to);
   const landed = (list) => list.filter((f) => f.due);
 
@@ -239,6 +239,11 @@ export function buildState({ base = 'EUR', table, monthKey, accounts = [], spanF
         owedPerMonth: owed.reduce((n, r) => n + (r.inBase || 0), 0) / 12,
       };
     })(),
+    // WHAT THE CURRENCY ITSELF IS DOING TO HIM. Nine tenths of what he owns is in a currency he
+    // does not spend, and until now the app could convert that money without ever saying what
+    // holding it had cost or made him.
+    currencies: currencyPicture(accounts, table, base, { history, now }),
+    ratesAt: table.at || null,
     // Things that repeat and have not been entered again. A list to confirm, never a total.
     missing: missingRecurring(spanFlows, w),
     billingPeriods: BILLING_PERIODS,
@@ -334,10 +339,14 @@ async function state(monthKey) {
   try { table = await fx.rates(base); } catch (e) { table = null; }
 
   const { span } = spanFor(monthKey);
-  const [accounts, spanFlows, subs, goal, events] = await Promise.all([
+  // One snapshot a day, so that in a month there is something to compare today against. Never
+  // allowed to break a page load — a rate the app failed to file away is not worth an error.
+  if (table) store.recordRates(table).catch((e) => console.error('[pocket] rate snapshot:', e.message));
+  const [accounts, spanFlows, subs, goal, events, history] = await Promise.all([
     store.accounts(), store.flows(span), store.subs(), store.getGoal(), store.getPlanEvents(),
+    table ? store.rateHistory().catch(() => []) : Promise.resolve([]),
   ]);
-  return buildState({ base, table, monthKey, accounts, spanFlows, subs, goal, events });
+  return buildState({ base, table, monthKey, accounts, spanFlows, subs, goal, events, history });
 }
 
 export function startWeb(port = process.env.PORT || 3000) {
@@ -444,11 +453,16 @@ export function startWeb(port = process.env.PORT || 3000) {
           const w = monthWindowOf(asked());
           const now = Date.now();
           const inThisMonth = now >= w.from && now <= w.to;
+          // Dated to the charge this month if there is one, so it replaces that projection
+          // rather than sitting beside it.
+          const dates = subChargeDates(sub, w);
+          const ts = inThisMonth ? (dates.find((d) => d <= now) ?? dates[0] ?? now) : (dates[0] ?? w.from);
           await store.addFlow(cleanFlow({
             dir: 'out', category: sub.category || 'subscriptions', note: sub.label,
             amount: sub.amount, currency: sub.currency,
-            ts: inThisMonth ? now : w.from,
+            ts,
             subId: sub.id,
+            schedId: `sub:${sub.id}:${new Date(ts).toISOString().slice(0, 10)}`,
           }));
           return json(res, 200, await state(asked()));
         }
@@ -464,7 +478,7 @@ export function startWeb(port = process.env.PORT || 3000) {
           const accounts = await store.accounts();
           const already = new Set((await store.flows({ from: w.from, to: w.to })).map((f) => f.schedId).filter(Boolean));
           if (already.has(schedId)) return json(res, 200, await state(asked()));
-          const hit = scheduledFlows(accounts, w, { now: Date.now() }).find((f) => f.schedId === schedId);
+          const hit = scheduledFlows(accounts, w, { now: Date.now(), subs: await store.subs() }).find((f) => f.schedId === schedId);
           if (!hit) return json(res, 404, { error: 'No scheduled payment with that id' });
           await store.addFlow(cleanFlow({
             dir: hit.dir, category: hit.category, note: hit.label,

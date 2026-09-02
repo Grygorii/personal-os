@@ -80,6 +80,11 @@ export function cleanAccount(a) {
     // dates says he owes what a borrower who never paid a penny extra would owe — and he has.
     // This is the account's own history, and it is what makes the balance his rather than the
     // schedule's.
+    // HOW MANY OF THIS CURRENCY HE GOT FOR ONE EURO WHEN HE GOT IT. 54 EGP to the euro in May
+    // 2024, say. Without it the app can convert his money but cannot tell him what holding it
+    // has cost or made him — which for a household with 90% of its net worth in a currency it
+    // does not spend is the largest single fact about its finances.
+    rateThen: a?.rateThen == null || a.rateThen === '' ? null : Math.max(0, num(a.rateThen)) || null,
     payments: (Array.isArray(a?.payments) ? a.payments : []).slice(0, 400)
       .map(cleanPayment).filter((p) => p.amount > 0).sort((x, y) => x.at - y.at),
     note: txt(a?.note, 300),
@@ -1141,6 +1146,10 @@ export function patchFrom(kind, raw = {}) {
   if (raw.startsAt !== undefined) out.startsAt = raw.startsAt === '' ? null : parseDate(raw.startsAt);
   if (raw.endsAt !== undefined) out.endsAt = raw.endsAt === '' ? null : parseDate(raw.endsAt);
   if (raw.payout !== undefined) out.payout = PAYOUT_KINDS.includes(raw.payout) ? raw.payout : null;
+  if (raw.rateThen !== undefined) {
+    const n = raw.rateThen === '' || raw.rateThen === null ? null : Number(String(raw.rateThen).replace(',', '.'));
+    out.rateThen = n && Number.isFinite(n) && n > 0 ? n : null;
+  }
   if (raw.payment !== undefined) {
     const n = raw.payment === '' || raw.payment === null ? null : amount(raw.payment);
     out.payment = n || null;
@@ -1365,6 +1374,33 @@ export function subsSummary(subs, table, base = 'EUR', now = Date.now()) {
 //      is the only thing standing between this feature and a month that counts the same coupon
 //      twice, which is worse than not counting it at all.
 
+/** Every date a SUBSCRIPTION charges, inside a window. Same shape as a holding's schedule,
+ *  because a subscription that bills on the 14th is exactly as real as a coupon that pays on the
+ *  28th, and the month should not care which kind of thing it was. */
+export function subChargeDates(s, { from = 0, to = Number.MAX_SAFE_INTEGER } = {}) {
+  if (!s || !(s.amount > 0)) return [];
+  const start = s.startsAt || s.at;
+  if (!start) return [];
+  // A free trial is not a charge, so the first real one is the day it expires.
+  const first = s.trialEndsAt && s.trialEndsAt > start ? s.trialEndsAt : start;
+  const out = [];
+  if (s.every === 'weekly') {
+    for (let i = 0; i <= 5000; i++) {
+      const at = first + i * WEEK;
+      if (at > to || (s.endsAt && at >= s.endsAt)) break;
+      if (at >= from) out.push(at);
+    }
+    return out;
+  }
+  const step = PERIOD_MONTHS[s.every] || 1;
+  for (let i = 0; i <= 2400; i++) {
+    const at = addMonths(first, i * step);
+    if (at > to || (s.endsAt && at >= s.endsAt)) break;
+    if (at >= from) out.push(at);
+  }
+  return out;
+}
+
 /** Every date a holding pays or bills, inside a window. */
 export function paymentDates(a, { from = 0, to = Number.MAX_SAFE_INTEGER } = {}) {
   const t = termProgress(a);
@@ -1431,7 +1467,7 @@ export function matchRecorded(accounts, window = {}, { now = Date.now(), flows =
   return out;
 }
 
-export function scheduledFlows(accounts, window = {}, { now = Date.now(), recorded = new Set(), flows = [] } = {}) {
+export function scheduledFlows(accounts, window = {}, { now = Date.now(), recorded = new Set(), flows = [], subs = [] } = {}) {
   // AND THE ONE HE HAS BEEN TYPING BY HAND.
   //
   // He has entered the Cairo rent every month for a year. Those flows carry no schedule id, so
@@ -1497,5 +1533,131 @@ export function scheduledFlows(accounts, window = {}, { now = Date.now(), record
       });
     }
   }
+  // SUBSCRIPTIONS BELONG HERE TOO.
+  //
+  // They were deliberately kept out of the month's totals, on the reasoning that a subscription
+  // is what he has agreed to pay and a flow is what has left. That was over-careful and it made
+  // the month wrong: a household paying for Netflix and a gym showed OUT of nothing. A charge on
+  // the 14th is exactly as real as a coupon on the 28th, and it goes through the same two rules —
+  // only a date that has passed counts, and recording one replaces it.
+  for (const sub of subs || []) {
+    if (!(sub.amount > 0)) continue;
+    for (const at of subChargeDates(sub, window)) {
+      const schedId = `sub:${sub.id}:${new Date(at).toISOString().slice(0, 10)}`;
+      if (recorded.has(schedId)) continue;
+      if (looksLike({ dir: 'out', currency: sub.currency, amount: sub.amount, ts: at })) continue;
+      out.push({
+        id: schedId,
+        schedId,
+        subId: sub.id,
+        label: sub.label,
+        dir: 'out',
+        category: sub.category || 'subscriptions',
+        amount: sub.amount,
+        currency: sub.currency,
+        ts: at,
+        passive: false,
+        scheduled: true,
+        due: at <= now,
+        estimated: false,
+        interestPart: null,
+        principalPart: null,
+      });
+    }
+  }
+
   return out.sort((x, y) => y.ts - x.ts);
+}
+
+
+// ---- The currency his money is actually in ----
+//
+// He earns and spends in euro, and roughly nine tenths of what he owns is in Egyptian pounds.
+// That is the largest single fact about this household's finances — larger than which deposit
+// pays what — and until now the app could convert his money without ever telling him what the
+// currency itself had done to him.
+//
+// The arithmetic for it has existed in fx.js since the beginning (`realReturn`) and has never
+// once run, because nothing ever passed it a historical rate. So an account can now carry the
+// rate he got it at, and the app records the rate each day from here on. Neither is invented:
+// where there is no history, this says so rather than drawing a line through one point.
+
+/** What each currency he holds is doing to him.
+ *
+ *  `history` is a list of dated rate tables, oldest first, as recorded day by day. */
+export function currencyPicture(accounts, table, base = 'EUR', { history = [], now = Date.now() } = {}) {
+  const rateOf = (t, cur) => (cur === (t?.base || base) ? 1 : Number(t?.rates?.[cur]));
+  const rows = [];
+
+  const byCurrency = {};
+  for (const a of accounts || []) {
+    if (a.currency === base) continue;
+    const owed = isLiability(a.kind);
+    const held = balanceNow(a, now).amount;
+    if (!(held > 0)) continue;
+    (byCurrency[a.currency] = byCurrency[a.currency] || []).push({ a, held, owed });
+  }
+
+  for (const [currency, list] of Object.entries(byCurrency)) {
+    const rateNow = rateOf(table, currency);
+    if (!(rateNow > 0)) {
+      rows.push({ currency, rateNow: null, unconverted: true, holdings: [], exposureInBase: null });
+      continue;
+    }
+
+    const holdings = list.map(({ a, held, owed }) => {
+      const nowInBase = held / rateNow;
+      // What that same money was worth in euro on the day he got it. Only where he has said so —
+      // a made-up starting rate would produce a made-up gain, which is worse than no answer.
+      const thenInBase = a.rateThen > 0 ? held / a.rateThen : null;
+      // A weakening currency erodes a holding and, in exactly the same measure, erodes a DEBT in
+      // his favour. Same arithmetic, opposite sign, and getting the sign wrong here would tell
+      // him a falling pound was costing him money it was actually saving him.
+      const moveInBase = thenInBase == null ? null : (owed ? thenInBase - nowInBase : nowInBase - thenInBase);
+      return {
+        id: a.id, label: a.label || a.kind, kind: a.kind, owed,
+        value: held, currency,
+        rateThen: a.rateThen || null,
+        nowInBase, thenInBase, moveInBase,
+        movePct: thenInBase ? ((nowInBase - thenInBase) / thenInBase) * 100 : null,
+        // For a holding that also pays a rate, the question the app was built to ask: is 20% in
+        // a currency that fell still 20%?
+        real: a.ratePct != null && a.rateThen > 0 ? realReturn({ nominalPct: a.ratePct, rateThen: a.rateThen, rateNow }) : null,
+      };
+    });
+
+    const exposureInBase = holdings.reduce((t, h) => t + (h.owed ? -h.nowInBase : h.nowInBase), 0);
+    const known = holdings.filter((h) => h.moveInBase != null);
+
+    // What is recorded, not what is guessed. Two points make a line; one makes nothing.
+    const series = history
+      .map((t) => ({ at: t.at, rate: rateOf(t, currency) }))
+      .filter((x) => x.rate > 0)
+      .sort((a2, b2) => a2.at - b2.at);
+    const first = series[0];
+    const changePct = first && first.rate > 0 ? ((rateNow - first.rate) / first.rate) * 100 : null;
+
+    rows.push({
+      currency,
+      rateNow,
+      exposureInBase,
+      holdings,
+      // Only where he told the app what he paid for it.
+      movedInBase: known.length ? known.reduce((t, h) => t + h.moveInBase, 0) : null,
+      told: known.length,
+      untold: holdings.length - known.length,
+      series,
+      since: first ? first.at : null,
+      changePct,
+      // WHAT A MOVE WOULD DO. No forecast and no history needed — just the size of the bet he is
+      // already holding, which is the number that decides whether it is one he wants.
+      sensitivity: [10, 20].map((pct) => ({
+        weakensPct: pct,
+        // The currency losing `pct` means it takes (1 + pct/100) as many of them to buy a euro.
+        deltaInBase: exposureInBase * (1 / (1 + pct / 100) - 1),
+      })),
+    });
+  }
+
+  return rows.sort((a2, b2) => Math.abs(b2.exposureInBase || 0) - Math.abs(a2.exposureInBase || 0));
 }

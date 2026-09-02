@@ -1375,3 +1375,128 @@ test('monthOf: the split follows the source, but the list keeps his name for it'
   const unknown = monthOf([cleanFlow({ dir: 'in', category: 'apt 1', amount: 100, currency: 'EUR', ts: now, passive: true })], T, 'EUR');
   assert.deepEqual(unknown.passiveByCategory.map((x) => x.category), ['apt 1']);
 });
+
+// ---- Subscriptions are spending ----
+//
+// They were deliberately kept out of the month's totals, on the reasoning that a subscription is
+// what he has AGREED to pay and a flow is what has LEFT. That was over-careful, and it made the
+// month wrong: a household paying for Netflix and a gym showed OUT of nothing.
+
+import { subChargeDates, currencyPicture } from '../src/pocket/money.js';
+
+test('subChargeDates: when a subscription actually bills', () => {
+  const netflix = cleanSub({ id: 's1', amount: 12.99, currency: 'EUR', every: 'monthly', startsAt: utc(2024, 3, 5) });
+  assert.deepEqual(subChargeDates(netflix, { from: utc(2026, 9, 1), to: utc(2026, 10, 1) - 1 }), [utc(2026, 9, 5)]);
+  // A quarterly one does not bill every month.
+  const gym = cleanSub({ amount: 4500, currency: 'EGP', every: 'quarterly', startsAt: utc(2025, 1, 10) });
+  assert.deepEqual(subChargeDates(gym, { from: utc(2026, 9, 1), to: utc(2026, 10, 1) - 1 }), []);
+  assert.equal(subChargeDates(gym, { from: utc(2026, 10, 1), to: utc(2026, 11, 1) - 1 })[0], utc(2026, 10, 10));
+  // Cancelled stops billing; a trial does not bill until it ends.
+  const gone = cleanSub({ amount: 8, every: 'monthly', startsAt: utc(2023, 1, 1), endsAt: utc(2026, 4, 1) });
+  assert.deepEqual(subChargeDates(gone, { from: utc(2026, 9, 1), to: utc(2026, 10, 1) }), []);
+  const trial = cleanSub({ amount: 20, every: 'monthly', startsAt: utc(2026, 9, 1), trialEndsAt: utc(2026, 9, 20) });
+  assert.deepEqual(subChargeDates(trial, { from: utc(2026, 9, 1), to: utc(2026, 10, 1) - 1 }), [utc(2026, 9, 20)]);
+});
+
+test('a subscription charge goes into the month like any other scheduled payment', () => {
+  const w = { from: utc(2026, 9, 1), to: utc(2026, 10, 1) - 1 };
+  const netflix = cleanSub({ id: 's1', label: 'Netflix', amount: 12.99, currency: 'EUR', every: 'monthly', startsAt: utc(2024, 3, 5) });
+
+  const [charge] = scheduledFlows([], w, { now: utc(2026, 9, 20), subs: [netflix] });
+  assert.equal(charge.dir, 'out');
+  assert.equal(charge.amount, 12.99);
+  assert.equal(charge.due, true, 'the 5th has passed on the 20th');
+  assert.equal(charge.passive, false);
+  assert.equal(charge.subId, 's1');
+  assert.equal(charge.schedId, 'sub:s1:2026-09-05');
+
+  // Same two rules as everything else here: not yet charged is not yet spent...
+  assert.equal(scheduledFlows([], w, { now: utc(2026, 9, 2), subs: [netflix] })[0].due, false);
+  // ...and recording one replaces its projection rather than doubling it.
+  assert.deepEqual(scheduledFlows([], w, { now: utc(2026, 9, 20), subs: [netflix], recorded: new Set(['sub:s1:2026-09-05']) }), []);
+  const byHand = cleanFlow({ dir: 'out', category: 'subscriptions', amount: 12.99, currency: 'EUR', ts: utc(2026, 9, 6) });
+  assert.deepEqual(scheduledFlows([], w, { now: utc(2026, 9, 20), subs: [netflix], flows: [byHand] }), []);
+});
+
+// ---- What the currency is doing to him ----
+//
+// realReturn() has been in fx.js since the first week and had never once run: nothing ever passed
+// it a rate from the past. So a holding can now carry the rate he got it at.
+
+const RATES_NOW = { base: 'EUR', rates: { EUR: 1, EGP: 59.03, USD: 1.08 }, at: Date.now() };
+
+test('currencyPicture: what the rate has done to each holding', () => {
+  const accounts = [
+    cleanAccount({ id: 'd1', label: 'Deposit', kind: 'deposit', currency: 'EGP', value: 495000, ratePct: 20, rateThen: 48 }),
+    cleanAccount({ id: 'p1', label: 'Flat', kind: 'property', currency: 'EGP', value: 2700000 }),
+    cleanAccount({ id: 'b1', label: 'Bank', kind: 'cash', currency: 'EUR', value: 5000 }),
+  ];
+  const [egp] = currencyPicture(accounts, RATES_NOW, 'EUR');
+  assert.equal(egp.currency, 'EGP');
+  assert.equal(currencyPicture(accounts, RATES_NOW, 'EUR').length, 1, 'his own currency cannot move against itself');
+
+  const dep = egp.holdings.find((h) => h.label === 'Deposit');
+  assert.equal(Math.round(dep.thenInBase), 10313, '495,000 at 48 to the euro');
+  assert.equal(Math.round(dep.nowInBase), 8386, 'and at 59.03 today');
+  assert.ok(dep.moveInBase < -1900, 'the pound fell, so the holding is worth less in euro');
+
+  // THE QUESTION THE APP WAS BUILT TO ASK, finally answerable: 20% in a currency that fell 19%
+  // is not a 20% return to someone who buys groceries in euro.
+  assert.ok(dep.real.realPct < 0, `20% became ${dep.real.realPct}%`);
+  assert.ok(dep.real.currencyMovePct < 0);
+
+  // Nothing invented where he has not said what he paid.
+  const flat = egp.holdings.find((h) => h.label === 'Flat');
+  assert.equal(flat.rateThen, null);
+  assert.equal(flat.moveInBase, null, 'a made-up starting rate makes a made-up gain');
+  assert.equal(flat.real, null);
+  assert.equal(egp.told, 1);
+  assert.equal(egp.untold, 1);
+});
+
+test('currencyPicture: a falling currency makes a foreign DEBT cheaper, not dearer', () => {
+  const [egp] = currencyPicture([
+    cleanAccount({ id: 'l1', label: 'Loan', kind: 'loan', currency: 'EGP', value: 513000, rateThen: 52 }),
+  ], RATES_NOW, 'EUR');
+  assert.ok(egp.holdings[0].moveInBase > 0, 'same arithmetic, opposite sign — getting this wrong inverts the advice');
+  assert.ok(egp.exposureInBase < 0, 'owing in a currency is negative exposure to it');
+});
+
+test('currencyPicture: the size of the bet, with no forecast in it', () => {
+  const [egp] = currencyPicture([
+    cleanAccount({ kind: 'property', currency: 'EGP', value: 5903000 }),   // 100,000 EUR
+  ], RATES_NOW, 'EUR');
+  assert.equal(Math.round(egp.exposureInBase), 100000);
+  // A 10% weaker pound takes 1.1 times as many to buy a euro: 100,000 → 90,909.
+  assert.equal(Math.round(egp.sensitivity[0].deltaInBase), -9091);
+  assert.equal(Math.round(egp.sensitivity[1].deltaInBase), -16667);
+  assert.equal(egp.changePct, null, 'with no history recorded there is no change to report');
+  assert.deepEqual(egp.series, [], 'and no line is drawn through nothing');
+});
+
+test('currencyPicture: history is read, never guessed', () => {
+  const history = [
+    { base: 'EUR', rates: { EUR: 1, EGP: 54 }, at: utc(2026, 6, 1) },
+    { base: 'EUR', rates: { EUR: 1, EGP: 57 }, at: utc(2026, 8, 1) },
+  ];
+  const [egp] = currencyPicture([cleanAccount({ kind: 'cash', currency: 'EGP', value: 100000 })], RATES_NOW, 'EUR', { history });
+  assert.equal(egp.series.length, 2);
+  assert.equal(egp.since, utc(2026, 6, 1), 'oldest first, so "since" is the start of the record');
+  // 54 → 59.03 is the pound weakening 9.3%.
+  assert.ok(Math.abs(egp.changePct - 9.31) < 0.05);
+  // A currency with no quote in a snapshot is skipped rather than counted as zero.
+  const gappy = currencyPicture([cleanAccount({ kind: 'cash', currency: 'EGP', value: 1 })], RATES_NOW, 'EUR', {
+    history: [{ base: 'EUR', rates: { EUR: 1 }, at: utc(2026, 6, 1) }, ...history],
+  });
+  assert.equal(gappy[0].series.length, 2);
+});
+
+test('cleanAccount: a starting rate is a positive number or nothing at all', () => {
+  assert.equal(cleanAccount({ rateThen: 54 }).rateThen, 54);
+  assert.equal(cleanAccount({ rateThen: 0 }).rateThen, null, 'nought to the euro is not a rate');
+  assert.equal(cleanAccount({ rateThen: -5 }).rateThen, null);
+  assert.equal(cleanAccount({ rateThen: '' }).rateThen, null);
+  assert.equal(cleanAccount({}).rateThen, null);
+  assert.equal(patchFrom('account', { rateThen: '48,5' }).rateThen, 48.5);
+  assert.equal(patchFrom('account', { rateThen: '' }).rateThen, null, 'and it can be cleared again');
+});

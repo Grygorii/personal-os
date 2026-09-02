@@ -28,11 +28,11 @@ const fail = (msg) => { console.error('FAIL  ' + msg); process.exitCode = 1; };
 
 const accounts = [
   cleanAccount({ id: 'a1', label: 'Bank', kind: 'cash', currency: 'EUR', value: 5000 }),
-  cleanAccount({ id: 'a2', label: 'Cairo CD', kind: 'deposit', currency: 'EGP', value: 495000, ratePct: 20, payout: 'quarterly', startsAt: utc(2024, 5, 28), endsAt: utc(2027, 5, 28) }),
+  cleanAccount({ id: 'a2', label: 'Cairo CD', kind: 'deposit', currency: 'EGP', value: 495000, ratePct: 20, payout: 'quarterly', startsAt: utc(2024, 5, 28), endsAt: utc(2027, 5, 28), rateThen: 48 }),
   cleanAccount({ id: 'a3', label: 'Old CD', kind: 'deposit', currency: 'EGP', value: 100000, ratePct: 15, payout: 'maturity', startsAt: utc(2020, 1, 1), endsAt: utc(2021, 1, 1) }),
   cleanAccount({ id: 'a4', label: 'Soon CD', kind: 'deposit', currency: 'EGP', value: 50000, ratePct: 18, payout: 'monthly', startsAt: utc(2025, 1, 1), endsAt: utc(2026, 11, 1) }),
   // A flat has no rate — it has rent. This is the case he could not enter at all.
-  cleanAccount({ id: 'a5', label: 'Cairo flat', kind: 'property', currency: 'EGP', value: 2700000, payout: 'monthly', payment: 27000, startsAt: utc(2023, 6, 1) }),
+  cleanAccount({ id: 'a5', label: 'Cairo flat', kind: 'property', currency: 'EGP', value: 2700000, payout: 'monthly', payment: 27000, startsAt: utc(2023, 6, 1), rateThen: 33 }),
   cleanAccount({ id: 'a6', label: 'Visa', kind: 'card', currency: 'EUR', value: 1200, ratePct: 19 }),
   // His real car loan, with the instalment off his own statement. The app used to show 26,700 a
   // quarter here — interest only, about half the real bill — and count all 445,000 as still owed
@@ -232,6 +232,8 @@ function must(el, panel, needles, label) {
       'at your own 2%'], 'this month');
     must(el, 'p-subs', ['Every subscription, per year', 'What that costs in capital', 'Netflix',
       'free trial', 'Old magazine'], 'this month');
+    must(el, 'p-fx', ['EGP', 'to 1 EUR', 'What you hold in EGP', 'weakens 10%',
+      'Holding by holding', 'got it at'], 'this month');
   }
   if (S.months.length !== 12) fail('the strip should hold twelve months');
   if (S.monthKey !== '2026-09') fail('it should open on the month he is in');
@@ -260,6 +262,31 @@ function must(el, panel, needles, label) {
   // And the part that expires. Soon CD ends Nov 2026; the flat does not end at all.
   if (!S.passiveEnds.rows.some((r) => r.label === 'Soon CD')) fail('a certificate that matures is income that ends');
   if (S.passiveEnds.rows.some((r) => r.label === 'Cairo flat')) fail('a flat he owns does not stop paying rent');
+
+  // The currency itself. Nine tenths of what he owns is in a currency he does not spend.
+  const egpFx = S.currencies.find((c) => c.currency === 'EGP');
+  if (!egpFx) fail('the currency he mostly holds has to appear');
+  if (!(egpFx.exposureInBase > 0)) fail('assets minus debts in EGP is what he is exposed to');
+  if (egpFx.sensitivity[0].deltaInBase >= 0) fail('a weakening EGP makes a euro household poorer, not richer');
+  // Only the two holdings he gave a starting rate for are counted; the rest are named, not guessed.
+  if (egpFx.told !== 2) fail(`two holdings have a starting rate, got ${egpFx.told}`);
+  if (!(egpFx.untold > 0)) fail('and the rest must be reported as not counted, never invented');
+  if (!(egpFx.movedInBase < 0)) fail('the pound fell against the euro — that has cost him');
+  // The function this app was built around, finally running: a 20% deposit in a currency that
+  // fell is not a 20% return.
+  const cd = egpFx.holdings.find((h) => h.label === 'Cairo CD');
+  if (!cd.real) fail('a rate-bearing holding with a starting rate must get a real return');
+  if (!(cd.real.realPct < 20)) fail('20% in a currency that fell is not 20% to someone who spends euro');
+  // A debt in a falling currency moves the OTHER way.
+  const loan = egpFx.holdings.find((h) => h.owed);
+  if (loan && loan.rateThen && !(loan.moveInBase > 0)) fail('a falling currency makes a foreign debt cheaper');
+  if (S.currencies.some((c) => c.currency === 'EUR')) fail('his own currency cannot move against itself');
+
+  // Subscriptions are spending. A household paying for Netflix and a gym showed OUT of nothing.
+  if (!S.flows.some((f) => f.scheduled && f.subId)) fail('a subscription that has charged is in the month');
+  if (!(S.month.spending > 0)) fail('subscriptions have to reach the OUT figure');
+  const netflix = S.flows.find((f) => f.subId === 's1');
+  if (netflix && netflix.dir !== 'out') fail('a subscription charge is money leaving');
 
   // Subscriptions, normalised. 12.99 monthly = 155.88; 90 yearly = 90; 4,500 EGP quarterly =
   // 18,000 EGP = 333.33; 20 USD monthly = 240 USD = 222.22. The cancelled one counts nothing.
@@ -391,6 +418,7 @@ function must(el, panel, needles, label) {
     must(el, 'p-month', ['Nothing recorded in'], 'a brand new Pocket');
     must(el, 'p-worth', ['Nothing yet. Tap Add.'], 'a brand new Pocket');
     must(el, 'p-goal', ['No goal set'], 'a brand new Pocket');
+    must(el, 'p-fx', ['nothing here'], 'a brand new Pocket');
     must(el, 'p-subs', ['Nothing yet'], 'a brand new Pocket');
   }
 }

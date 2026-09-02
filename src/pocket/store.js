@@ -144,6 +144,33 @@ export async function setGoal({ monthly, currency }) {
   return goal;
 }
 
+// ---- The exchange rate, day by day ----
+//
+// The app could always convert his money and never say what the currency itself had done to
+// him, because it kept no history. It does now: one small document a day, written the first
+// time the app is opened. Nothing is backfilled and nothing is invented — the record starts the
+// day it starts, and the app says so rather than drawing a line through a single point.
+export async function recordRates(table) {
+  if (!table?.rates || !table.base) return;
+  const day = new Date().toISOString().slice(0, 10);
+  // $setOnInsert, so the first open of the day writes and every other open costs nothing. This
+  // runs on a 512 MB cluster shared with a live shop; a write per page view is not acceptable.
+  await col('meta').updateOne(
+    { _id: `fx:${day}` },
+    { $setOnInsert: { base: table.base, rates: table.rates, at: table.at || Date.now(), day } },
+    { upsert: true },
+  );
+}
+
+export async function rateHistory(days = 400) {
+  const docs = await col('meta')
+    .find({ _id: { $regex: '^fx:' } })
+    .sort({ _id: -1 })
+    .limit(days)
+    .toArray();
+  return docs.map((d) => ({ base: d.base, rates: d.rates, at: d.at })).sort((a, b) => a.at - b.at);
+}
+
 export async function ensureIndexes() {
   await col('accounts').createIndex({ id: 1 }, { unique: true });
   await col('flows').createIndex({ ts: -1 });
