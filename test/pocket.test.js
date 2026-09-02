@@ -1382,7 +1382,7 @@ test('monthOf: the split follows the source, but the list keeps his name for it'
 // what he has AGREED to pay and a flow is what has LEFT. That was over-careful, and it made the
 // month wrong: a household paying for Netflix and a gym showed OUT of nothing.
 
-import { subChargeDates, currencyPicture } from '../src/pocket/money.js';
+import { subChargeDates, currencyPicture, REDEEMABLE_KINDS, depositsSummary } from '../src/pocket/money.js';
 
 test('subChargeDates: when a subscription actually bills', () => {
   const netflix = cleanSub({ id: 's1', amount: 12.99, currency: 'EUR', every: 'monthly', startsAt: utc(2024, 3, 5) });
@@ -1499,4 +1499,76 @@ test('cleanAccount: a starting rate is a positive number or nothing at all', () 
   assert.equal(cleanAccount({}).rateThen, null);
   assert.equal(patchFrom('account', { rateThen: '48,5' }).rateThen, 48.5);
   assert.equal(patchFrom('account', { rateThen: '' }).rateThen, null, 'and it can be cleared again');
+});
+
+// ---- A flat is not a certificate ----
+//
+// "I am not sure apartment counted correct." He was right. His apartment carried "Pays back
+// 2,032,000 EGP at maturity", counted its rent as though it accrued daily like interest, and the
+// app was ready to announce in April 2027 that the flat had matured and the money was idle.
+//
+// One end date meant two different things. A certificate is REDEEMED: on the last day the bank
+// hands over the principal and the thing ceases to exist. A flat's end date is the end of a
+// TENANCY. The building is still his the morning after and nobody buys it back.
+
+const FLAT_LET = () => cleanAccount({
+  id: 'p1', label: 'apartment', kind: 'property', currency: 'EGP', value: 1600000,
+  payout: 'monthly', payment: 18000, startsAt: utc(2025, 4, 1), endsAt: utc(2027, 4, 1),
+});
+const CERT = () => cleanAccount({
+  id: 'c1', label: 'Cairo CD', kind: 'deposit', currency: 'EGP', value: 495000, ratePct: 20,
+  payout: 'quarterly', startsAt: utc(2024, 5, 28), endsAt: utc(2027, 5, 28),
+});
+
+test('only a certificate hands the principal back', () => {
+  const flat = depositProgress(FLAT_LET(), utc(2026, 9, 3));
+  const cert = depositProgress(CERT(), utc(2026, 9, 3));
+
+  assert.equal(flat.valueAtMaturity, null, 'nobody pays him 2,032,000 for his own flat');
+  assert.equal(flat.redeemable, false);
+  assert.equal(flat.endsWhat, 'tenancy');
+
+  assert.equal(Math.round(cert.valueAtMaturity), 792000, 'a certificate is redeemed: principal plus interest');
+  assert.equal(cert.redeemable, true);
+  assert.equal(cert.endsWhat, 'term');
+  assert.deepEqual(REDEEMABLE_KINDS, ['deposit']);
+});
+
+test('a flat never matures, however long ago the tenancy ran out', () => {
+  const after = depositProgress(FLAT_LET(), utc(2028, 1, 1));
+  assert.equal(after.ended, true, 'the tenancy is over');
+  assert.equal(after.matured, false, 'but nothing came back, so nothing is sitting idle');
+
+  const cert = depositProgress(CERT(), utc(2028, 1, 1));
+  assert.equal(cert.ended, true);
+  assert.equal(cert.matured, true, 'a certificate really does hand the money back');
+
+  // And the warning lists follow that, or the app tells him his building matured.
+  const summary = depositsSummary([FLAT_LET(), CERT()], utc(2028, 1, 1));
+  assert.deepEqual(summary.matured.map((r) => r.account.label), ['Cairo CD']);
+  assert.equal(summary.ended.length, 2, 'both arrangements are over — that part is true of each');
+});
+
+test('rent is cash when it arrives; interest accrues between coupons', () => {
+  const flat = depositProgress(FLAT_LET(), utc(2026, 9, 3));
+  // 17 payments of 18,000 by 3 September 2026. On the 20th of a month he has had this month's
+  // rent and not a twentieth of next month's, so "so far" is whole payments.
+  assert.equal(flat.schedule.made, 17);
+  assert.equal(flat.earned, 17 * 18000);
+  assert.equal(flat.remaining, (24 - 17) * 18000);
+  assert.equal(flat.earned + flat.remaining, 24 * 18000, 'and the two halves are the whole tenancy');
+
+  // Interest is genuinely being earned every day, so a fraction of a year is right for it.
+  const cert = depositProgress(CERT(), utc(2026, 9, 3));
+  assert.notEqual(cert.earned % 24750, 0, 'not a whole number of coupons');
+  assert.ok(cert.earned > 224000 && cert.earned < 225000);
+});
+
+test('a holding with no end date is unchanged by any of this', () => {
+  const open = cleanAccount({ kind: 'property', currency: 'EGP', value: 1600000, payout: 'monthly', payment: 18000, startsAt: utc(2025, 4, 1) });
+  const t = depositProgress(open, utc(2026, 9, 3));
+  assert.equal(t.hasTerm, false);
+  assert.equal(t.matured, undefined);
+  assert.equal(t.schedule.total, null, 'no end, no last payment');
+  assert.equal(t.yieldPct, 13.5, '216,000 a year on 1,600,000');
 });

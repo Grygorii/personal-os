@@ -434,7 +434,12 @@ function drawWorth() {
         <span class="in">${money(t.earnedInBase)} earned so far</span>
         <span style="color:var(--dim)">${money(t.remainingInBase)} still to come</span>
       </div>
-      <div class="rmeta" style="margin-top:3px">Pays back ${Math.round(t.valueAtMaturity).toLocaleString()} ${esc(a.currency)} at maturity</div>`;
+      ${t.valueAtMaturity != null
+        ? `<div class="rmeta" style="margin-top:3px">Pays back ${Math.round(t.valueAtMaturity).toLocaleString()} ${esc(a.currency)} at maturity</div>`
+        /* A flat is still his the morning after the tenancy ends. Nobody redeems it, and saying
+           "pays back 2,032,000 at maturity" under an apartment is the app describing a
+           certificate it thinks he owns. */
+        : `<div class="rmeta" style="margin-top:3px">You keep the ${esc(a.kind)} — ${esc(dd(t.end))} is when the ${esc(t.endsWhat)} ends, not the ${esc(a.kind)}.</div>`}`;
 
     /* EXTRA PAYMENTS, and what they bought.
        A balance derived only from dates says he owes what a borrower who never paid a penny
@@ -477,12 +482,13 @@ function drawWorth() {
       <div style="margin-top:9px">
         <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--dim)">
           <span>${dd(t.start)} → ${dd(t.end)}</span>
-          <span>${t.matured ? 'matured' : Math.round(t.remainingDays) + ' days left'}</span>
+          <span>${t.ended ? (t.redeemable ? 'matured' : esc(t.endsWhat) + ' ended') : Math.round(t.remainingDays) + ' days left'}</span>
         </div>
   
         <div class="bar" style="margin-top:5px"><i style="width:${t.pctThrough}%" ${owes ? 'class="owed"' : ''}></i></div>
         ${progress}
         ${sched}
+        ${yieldLine}
         ${truth}
         ${extras}
       </div>` : (t ? `<div class="rmeta" style="margin-top:6px">${money(t.perYearInBase)} a year${t.hasTerm === false && t.start ? ' · running since ' + dd(t.start) : ''}</div>${sched}${yieldLine}${extras}` : '');
@@ -517,6 +523,12 @@ function drawWorth() {
     ${(S.terms?.maturingSoon || []).map((t) => `<div class="warn" style="border-left-color:var(--accent);background:var(--in-bg)">
       <b>${esc(t.label)} matures in ${t.days} days</b>, on ${dd(t.at)}. Worth deciding now where it goes next —
       a certificate that rolls over by default rarely rolls into the best rate available.</div>`).join('')}
+    ${(S.terms?.ended || []).map((t) => `<div class="warn" style="border-left-color:var(--src-2);background:rgba(57,135,229,.12)">
+      <b>${esc(t.label)}: the ${esc(t.what)} ended on ${dd(t.at)}.</b> You still own it — nothing came back and
+      nothing is idle. But it is paying you nothing until it is let again, so it is out of every income figure here.</div>`).join('')}
+    ${(S.terms?.endingSoon || []).map((t) => `<div class="warn" style="border-left-color:var(--src-2);background:rgba(57,135,229,.12)">
+      <b>${esc(t.label)}: the ${esc(t.what)} ends in ${t.days} days</b>, on ${dd(t.at)}. You keep it either way — but
+      the income stops on that date unless it is renewed, and every figure here assumes it does stop.</div>`).join('')}
     ${S.payFirst.map((x) => {
       // The rate that matters is what the payments imply, not what the paperwork says. Quoting
       // 24% at him when his instalments work out at 20.6% is the app being confidently wrong
@@ -692,9 +704,10 @@ function drawGoal() {
   const ending = !ends.rows.length ? '' : `
     <div class="warn" style="border-left-color:var(--src-2);background:rgba(57,135,229,.12)">
       <b>${money(ends.perMonth)} a month of this comes from holdings that end.</b>
-      ${ends.rows.map((r) => `${esc(r.label)} stops paying on ${dd(r.endsAt)}`).join(', ')}.
-      Rent from something you own keeps arriving; a certificate hands the money back and stops.
-      Reaching ${money(g.target, g.currency)} on terms that expire is reaching it until they do.
+      ${ends.rows.map((r) => `${esc(r.label)} — ${esc(r.what)} ends ${dd(r.endsAt)}`).join(', ')}.
+      A certificate hands the money back and stops; a tenancy just stops, and the flat is still yours
+      to let again. Either way, reaching ${money(g.target, g.currency)} on arrangements that expire is
+      reaching it until they do.
     </div>`;
 
   $('p-goal').innerHTML = `

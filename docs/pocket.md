@@ -216,10 +216,10 @@ a price without one: it looks current.
 2. Railway → same project → **New Service** → same repo.
 3. Start command: `npm run start:pocket`.
 4. Env vars above, `DB_NAME=pocket` among them.
-5. Look for `[boot] pocket-12 · db=pocket · base=EUR`.
+5. Look for `[boot] pocket-13 · db=pocket · base=EUR`.
 
 **Which build is actually serving?** `GET /health` (or `/version`) answers without Telegram —
-`{"ok":true,"app":"pocket","version":"pocket-12"}`. The marker lives in `src/pocket/version.js`;
+`{"ok":true,"app":"pocket","version":"pocket-13"}`. The marker lives in `src/pocket/version.js`;
 bump it on every deploy. Kept has `GET /version` for exactly the same reason: "is my change even
 out there yet" is the first question of every deploy, and guessing at it wastes an evening.
 
@@ -341,6 +341,30 @@ building gets noticed. Below 4% it says so.
 
 A tenancy he has had for years has no interesting start date, so with none given the schedule is
 anchored to the day he added it. Better than refusing to show the rent at all.
+
+### A flat is not a certificate
+
+He said "I am not sure apartment counted correct", and he was right. His apartment carried **"Pays
+back 2,032,000 EGP at maturity"**, counted its rent as though it accrued daily like interest, and
+the app was ready to announce in April 2027 that the flat had *matured* and the money was sitting
+idle.
+
+One `endsAt` meant two different things:
+
+| | A certificate | A flat |
+|---|---|---|
+| What the end date is | the **term** ends | the **tenancy** ends |
+| What happens that day | the bank hands the principal back; the holding ceases | nothing — the building is still his |
+| What "so far" means | interest **accrued**, day by day | rent **received**, payment by payment |
+
+`REDEEMABLE_KINDS` is the distinction. `valueAtMaturity` is `null` for anything that is not
+redeemed, `matured` means *the money came back* and is now only ever true of a deposit, and a new
+`ended` means only that the end date has passed. Rent is measured on a cash basis: on the 20th he
+has had this month's payment and not a twentieth of next month's.
+
+The warnings follow. A certificate maturing says the capital is idle and asks where it goes next.
+A tenancy ending says the opposite: *you still own it, nothing came back and nothing is idle — but
+it pays you nothing until it is let again.*
 
 ### The hazard this created, and the guard for it
 

@@ -32,7 +32,7 @@ const accounts = [
   cleanAccount({ id: 'a3', label: 'Old CD', kind: 'deposit', currency: 'EGP', value: 100000, ratePct: 15, payout: 'maturity', startsAt: utc(2020, 1, 1), endsAt: utc(2021, 1, 1) }),
   cleanAccount({ id: 'a4', label: 'Soon CD', kind: 'deposit', currency: 'EGP', value: 50000, ratePct: 18, payout: 'monthly', startsAt: utc(2025, 1, 1), endsAt: utc(2026, 11, 1) }),
   // A flat has no rate — it has rent. This is the case he could not enter at all.
-  cleanAccount({ id: 'a5', label: 'Cairo flat', kind: 'property', currency: 'EGP', value: 2700000, payout: 'monthly', payment: 27000, startsAt: utc(2023, 6, 1), rateThen: 33 }),
+  cleanAccount({ id: 'a5', label: 'Cairo flat', kind: 'property', currency: 'EGP', value: 2700000, payout: 'monthly', payment: 27000, startsAt: utc(2025, 4, 1), endsAt: utc(2027, 4, 1), rateThen: 33 }),
   cleanAccount({ id: 'a6', label: 'Visa', kind: 'card', currency: 'EUR', value: 1200, ratePct: 19 }),
   // His real car loan, with the instalment off his own statement. The app used to show 26,700 a
   // quarter here — interest only, about half the real bill — and count all 445,000 as still owed
@@ -159,6 +159,12 @@ function must(el, panel, needles, label) {
     if (loanBlock.includes('earned so far')) fail('a loan is showing money it "earned" — it is money he pays');
     if (!loanBlock.includes('still owed of the')) fail('a part-repaid loan must show what is left, not what was borrowed');
     if (!loanBlock.includes('% a year')) fail('a stated payment should reveal what the loan really costs');
+    // A FLAT IS NOT A CERTIFICATE. Its end date ends a tenancy; the building is still his the
+    // morning after, and nobody hands him the principal back.
+    const flatRow = worth.slice(worth.lastIndexOf('Cairo flat'), worth.lastIndexOf('Visa'));
+    if (flatRow.includes('at maturity')) fail('a flat is not redeemed — "pays back X at maturity" describes a certificate');
+    if (!flatRow.includes('is when the tenancy ends')) fail('the end date is the tenancy ending, and it has to say so');
+    if (!flatRow.includes('12.0% a year')) fail('a flat with a tenancy still has a yield worth knowing');
     if (!el('p-worth').innerHTML.includes('Estimated —')) fail('a loan with no stated payment must say its figure is an estimate');
     if (!worth.includes('+ I paid extra')) fail('every loan needs a way to record an overpayment');
     if (!worth.includes('months early')) fail('overpaying has to say what it bought');
@@ -198,6 +204,19 @@ function must(el, panel, needles, label) {
     // if the flat's 324,000 EGP of rent leaked in, this would read 8,000.
     if (Math.round(S.interest.earned) !== 2000) fail(`interest is the deposits alone (2,000), got ${Math.round(S.interest.earned)}`);
     if (!S.contracted.streams.some((r) => r.label === 'Cairo flat')) fail('rent is contracted income');
+    if (flat.term.valueAtMaturity != null) fail('nothing is handed back for a flat');
+    if (flat.term.matured) fail('a flat never matures');
+    if (flat.term.endsWhat !== 'tenancy') fail('what ends is the tenancy');
+    // Rent is cash, not accrual: 17 payments of 27,000, not a fraction of a year.
+    if (Math.round(flat.term.earned) % 27000 !== 0) fail(`rent so far should be whole payments, got ${flat.term.earned}`);
+    if (Math.round(flat.term.earned) !== flat.term.schedule.made * 27000) fail('and exactly the ones that have been made');
+    // A certificate still behaves like a certificate.
+    const cd = S.accounts.find((a) => a.label === 'Cairo CD');
+    if (cd.term.valueAtMaturity == null) fail('a deposit IS redeemed — the principal comes back');
+    if (cd.term.endsWhat !== 'term') fail('what ends for a certificate is its term');
+    if (Math.round(cd.term.earned) % 24750 === 0) fail('interest accrues between coupons and is not a whole number of them');
+    // And the flat must never turn up in the list of things that matured with money sitting idle.
+    if ((S.terms.matured || []).some((t) => t.label === 'Cairo flat')) fail('a flat cannot mature');
     // He typed September's rent himself, under his own name for it, so the flat's own projection
     // steps aside — one rent, not two. August is the month where nobody typed it and the flat
     // produced it on its own.
@@ -260,8 +279,11 @@ function must(el, panel, needles, label) {
   if (!interest || !(interest.coming > 0)) fail('the certificates are contracted and should show as still to come');
   if (interest.coming + interest.amount <= 0) fail('a source that pays nothing at all is not on the bar');
   // And the part that expires. Soon CD ends Nov 2026; the flat does not end at all.
-  if (!S.passiveEnds.rows.some((r) => r.label === 'Soon CD')) fail('a certificate that matures is income that ends');
-  if (S.passiveEnds.rows.some((r) => r.label === 'Cairo flat')) fail('a flat he owns does not stop paying rent');
+  // Income that stops — and WHICH KIND of stopping, because they are different events.
+  const cdEnd = S.passiveEnds.rows.find((r) => r.label === 'Soon CD');
+  const flatEnd = S.passiveEnds.rows.find((r) => r.label === 'Cairo flat');
+  if (!cdEnd || cdEnd.what !== 'term') fail('a certificate ends its term and hands the money back');
+  if (!flatEnd || flatEnd.what !== 'tenancy') fail('a let flat stops paying when the tenancy ends — but it is still his');
 
   // The currency itself. Nine tenths of what he owns is in a currency he does not spend.
   const egpFx = S.currencies.find((c) => c.currency === 'EGP');

@@ -218,11 +218,18 @@ export function buildState({ base = 'EUR', table, monthKey, accounts = [], spanF
       const ds = depositsSummary(accounts, now);
       const name = (r) => r.account.label || r.account.kind;
       return {
+        // Redeemed: the money came back and is now sitting idle. Only ever a certificate.
         maturingSoon: ds.maturingSoon.map((r) => ({ label: name(r), at: r.progress.end, days: Math.round(r.progress.remainingDays) })),
         matured: ds.matured.map((r) => ({
           label: name(r), at: r.progress.end,
           backInBase: fx.toBase(r.progress.valueAtMaturity, r.account.currency, table),
         })),
+        // An ARRANGEMENT running out: a tenancy with no renewal. The asset stays; the income
+        // stops. Saying "matured" about a flat is how the app told him he owned a certificate.
+        endingSoon: ds.endingSoon.filter((r) => !r.progress.redeemable && !r.progress.liability)
+          .map((r) => ({ label: name(r), at: r.progress.end, days: Math.round(r.progress.remainingDays), what: r.progress.endsWhat })),
+        ended: ds.ended.filter((r) => !r.progress.redeemable && !r.progress.liability)
+          .map((r) => ({ label: name(r), at: r.progress.end, what: r.progress.endsWhat })),
       };
     })(),
     // Contracted, NOT counted. Kept apart from the measured passive figure on purpose: a
@@ -297,10 +304,13 @@ export function buildState({ base = 'EUR', table, monthKey, accounts = [], spanF
       const rows = accounts
         .filter((a) => !isLiability(a.kind) && a.endsAt)
         .map((a) => ({ a, t: depositProgress(a, now) }))
-        .filter((x) => x.t?.schedule && !x.t.matured)
+        .filter((x) => x.t?.schedule && !x.t.ended)
         .map((x) => ({
           label: x.a.label || x.a.kind,
           endsAt: x.a.endsAt,
+          // A tenancy that ends is not the same as capital being handed back, and the sentence
+          // on the Goal tab has to be able to tell him which one this is.
+          what: x.t.endsWhat,
           perMonthInBase: fx.toBase(x.t.perYear / 12, x.a.currency, table),
         }))
         .sort((p, q) => p.endsAt - q.endsAt);

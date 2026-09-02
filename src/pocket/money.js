@@ -29,6 +29,16 @@ export const ACCOUNT_KINDS = ['cash', 'deposit', 'property', 'portfolio', 'card'
 // borrowing either vanishes from net worth or, worse, is added to it.
 export const LIABILITY_KINDS = ['loan', 'card'];
 export const isLiability = (kind) => LIABILITY_KINDS.includes(kind);
+// WHAT COMES BACK AT THE END, AND WHAT DOES NOT.
+//
+// A certificate is redeemed: on the last day the bank hands over the principal and the thing
+// ceases to exist. A FLAT IS NOT. Its end date is the end of a tenancy, not of the asset — the
+// building is still his the morning after, and nobody pays him 2,032,000 EGP for it.
+//
+// Treating them alike put "Pays back 2,032,000 EGP at maturity" under his apartment and had the
+// app ready to announce, in April 2027, that his flat had matured and the money was sitting idle.
+export const REDEEMABLE_KINDS = ['deposit'];
+export const isRedeemable = (kind) => REDEEMABLE_KINDS.includes(kind);
 // Money that arrives without him working for it. This flag, not the category name, is what
 // the goal counts — "rent" typed as a category is a label; `passive` is a decision.
 export const PASSIVE_KINDS = ['rent', 'interest', 'dividend'];
@@ -978,7 +988,14 @@ function termProgress(a, now = Date.now()) {
 
   const upTo = Math.min(now, end ?? now);
   const elapsedDays = Math.max(0, (upTo - start) / DAY);
-  const earned = perYear * yearsBetween(start, upTo);
+  // A RATE ACCRUES; RENT DOES NOT.
+  //
+  // Interest is being earned every day between coupons, so measuring it as a fraction of a year
+  // is right. Rent is not: on the 20th of the month he has had this month's payment and not a
+  // twentieth of next month's. Where the income is defined by an amount rather than a rate, "so
+  // far" is the money that has actually arrived.
+  const accrues = a.ratePct != null;
+  const earned = accrues ? perYear * yearsBetween(start, upTo) : null;
 
   const liability = isLiability(a.kind);
   const common = { principal: a.value, payment: a.payment ?? null, amortising: liability };
@@ -994,7 +1011,9 @@ function termProgress(a, now = Date.now()) {
   const termDays = Math.max(1, (end - start) / DAY);
   const termYears = yearsBetween(start, end);
   const totalAtMaturity = perYear * termYears;
-  const matured = now >= end;
+  const ended = now >= end;
+  const redeemable = isRedeemable(a.kind) && !liability;
+  const schedule = payoutSchedule({ ...common, start, end, payout: a.payout, perYear, totalAtMaturity }, now);
   return {
     perYear,
     yieldPct,
@@ -1003,18 +1022,28 @@ function termProgress(a, now = Date.now()) {
     start, end,
     liability,
     payout: a.payout || null,
-    schedule: payoutSchedule({ ...common, start, end, payout: a.payout, perYear, totalAtMaturity }, now),
+    schedule,
+    // Whether the end date is the end of a TERM (the money comes back) or of an ARRANGEMENT (the
+    // income stops and the asset stays). Every sentence about the end date hangs off this.
+    redeemable,
+    endsWhat: liability ? 'debt' : redeemable ? 'term' : a.kind === 'property' ? 'tenancy' : 'arrangement',
     termDays,
     elapsedDays: Math.min(elapsedDays, termDays),
     remainingDays: Math.max(0, (end - now) / DAY),
     termYears,
     pctThrough: Math.min(100, termYears > 0 ? (yearsBetween(start, upTo) / termYears) * 100 : 100),
-    earned,
-    remaining: Math.max(0, totalAtMaturity - earned),
+    // Cash where the income is an amount, accrual where it is a rate — see above. The schedule
+    // is built before this point, so the count of payments already made is to hand.
+    earned: accrues ? earned : (schedule?.paidSoFar ?? 0),
+    remaining: accrues ? Math.max(0, totalAtMaturity - earned) : Math.max(0, schedule?.leftToPay ?? 0),
     totalAtMaturity,
-    // What he gets back on the day it ends, principal included.
-    valueAtMaturity: a.value + totalAtMaturity,
-    matured,
+    // What he gets back on the day it ends, principal included — for the things that ARE handed
+    // back. A flat is still his the morning after the tenancy ends, and nobody redeems it.
+    valueAtMaturity: redeemable ? a.value + totalAtMaturity : null,
+    matured: ended && redeemable,
+    // The arrangement is over, whatever kind of thing it is. `matured` means the money came back;
+    // this only means the end date has passed, and the two are not the same event.
+    ended,
   };
 }
 
@@ -1027,8 +1056,12 @@ export function depositsSummary(accounts, now = Date.now()) {
     rows,
     // In each holding's OWN currency; converting is the caller's job, with a real rate.
     anyTerms: rows.some((r) => r.progress.hasTerm),
-    maturingSoon: rows.filter((r) => r.progress.hasTerm && !r.progress.matured && r.progress.remainingDays <= 90),
+    endingSoon: rows.filter((r) => r.progress.hasTerm && !r.progress.ended && r.progress.remainingDays <= 90),
+    ended: rows.filter((r) => r.progress.ended),
+    // Only the things that are actually REDEEMED — where money comes back and then sits idle.
+    // A tenancy running out is a different event and needs a different sentence.
     matured: rows.filter((r) => r.progress.matured),
+    maturingSoon: rows.filter((r) => r.progress.hasTerm && r.progress.redeemable && !r.progress.matured && r.progress.remainingDays <= 90),
   };
 }
 
