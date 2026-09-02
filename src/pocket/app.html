@@ -78,6 +78,9 @@
   /* ---- Bars ---- */
   .bar{height:8px;border-radius:5px;background:var(--line);overflow:hidden;margin-top:8px}
   .bar>i{display:block;height:100%;background:var(--in);border-radius:5px}
+  /* Progress through a DEBT is not progress in the same direction as progress through a
+     deposit, and it must not be painted as though it were. */
+  .bar>i.owed{background:var(--out)}
   .catbar{height:6px;border-radius:4px;background:var(--out);opacity:.85;margin-top:6px}
 
   .warn{background:var(--out-bg);border-left:3px solid var(--out);border-radius:0 10px 10px 0;padding:11px 13px;margin-bottom:12px;font-size:13px;line-height:1.5}
@@ -335,10 +338,37 @@ function drawWorth() {
     // How often the money actually MOVES, which is the part he can plan around. A rate is a
     // property of the paper; a payment is a date and an amount.
     const s = t && t.schedule;
-    const pays = a.liability ? 'You pay' : 'Pays you';
+    const owes = !!a.liability;
+    const pays = owes ? 'You pay' : 'Pays you';
     const sched = !s ? '' : s.payout === 'maturity'
-      ? `<div class="rmeta" style="margin-top:4px">All of it at the end — nothing lands before ${dd(t.end)}.</div>`
-      : `<div class="rmeta" style="margin-top:4px">${pays} <b>${Math.round(s.perPayment).toLocaleString()} ${esc(a.currency)}</b>${s.perPaymentInBase != null ? ` (${money(s.perPaymentInBase)})` : ''} ${esc(s.payout)}${s.next ? ` · next ${dd(s.next)}` : ''}${s.total ? ` · ${s.made} of ${s.total} so far` : ''}</div>`;
+      ? `<div class="rmeta" style="margin-top:4px">All of it at the end — nothing ${owes ? 'is due' : 'lands'} before ${dd(t.end)}.</div>`
+      : `<div class="rmeta" style="margin-top:4px">${pays} <b>${Math.round(s.perPayment).toLocaleString()} ${esc(a.currency)}</b>${s.perPaymentInBase != null ? ` (${money(s.perPaymentInBase)})` : ''} ${esc(s.payout)}${s.next ? ` · next ${dd(s.next)}` : ''}${s.total ? ` · ${s.made} of ${s.total} so far` : ''}
+        ${s.estimated ? '<br><span class="out">Estimated — tap ✎ and enter what your statement actually says.</span>' : ''}</div>`;
+
+    /* A LOAN IS NOT A DEPOSIT, and this block used to say it was: "3,191 EUR earned so far", in
+       green, on money he was paying out. What a loan does is get repaid, so it gets its own
+       wording, its own colour, and its own numbers — what is left to pay, not what is left to
+       come. */
+    const progress = !(t && t.hasTerm) ? '' : owes ? `
+      <div style="display:flex;justify-content:space-between;font-size:12px;margin-top:5px">
+        <span class="out">${money(s && s.paidSoFarInBase != null ? s.paidSoFarInBase : t.earnedInBase)} paid so far</span>
+        <span style="color:var(--dim)">${money(s && s.leftToPayInBase != null ? s.leftToPayInBase : t.remainingInBase)} still to pay</span>
+      </div>
+      <div class="rmeta" style="margin-top:3px">${a.settled ? 'Fully repaid.'
+        : `${Math.round(a.owedNow).toLocaleString()} ${esc(a.currency)} still owed of the ${Math.round(a.value).toLocaleString()} borrowed`}</div>` : `
+      <div style="display:flex;justify-content:space-between;font-size:12px;margin-top:5px">
+        <span class="in">${money(t.earnedInBase)} earned so far</span>
+        <span style="color:var(--dim)">${money(t.remainingInBase)} still to come</span>
+      </div>
+      <div class="rmeta" style="margin-top:3px">Pays back ${Math.round(t.valueAtMaturity).toLocaleString()} ${esc(a.currency)} at maturity</div>`;
+
+    /* What it REALLY costs. A 24% loan whose instalments imply 20.6% is a 20.6% loan, and the
+       gap between the paperwork and the payment is only ever visible from the payment. */
+    const truth = !(t && t.implied && owes) ? '' : `
+      <div class="rmeta" style="margin-top:3px">Over the whole term you repay
+        <b>${Math.round(t.implied.totalPaid).toLocaleString()} ${esc(a.currency)}</b> on ${Math.round(a.value).toLocaleString()} borrowed —
+        ${Math.round(t.implied.totalInterest).toLocaleString()} of interest, which is
+        <b>${t.implied.nominalPct.toFixed(1)}% a year</b>${Math.abs(t.implied.nominalPct - a.ratePct) > 0.6 ? `, not the ${a.ratePct}% on the paperwork` : ''}.</div>`;
     // A dated deposit is the interesting case: how far through, what it has paid so far, and
     // what is still to come. Every figure comes from the server; the page only draws.
     const term = t && t.hasTerm ? `
@@ -347,13 +377,11 @@ function drawWorth() {
           <span>${dd(t.start)} → ${dd(t.end)}</span>
           <span>${t.matured ? 'matured' : Math.round(t.remainingDays) + ' days left'}</span>
         </div>
-        <div class="bar" style="margin-top:5px"><i style="width:${t.pctThrough}%"></i></div>
-        <div style="display:flex;justify-content:space-between;font-size:12px;margin-top:5px">
-          <span class="in">${money(t.earnedInBase)} earned so far</span>
-          <span style="color:var(--dim)">${money(t.remainingInBase)} still to come</span>
-        </div>
-        <div class="rmeta" style="margin-top:3px">Pays back ${Math.round(t.valueAtMaturity).toLocaleString()} ${esc(a.currency)} at maturity</div>
+  
+        <div class="bar" style="margin-top:5px"><i style="width:${t.pctThrough}%" ${owes ? 'class="owed"' : ''}></i></div>
+        ${progress}
         ${sched}
+        ${truth}
       </div>` : (t ? `<div class="rmeta" style="margin-top:6px">${money(t.perYearInBase)} a year${t.hasTerm === false && t.start ? ' · running since ' + dd(t.start) : ''}</div>${sched}` : '');
 
     return `
@@ -365,7 +393,7 @@ function drawWorth() {
           <div class="rmeta">${esc(a.kind)}${a.ratePct != null ? ' · ' + a.ratePct + '%' : ''}${a.payout ? ' ' + esc(a.payout) : ''}</div>
         </div>
         <div class="ramt ${a.liability ? 'out' : 'in'}">${a.liability ? '−' : ''}${money(a.inBase)}
-          ${a.currency !== S.base ? `<span class="rorig">${esc(a.value.toLocaleString())} ${esc(a.currency)}</span>` : ''}
+          ${a.currency !== S.base ? `<span class="rorig">${esc(Math.round(a.owedNow ?? a.value).toLocaleString())} ${esc(a.currency)}</span>` : ''}
         </div>
         <button class="edit" data-edit="account" data-id="${esc(a.id)}" aria-label="Edit">✎</button>
         <button class="del" data-del="account" data-id="${esc(a.id)}" aria-label="Remove">×</button>
@@ -386,7 +414,14 @@ function drawWorth() {
     ${(S.terms?.maturingSoon || []).map((t) => `<div class="warn" style="border-left-color:var(--accent);background:var(--in-bg)">
       <b>${esc(t.label)} matures in ${t.days} days</b>, on ${dd(t.at)}. Worth deciding now where it goes next —
       a certificate that rolls over by default rarely rolls into the best rate available.</div>`).join('')}
-    ${S.payFirst.map((d) => `<div class="warn"><b>${esc(d.label)} costs ${d.ratePct}% a year.</b> Clearing it is a guaranteed ${d.ratePct}% return — better than the ${d.expectedYieldPct}% you'd hope for investing, with no risk. Pay this before buying anything.</div>`).join('')}
+    ${S.payFirst.map((x) => {
+      // The rate that matters is what the payments imply, not what the paperwork says. Quoting
+      // 24% at him when his instalments work out at 20.6% is the app being confidently wrong
+      // about the one comparison it exists to make.
+      const r = (x.impliedPct ?? x.ratePct);
+      return `<div class="warn"><b>${esc(x.label)} costs ${r.toFixed(1)}% a year${x.impliedPct != null && Math.abs(x.impliedPct - x.ratePct) > 0.6 ? ` (the paperwork says ${x.ratePct}%)` : ''}.</b>
+      Clearing it is a guaranteed ${r.toFixed(1)}% return — better than the ${x.expectedYieldPct}% you'd hope for investing, with no risk. Pay this before buying anything.</div>`;
+    }).join('')}
     ${(S.interest.earned > 0 || S.interest.paid > 0) ? `<div class="card"><h2>Interest a year</h2>
       <div style="display:flex;justify-content:space-between"><span class="in">Earning ${money(S.interest.earned)}</span><span class="out">Paying ${money(S.interest.paid)}</span></div>
       <div class="sub">Net ${money(S.interest.net)}</div>
@@ -536,7 +571,7 @@ document.querySelectorAll('.tab').forEach((t) => t.onclick = () => {
 });
 
 // ---- Add ----
-const CHIPS = ['out 40 food', 'in 3200 salary', 'in 27000 EGP rent', 'add card 1200 EUR 19% visa', 'add deposit 495000 EGP 20% quarterly start 28.05.2024 end 28.05.2027', 'goal 2000'];
+const CHIPS = ['out 40 food', 'in 3200 salary', 'in 27000 EGP rent', 'add card 1200 EUR 19% visa', 'add loan 445000 EGP 24% quarterly pays 58063.45 start 28.11.2024 end 28.05.2027', 'add deposit 495000 EGP 20% quarterly start 28.05.2024 end 28.05.2027', 'goal 2000'];
 $('chips').innerHTML = CHIPS.map((c) => `<button class="chip">${esc(c)}</button>`).join('');
 $('chips').onclick = (e) => { if (e.target.classList.contains('chip')) { $('entry').value = e.target.textContent; $('entry').focus(); } };
 
@@ -621,11 +656,15 @@ function accountFields(a) {
       ${field('Rate % a year', input('ratePct', a.ratePct ?? '', 'inputmode="decimal"'))}
       ${field(a.liability ? 'Paid back' : 'Paid out', select('payout', payouts, a.payout || ''))}
     </div>
+    ${field(a.liability ? 'What you actually pay each time' : 'What it actually pays each time',
+      input('payment', a.payment ?? '', 'inputmode="decimal" placeholder="leave empty to work it out"'))}
     <div class="two">
       ${field('Starts', input('startsAt', isoOf(a.startsAt), 'type="date"'))}
       ${field('Ends', input('endsAt', isoOf(a.endsAt), 'type="date"'))}
     </div>
-    <div class="note" style="margin-top:0">Dates and how often it pays are what turn a rate into money on a date — leave them empty if you don't know them.</div>`;
+    <div class="note" style="margin-top:0">Dates and how often it pays are what turn a rate into money
+    on a date — leave them empty if you don't know them. The payment beats every calculation here:
+    a loan repays principal as well as interest, and only your statement knows the exact figure.</div>`;
 }
 
 function openEdit(kind, id) {

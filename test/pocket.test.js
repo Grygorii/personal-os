@@ -195,7 +195,7 @@ test('parseEntry: accounts, and a kind it does not know', () => {
   const dep = parseEntry('add deposit 540000 EGP Cairo savings', 'EUR');
   assert.deepEqual(dep, {
     type: 'account', kind: 'deposit', value: 540000, currency: 'EGP',
-    ratePct: null, startsAt: null, endsAt: null, payout: null, label: 'Cairo savings',
+    ratePct: null, startsAt: null, endsAt: null, payout: null, payment: null, label: 'Cairo savings',
   });
   assert.equal(parseEntry('add portfolio 1000 USD eToro').label, 'eToro');
   // An unknown kind is reported so the reply can list the real ones, not silently filed as cash.
@@ -650,4 +650,138 @@ test('an edit merges over what is stored — it never applies the whitelist to a
   assert.equal(merged.note, 'market');
   assert.equal(merged.ts, utc(2026, 8, 3), 'the date it happened is not moved to today');
   assert.equal(merged.id, 'abc', 'the id is taken from what is stored, never from the patch');
+});
+
+// ---- A loan is repaid; a deposit is not ----
+//
+// The app showed his car loan as costing 26,700 EGP a quarter — 445,000 × 24% ÷ 4, interest and
+// nothing else. He actually pays 58,063.45, because every instalment also repays principal. It
+// then went on subtracting the full 445,000 from his net worth while he was seven payments of
+// ten through clearing it, so paying it down looked like nothing happening at all.
+
+import { impliedRate, balanceNow } from '../src/pocket/money.js';
+
+const LOAN1 = () => cleanAccount({
+  label: 'Loan 1', kind: 'loan', currency: 'EGP', value: 445000, ratePct: 24,
+  payout: 'quarterly', payment: 58063.45, startsAt: utc(2024, 11, 28), endsAt: utc(2027, 5, 28),
+});
+const SEPT = utc(2026, 9, 15);
+
+test('the payment he typed off his statement beats every calculation here', () => {
+  const t = depositProgress(LOAN1(), SEPT);
+  assert.equal(t.schedule.perPayment, 58063.45);
+  assert.equal(t.schedule.stated, true);
+  assert.equal(t.schedule.estimated, false);
+  assert.equal(t.schedule.made, 7);
+  assert.equal(t.schedule.total, 10);
+  assert.equal(Math.round(t.schedule.totalOverTerm), 580635);
+  assert.equal(Math.round(t.schedule.leftToPay), 174190);
+  assert.equal(t.liability, true);
+});
+
+test('a loan with no stated payment repays principal too — never interest only', () => {
+  const a = cleanAccount({ ...LOAN1(), payment: null });
+  const t = depositProgress(a, SEPT);
+  // The wrong answer was 26,700: 445,000 × 24% ÷ 4, which is about half his real bill.
+  assert.notEqual(Math.round(t.schedule.perPayment), 26700);
+  assert.equal(Math.round(t.schedule.perPayment), 60461, 'the amortising payment');
+  assert.equal(t.schedule.estimated, true, 'and it says it is an estimate, because it is one');
+
+  // A DEPOSIT is the opposite case and must not change: the coupon really is interest only,
+  // and the principal comes back at the end.
+  const dep = cleanAccount({ kind: 'deposit', currency: 'EGP', value: 495000, ratePct: 20, payout: 'quarterly', startsAt: utc(2024, 5, 28), endsAt: utc(2027, 5, 28) });
+  assert.equal(depositProgress(dep, SEPT).schedule.perPayment, 24750);
+  assert.equal(depositProgress(dep, SEPT).schedule.estimated, false);
+});
+
+test('impliedRate: what the payments actually cost, whatever the paperwork says', () => {
+  const r = impliedRate({ principal: 445000, payment: 58063.45, payments: 10, periodsPerYear: 4 });
+  assert.ok(Math.abs(r.nominalPct - 20.62) < 0.05, `20.6% a year, not 24% — got ${r.nominalPct}`);
+  assert.ok(r.effectivePct > r.nominalPct, 'compounding makes the effective rate the larger one');
+  assert.equal(Math.round(r.totalPaid), 580635);
+  assert.equal(Math.round(r.totalInterest), 135635);
+
+  // Nothing to solve for, so nothing is claimed.
+  assert.equal(impliedRate({ principal: 1000, payment: 100, payments: 10, periodsPerYear: 12 }), null, 'repaying exactly what was borrowed is a 0% loan, not a rate');
+  assert.equal(impliedRate({ principal: 0, payment: 100, payments: 10, periodsPerYear: 12 }), null);
+  assert.equal(impliedRate({ principal: 1000, payment: 0, payments: 10, periodsPerYear: 12 }), null);
+});
+
+test('balanceNow: a debt seven payments through is not a debt still owed in full', () => {
+  const b = balanceNow(LOAN1(), SEPT);
+  // The payoff: the three remaining instalments, discounted at the rate his own payments imply.
+  assert.equal(Math.round(b.amount), 157664);
+  assert.equal(b.entered, 445000);
+  assert.equal(Math.round(b.repaid), 287336);
+  assert.equal(b.paymentsLeft, 3);
+  // It has to fall, every period, from the principal to nothing. A payoff schedule that does
+  // not start at what was borrowed is discounting at a rate the loan does not have.
+  let last = Infinity;
+  for (const when of [utc(2024, 12, 1), utc(2025, 6, 1), utc(2025, 12, 1), utc(2026, 6, 1), utc(2027, 6, 1)]) {
+    const x = balanceNow(LOAN1(), when).amount;
+    assert.ok(x <= last, `the debt must never grow: ${x} after ${last}`);
+    last = x;
+  }
+  assert.ok(b.amount < b.entered, 'seven instalments have to have moved something');
+  // Never more than was borrowed. Inventing debt is the one direction this must not be wrong in.
+  assert.ok(b.amount <= b.entered);
+
+  // Before the first payment, the whole thing is still owed.
+  assert.equal(Math.round(balanceNow(LOAN1(), utc(2024, 12, 1)).amount), 445000);
+  // After the last, nothing is.
+  const done = balanceNow(LOAN1(), utc(2028, 1, 1));
+  assert.equal(done.amount, 0);
+  assert.equal(done.settled, true);
+
+  // Everything that is not an amortising liability keeps exactly the figure he typed.
+  for (const a of [
+    cleanAccount({ kind: 'cash', currency: 'EUR', value: 5000 }),
+    cleanAccount({ kind: 'property', currency: 'EGP', value: 2700000 }),
+    cleanAccount({ kind: 'deposit', currency: 'EGP', value: 495000, ratePct: 20, payout: 'quarterly', startsAt: utc(2024, 5, 28), endsAt: utc(2027, 5, 28) }),
+    cleanAccount({ kind: 'card', currency: 'EUR', value: 1200, ratePct: 19 }),
+  ]) {
+    assert.equal(balanceNow(a, SEPT).amount, a.value, `${a.kind} keeps what he typed`);
+  }
+});
+
+test('netWorth counts what is owed today, not what was borrowed', () => {
+  const accounts = [
+    cleanAccount({ label: 'Bank', kind: 'cash', currency: 'EUR', value: 10000 }),
+    LOAN1(),
+  ];
+  const n = netWorth(accounts, T, 'EUR', SEPT);
+  // 157,664 EGP at 54 to the euro is 2,920, not the 8,241 the full principal would have been.
+  assert.equal(Math.round(n.debts), 2920);
+  assert.equal(Math.round(n.total), 10000 - 2920);
+  assert.notEqual(Math.round(n.debts), Math.round(445000 / 54), 'the opening balance is not the debt');
+  // And the currency exposure has to follow the same number, or the two disagree on screen.
+  const egp = n.byCurrency.find((c) => c.currency === 'EGP');
+  assert.equal(Math.round(egp.raw), -157664);
+});
+
+test('interest is charged on what is still owed, not on the opening balance', () => {
+  const ip = interestPicture([LOAN1()], T, 'EUR', SEPT);
+  // 157,664 EGP at 24% is 37,839 EGP a year — 701 EUR, not the 1,978 the full principal implies.
+  assert.equal(Math.round(ip.paid), 701);
+});
+
+test('debtVsInvesting compares the rate the payments imply, not the one on the paperwork', () => {
+  const [d] = debtVsInvesting([LOAN1()], { expectedYieldPct: 7, now: SEPT });
+  assert.equal(d.ratePct, 24, 'what the paperwork says is kept');
+  assert.ok(Math.abs(d.impliedPct - 20.62) < 0.05, 'and what it really costs is worked out');
+  assert.ok(Math.abs(d.effectiveCostPct - 20.62) < 0.05, 'the comparison uses the real one');
+  assert.equal(d.payFirst, true, '20.6% guaranteed still beats 7% hoped for');
+});
+
+test('parseEntry: the instalment can be typed on the line', () => {
+  const p = parseEntry('add loan 445000 EGP 24% quarterly pays 58063.45 start 28.11.2024 end 28.05.2027', 'EUR');
+  assert.equal(p.payment, 58063.45);
+  assert.equal(p.payout, 'quarterly');
+  assert.equal(p.value, 445000);
+  assert.equal(p.label, 'loan', 'nothing about the payment leaks into the name');
+  assert.equal(parseEntry('add loan 1000 EUR 5%', 'EUR').payment, null);
+  assert.equal(patchFrom('account', { payment: '58 063,45' }).payment, 58063.45);
+  assert.equal(patchFrom('account', { payment: '' }).payment, null, 'and it can be cleared again');
+  // "pays" with nothing usable after it is just a word.
+  assert.match(parseEntry('add loan 1000 EUR pays the bank', 'EUR').label, /pays the bank/);
 });

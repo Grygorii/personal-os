@@ -61,6 +61,11 @@ export function cleanAccount(a) {
     // to a frequency. Assuming monthly on a certificate that pays at maturity would invent
     // twelve payments a year that never arrive.
     payout: PAYOUT_KINDS.includes(a?.payout) ? a.payout : null,
+    // What actually leaves or arrives each period, off his own statement. It OVERRIDES every
+    // derived figure, because a bank's number beats an app's arithmetic every time: his car
+    // loan bills 58,063.45 a quarter, the best model here says 60,461, and the model is the one
+    // that is wrong. Null means he has not said, and then it is derived and labelled as such.
+    payment: a?.payment == null ? null : Math.max(0, num(a.payment)) || null,
     note: txt(a?.note, 300),
     at: num(a?.at) || Date.now(),
   };
@@ -102,13 +107,51 @@ export function cleanFlow(f) {
   };
 }
 
+/** WHAT IS OWED TODAY, which is not what was borrowed.
+ *
+ *  He entered a 445,000 EGP car loan and the app went on subtracting 445,000 from his net worth
+ *  while he was seven payments of ten through repaying it. Every instalment he had already made
+ *  was invisible — the debt never moved, so paying it down looked like nothing happening.
+ *
+ *  For a liability with a term and a schedule, what he still owes is the PAYOFF: the present
+ *  value of the payments still to come, discounted at the loan's own rate. Not the sum of them
+ *  — that includes interest for years he has not reached yet, and settling tomorrow would not
+ *  cost that. Everything else keeps the figure he typed, which is right for a credit-card
+ *  balance, a deposit, a flat and a bank account alike.
+ */
+export function balanceNow(a, now = Date.now()) {
+  const entered = Math.max(0, num(a?.value));
+  if (!isLiability(a?.kind)) return { amount: entered, entered, settled: false, repaid: 0 };
+  const t = depositProgress(a, now);
+  const s = t?.schedule;
+  if (!t?.hasTerm || !s || !s.total) return { amount: entered, entered, settled: false, repaid: 0 };
+  const left = Math.max(0, s.total - s.made);
+  if (left === 0) return { amount: 0, entered, settled: true, repaid: entered, paymentsLeft: 0 };
+
+  // Discounted at the loan's OWN rate — the one its payments imply when he has stated them,
+  // and only otherwise the headline. Mixing the two (his instalment against the paperwork's
+  // rate) is two different loans, and it does not even return the principal on day one.
+  const r = t.implied
+    ? t.implied.perPeriodPct / 100
+    : (s.every && entered > 0 && t.perYear ? (t.perYear / entered) * (s.every / 12) : 0);
+  const owed = r > 0
+    ? (s.perPayment * (1 - Math.pow(1 + r, -left))) / r
+    : s.perPayment * left;
+  // Never more than was borrowed: a payoff above the original principal would mean the app had
+  // invented debt, and that is the direction a money app must never be wrong in.
+  const amount = Math.min(entered, owed);
+  return { amount, entered, settled: false, repaid: Math.max(0, entered - amount), paymentsLeft: left };
+}
+
 /** Everything he owns, in one currency. Anything without a rate is EXCLUDED from the total and
  *  named — a net worth that quietly omits the Egyptian apartment is worse than no total. */
-export function netWorth(accounts, table, base = 'EUR') {
+export function netWorth(accounts, table, base = 'EUR', now = Date.now()) {
   const rows = accounts.map((a) => {
-    const inBase = toBase(a.value, a.currency, table);
+    // A part-repaid loan counts for what is left of it, not for what it started as.
+    const bal = balanceNow(a, now);
+    const inBase = toBase(bal.amount, a.currency, table);
     // Signed once, here, so every consumer below adds and nothing has to remember the rule.
-    return { ...a, inBase, signed: inBase == null ? null : (isLiability(a.kind) ? -inBase : inBase) };
+    return { ...a, owedNow: bal.amount, repaid: bal.repaid, inBase, signed: inBase == null ? null : (isLiability(a.kind) ? -inBase : inBase) };
   });
   const known = rows.filter((r) => r.inBase != null);
   const assets = known.filter((r) => !isLiability(r.kind)).reduce((n, r) => n + r.inBase, 0);
@@ -117,7 +160,7 @@ export function netWorth(accounts, table, base = 'EUR') {
   const byCurrency = {};
   for (const r of rows) {
     byCurrency[r.currency] = byCurrency[r.currency] || { currency: r.currency, raw: 0, inBase: 0, converted: true };
-    byCurrency[r.currency].raw += isLiability(r.kind) ? -r.value : r.value;
+    byCurrency[r.currency].raw += isLiability(r.kind) ? -r.owedNow : r.owedNow;
     if (r.inBase == null) byCurrency[r.currency].converted = false;
     else byCurrency[r.currency].inBase += r.signed;
   }
@@ -266,7 +309,7 @@ export function parseEntry(text, base = 'EUR') {
     // A rate can sit anywhere in what is left — "20%", "20 %", "at 20%". Pulled out rather
     // than positional, because nobody remembers a field order.
     let ratePct = null;
-    let startsAt = null, endsAt = null, payout = null;
+    let startsAt = null, endsAt = null, payout = null, payment = null;
     const keep = [];
     // "start 28.05.2024 end 28.05.2027" — the keyword claims the date that follows it, and
     // BOTH are removed from what is left, so neither ends up in the label. A bare date with no
@@ -280,21 +323,26 @@ export function parseEntry(text, base = 'EUR') {
       if (/^(start|from|opened)$/i.test(w) && parseDate(words[i + 1])) { startsAt = parseDate(words[++i]); continue; }
       if (/^(end|to|until|matures?|ends)$/i.test(w) && parseDate(words[i + 1])) { endsAt = parseDate(words[++i]); continue; }
       if (payouts && payout == null && PAYOUT_KINDS.includes(w.toLowerCase())) { payout = w.toLowerCase(); continue; }
+      // "pays 58063.45" — the real instalment, claimed the same way a date is.
+      if (payouts && payment == null && /^(pays?|payment|instal?ment|bill)$/i.test(w) && words[i + 1] != null) {
+        const n = Number(String(words[i + 1]).replace(/\s/g, '').replace(',', '.'));
+        if (Number.isFinite(n) && n > 0) { payment = n; i++; continue; }
+      }
       // His own word for it, because the app should read what he types and not what a form
       // expects: he says "kvartally", and a line he has to retype is a line he stops typing.
       if (payouts && payout == null && /^kvartal(ly|ny)?$/i.test(w)) { payout = 'quarterly'; continue; }
       keep.push(w);
     }
-    return { currency, ratePct, startsAt, endsAt, payout, rest: keep.join(' ') };
+    return { currency, ratePct, startsAt, endsAt, payout, payment, rest: keep.join(' ') };
   };
 
   if (acct) {
     const kind = acct[1].toLowerCase();
     if (!ACCOUNT_KINDS.includes(kind)) return { type: 'account', badKind: kind };
     const amount = amountOf(acct[2]);
-    const { currency, ratePct, startsAt, endsAt, payout, rest } = split(acct[3], { payouts: true });
+    const { currency, ratePct, startsAt, endsAt, payout, payment, rest } = split(acct[3], { payouts: true });
     if (amount == null) return null;
-    return { type: 'account', kind, value: amount, currency, ratePct, startsAt, endsAt, payout, label: rest || kind };
+    return { type: 'account', kind, value: amount, currency, ratePct, startsAt, endsAt, payout, payment, label: rest || kind };
   }
 
   const amount = amountOf(flow[2]);
@@ -327,8 +375,11 @@ export function interestPicture(accounts, table, base = 'EUR', now = Date.now())
   const rows = accounts
     .filter((a) => a.ratePct != null && a.value > 0 && running(a))
     .map((a) => {
-      const inBase = toBase(a.value, a.currency, table);
-      const annualLocal = a.value * (a.ratePct / 100);
+      // On what is OWED today, not on what was borrowed. A loan seven payments from the end is
+      // not still costing a full year's interest on its opening balance.
+      const base_ = balanceNow(a, now).amount;
+      const inBase = toBase(base_, a.currency, table);
+      const annualLocal = base_ * (a.ratePct / 100);
       return {
         ...a,
         inBase,
@@ -362,18 +413,24 @@ export function interestPicture(accounts, table, base = 'EUR', now = Date.now())
  *  The comparison is honest about currency: a loan in EGP at 20% is not really costing 20% to a
  *  euro household if the pound is falling, so where a rate history is known the real cost is
  *  used instead of the headline. */
-export function debtVsInvesting(accounts, { expectedYieldPct = 5, rateThen, rateNow } = {}) {
+export function debtVsInvesting(accounts, { expectedYieldPct = 5, rateThen, rateNow, now = Date.now() } = {}) {
   const loans = accounts.filter((a) => isLiability(a.kind) && a.ratePct != null && a.value > 0);
   return loans.map((l) => {
+    // What it ACTUALLY costs, when he has told the app what he actually pays. A car loan quoted
+    // at 24% whose instalments imply 20.6% is a 20.6% loan; comparing the paperwork's number
+    // against an expected yield compares the wrong thing.
+    const implied = depositProgress(l, now)?.implied || null;
+    const headline = implied ? implied.nominalPct : l.ratePct;
     // Devaluation erodes a foreign-currency debt in the borrower's favour, exactly as it erodes
     // a deposit against him. Same arithmetic, opposite sign.
-    const real = rateThen && rateNow ? realReturn({ nominalPct: l.ratePct, rateThen, rateNow }) : null;
-    const effectiveCost = real ? real.realPct : l.ratePct;
+    const real = rateThen && rateNow ? realReturn({ nominalPct: headline, rateThen, rateNow }) : null;
+    const effectiveCost = real ? real.realPct : headline;
     const edge = effectiveCost - expectedYieldPct;
     return {
       label: l.label || l.kind,
       currency: l.currency,
       ratePct: l.ratePct,
+      impliedPct: implied ? implied.nominalPct : null,
       effectiveCostPct: effectiveCost,
       expectedYieldPct,
       edge,
@@ -532,19 +589,19 @@ export function yearsBetween(from, to) {
  *  A 20% deposit is one number; "20% paid quarterly on 495,000 EGP" is 24,750 EGP landing on a
  *  date he can plan around. That difference is the whole reason this exists — an amount with no
  *  date attached to it cannot be spent, budgeted, or waited for. */
-export function payoutSchedule({ start, end, payout, perYear, totalAtMaturity }, now = Date.now()) {
+export function payoutSchedule({ start, end, payout, perYear, totalAtMaturity, principal = 0, payment = null, amortising = false }, now = Date.now()) {
   if (!payout || !start) return null;
   if (payout === 'maturity') {
     if (!end) return null;
     return {
-      payout, every: null, perPayment: totalAtMaturity,
+      payout, every: null, perPayment: payment || totalAtMaturity,
+      stated: payment != null,
       made: now >= end ? 1 : 0, total: 1,
       next: now >= end ? null : end,
     };
   }
   const every = PAYOUT_MONTHS[payout];
   if (!every) return null;
-  const perPayment = perYear * (every / 12);
   let made = 0, total = 0, next = null;
   // Walked rather than divided, so a clamped month-end date lands where the bank puts it.
   // Bounded because an open-ended holding has no last payment to stop at.
@@ -556,10 +613,93 @@ export function payoutSchedule({ start, end, payout, perYear, totalAtMaturity },
     else if (next == null) next = at;
     if (!end && at > now) break;
   }
-  return { payout, every, perPayment, made, total: end ? total : null, next };
+
+  // WHAT ACTUALLY LEAVES THE ACCOUNT EACH TIME, in order of how much it can be trusted.
+  //
+  //   1. The number he typed off his own statement. Nothing beats it, and nothing overrides it.
+  //   2. For a LOAN with no stated payment: the amortising payment — interest AND principal.
+  //      Interest alone was simply wrong and showed him about half his real bill: 26,700 EGP a
+  //      quarter on a loan he actually pays 58,063.45 on. A loan is repaid, a deposit is not.
+  //   3. For a deposit: the coupon, which really is interest only. The principal comes back at
+  //      the end, and that is the difference between the two cases.
+  const periodRate = perYear && principal ? (perYear / principal) * (every / 12) : 0;
+  let perPayment;
+  let estimated = false;
+  if (payment != null) {
+    perPayment = payment;
+  } else if (amortising && total > 0 && principal > 0) {
+    perPayment = periodRate > 0
+      ? (principal * periodRate) / (1 - Math.pow(1 + periodRate, -total))
+      : principal / total;
+    // Flagged, because an amortisation schedule depends on conventions the app cannot see —
+    // fees, day counts, whether the bank charges on the declining balance or a flat sum. It is
+    // a good estimate and it must never be presented as his bank's number.
+    estimated = true;
+  } else {
+    perPayment = perYear * (every / 12);
+  }
+
+  return {
+    payout, every, perPayment, made, total: end ? total : null, next,
+    estimated,
+    stated: payment != null,
+    // Everything the term will move, and what is left of it.
+    totalOverTerm: end ? perPayment * total : null,
+    paidSoFar: perPayment * made,
+    leftToPay: end ? perPayment * (total - made) : null,
+  };
 }
 
+/** What a stream of payments really costs, whatever the headline says.
+ *
+ *  Borrow 445,000 and repay 58,063.45 ten times and you have paid 135,634 in interest — which
+ *  is 20.6% a year, not the 24% on the paperwork. Solved by bisection rather than a formula
+ *  because there is no closed form, and returned as null when the numbers cannot support an
+ *  answer instead of a confident zero.
+ *
+ *  This is the honest counterpart to the deposit question: a 20% rate that pays late is worth
+ *  less than 20%, and a 24% loan that is repaid steadily costs less than 24%. Both are the same
+ *  arithmetic, and neither is visible from the headline. */
+export function impliedRate({ principal, payment, payments, periodsPerYear }) {
+  const P = num(principal), pay = num(payment), n = Math.round(num(payments)), k = num(periodsPerYear);
+  if (!(P > 0 && pay > 0 && n > 0 && k > 0)) return null;
+  if (pay * n <= P) return null;                       // nothing was charged; no rate to find
+  const pv = (r) => (r === 0 ? pay * n : (pay * (1 - Math.pow(1 + r, -n))) / r);
+  let lo = 0, hi = 1;                                  // 100% per period is far beyond any loan
+  if (pv(hi) > P) return null;
+  for (let i = 0; i < 200; i++) {
+    const mid = (lo + hi) / 2;
+    if (pv(mid) > P) lo = mid; else hi = mid;
+  }
+  const perPeriod = (lo + hi) / 2;
+  return {
+    perPeriodPct: perPeriod * 100,
+    // Nominal is what a bank quotes; effective is what compounding actually does. Both, because
+    // the gap between them is exactly the thing a headline rate hides.
+    nominalPct: perPeriod * k * 100,
+    effectivePct: (Math.pow(1 + perPeriod, k) - 1) * 100,
+    totalPaid: pay * n,
+    totalInterest: pay * n - P,
+  };
+}
+
+/** The whole picture for one dated, rate-bearing holding — including, when he has told the app
+ *  what he actually pays, what that payment really costs. */
 export function depositProgress(a, now = Date.now()) {
+  const t = termProgress(a, now);
+  if (!t?.schedule || !t.schedule.total || !t.schedule.every) return t;
+  return {
+    ...t,
+    implied: impliedRate({
+      principal: a.value,
+      payment: t.schedule.perPayment,
+      payments: t.schedule.total,
+      periodsPerYear: 12 / t.schedule.every,
+    }),
+  };
+}
+
+function termProgress(a, now = Date.now()) {
   if (!a || a.ratePct == null || !(a.value > 0)) return null;
   const start = a.startsAt, end = a.endsAt;
   const perYear = a.value * (a.ratePct / 100);
@@ -571,11 +711,14 @@ export function depositProgress(a, now = Date.now()) {
   const elapsedDays = Math.max(0, (upTo - start) / DAY);
   const earned = perYear * yearsBetween(start, upTo);
 
+  const liability = isLiability(a.kind);
+  const common = { principal: a.value, payment: a.payment ?? null, amortising: liability };
+
   if (!end) {
     return {
       perYear, currency: a.currency, hasTerm: false, start, elapsedDays, earned, running: true,
-      payout: a.payout || null,
-      schedule: payoutSchedule({ start, end: null, payout: a.payout, perYear }, now),
+      liability, payout: a.payout || null,
+      schedule: payoutSchedule({ ...common, start, end: null, payout: a.payout, perYear }, now),
     };
   }
 
@@ -588,8 +731,9 @@ export function depositProgress(a, now = Date.now()) {
     currency: a.currency,
     hasTerm: true,
     start, end,
+    liability,
     payout: a.payout || null,
-    schedule: payoutSchedule({ start, end, payout: a.payout, perYear, totalAtMaturity }, now),
+    schedule: payoutSchedule({ ...common, start, end, payout: a.payout, perYear, totalAtMaturity }, now),
     termDays,
     elapsedDays: Math.min(elapsedDays, termDays),
     remainingDays: Math.max(0, (end - now) / DAY),
@@ -720,6 +864,10 @@ export function patchFrom(kind, raw = {}) {
   if (raw.startsAt !== undefined) out.startsAt = raw.startsAt === '' ? null : parseDate(raw.startsAt);
   if (raw.endsAt !== undefined) out.endsAt = raw.endsAt === '' ? null : parseDate(raw.endsAt);
   if (raw.payout !== undefined) out.payout = PAYOUT_KINDS.includes(raw.payout) ? raw.payout : null;
+  if (raw.payment !== undefined) {
+    const n = raw.payment === '' || raw.payment === null ? null : amount(raw.payment);
+    out.payment = n || null;
+  }
   return out;
 }
 

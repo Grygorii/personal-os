@@ -93,9 +93,45 @@ next one lands.
 - Only on `add` lines. A spend may legitimately be called "monthly gym", and swallowing that
   word as a frequency would silently rename the category.
 
-Interest is **simple, on the principal**, because that is how these certificates pay. Compounding
-would overstate the return, and overstating a return is the one direction this app is not allowed
-to be wrong in.
+Interest on a **deposit** is simple, on the principal, because that is how these certificates
+pay. Compounding would overstate the return, and overstating a return is the one direction this
+app is not allowed to be wrong in.
+
+### A loan is repaid; a deposit is not
+
+The first version treated both the same and showed his car loan as costing 26,700 EGP a quarter —
+445,000 × 24% ÷ 4, interest and nothing else, **about half his real bill of 58,063.45**. A deposit
+pays a coupon and returns the principal at the end; a loan repays principal in every instalment.
+
+So an account can carry the **payment** — what actually moves each period, off his own statement:
+
+```
+add loan 445000 EGP 24% quarterly pays 58063.45 start 28.11.2024 end 28.05.2027
+```
+
+The stated payment **overrides every calculation here**, because a bank's number beats an app's
+arithmetic. With none given, a liability now gets the amortising payment (60,461 for that loan)
+and is labelled an estimate — amortisation depends on fees and day-count conventions the app
+cannot see.
+
+**And a stated payment reveals the true rate.** Repaying 58,063.45 ten times on 445,000 borrowed
+is 135,634 of interest, which is **20.6% a year, not the 24% on the paperwork**. `impliedRate()`
+solves it by bisection and the pay-this-first comparison uses that figure, because comparing the
+paperwork's rate against an expected yield compares the wrong thing. It is the same question the
+app already asks of a high deposit rate, pointed the other way.
+
+### What is owed today is not what was borrowed
+
+`balanceNow()`. The app subtracted the full 445,000 from his net worth while he was **seven
+payments of ten** through clearing it — every instalment he had made was invisible, so paying the
+loan down looked like nothing happening.
+
+What he still owes is the **payoff**: the instalments still to come, discounted at the loan's own
+rate — the one his payments imply, not the headline, or the schedule would not even return the
+principal on day one. Not the raw sum of them either: that includes interest for years he has not
+reached, and settling tomorrow would not cost that. Net worth, currency exposure and the yearly
+interest bill all follow that number. Everything that is not an amortising liability keeps exactly
+the figure he typed.
 
 Terms are measured on the **calendar**, not in days ÷ 365. That version reads a one-year
 certificate opened on 1 January 2020 as 366/365 of a year and pays 10,027 on a round 10,000 —
@@ -243,6 +279,13 @@ fallback path, no initData no answer.
 
 Railway sets `RAILWAY_PUBLIC_DOMAIN` once a domain is generated, so the "Open Pocket" button
 usually needs no configuration; `POCKET_URL` overrides it.
+
+### A loan never speaks in the language of a deposit
+
+The Worth tab showed `3,191 EUR earned so far`, **in green**, on money he was paying out. A
+liability now has its own wording (*paid so far* / *still to pay*), its own red bar, its own
+"still owed of the … borrowed" line, and the sentence that matters most: what the whole term
+costs and what rate that really is.
 
 ### Why colour never carries meaning alone
 

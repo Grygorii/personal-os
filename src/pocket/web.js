@@ -24,7 +24,7 @@ import {
   netWorth, monthOf, goalProgress, yearsToGoal, interestPicture, debtVsInvesting,
   parseEntry, ACCOUNT_KINDS, PAYOUT_KINDS, isLiability, forecastRange, depositProgress,
   monthWindowOf, recentMonths, monthsSummary, patchFrom, depositsSummary, contractedIncome,
-  missingRecurring, cleanFlow,
+  missingRecurring, cleanFlow, balanceNow,
 } from './money.js';
 
 const json = (res, code, body) => {
@@ -98,7 +98,7 @@ export function buildState({ base = 'EUR', table, monthKey, accounts = [], spanF
     return { base, ratesAvailable: false, accounts, flows, goal, kinds: ACCOUNT_KINDS, events: events.list };
   }
 
-  const n = netWorth(accounts, table, base);
+  const n = netWorth(accounts, table, base, now);
   const m = monthOf(flows, table, base, w);
   // The Goal and Plan tabs are always about NOW, never about whichever month he happens to be
   // reading. Browsing back to a thin August must not quietly rewrite the ten-year projection.
@@ -106,7 +106,7 @@ export function buildState({ base = 'EUR', table, monthKey, accounts = [], spanF
   const cur = w.key === nowWindow.key ? m : monthOf(spanFlows, table, base, nowWindow);
   const ip = interestPicture(accounts, table, base, now);
   const g = goalProgress(cur.passive, goal);
-  const invested = netWorth(accounts.filter((a) => ['portfolio', 'deposit'].includes(a.kind)), table, base).total;
+  const invested = netWorth(accounts.filter((a) => ['portfolio', 'deposit'].includes(a.kind)), table, base, now).total;
 
   return {
     base,
@@ -126,11 +126,21 @@ export function buildState({ base = 'EUR', table, monthKey, accounts = [], spanF
     months: monthsSummary(spanFlows, table, base, { count: STRIP_MONTHS, now }),
     // Each account with its converted value alongside the original — the euro figure alone
     // hides a devaluation, so the page always has both.
-    accounts: accounts.map((a) => ({
+    accounts: accounts.map((a) => {
+      // What is owed TODAY. For a part-repaid loan this is the payoff, not the opening balance —
+      // and both travel, because "445,000 borrowed, 155,000 left" is the honest sentence and
+      // either number alone is a different, wronger one.
+      const bal = balanceNow(a, now);
+      return {
       ...a,
       liability: isLiability(a.kind),
-      inBase: fx.toBase(a.value, a.currency, table),
-      shown: fx.describeAmount(a.value, a.currency, table, base),
+      owedNow: bal.amount,
+      repaidSoFar: bal.repaid,
+      settled: bal.settled,
+      owedNowInBase: fx.toBase(bal.amount, a.currency, table),
+      repaidInBase: fx.toBase(bal.repaid, a.currency, table),
+      inBase: fx.toBase(bal.amount, a.currency, table),
+      shown: fx.describeAmount(bal.amount, a.currency, table, base),
       // What this one has actually paid so far, in its own currency, plus the converted
       // figures so the page never does money arithmetic itself.
       term: (() => {
@@ -144,10 +154,14 @@ export function buildState({ base = 'EUR', table, monthKey, accounts = [], spanF
           schedule: t.schedule && {
             ...t.schedule,
             perPaymentInBase: fx.toBase(t.schedule.perPayment, a.currency, table),
+            paidSoFarInBase: fx.toBase(t.schedule.paidSoFar, a.currency, table),
+            leftToPayInBase: t.schedule.leftToPay == null ? null : fx.toBase(t.schedule.leftToPay, a.currency, table),
+            totalOverTermInBase: t.schedule.totalOverTerm == null ? null : fx.toBase(t.schedule.totalOverTerm, a.currency, table),
           },
         };
       })(),
-    })),
+      };
+    }),
     flows: flows.map((f) => ({ ...f, inBase: fx.toBase(f.amount, f.currency, table) })),
     worth: { total: n.total, assets: n.assets, debts: n.debts, exposure: n.exposure, unconverted: n.unconverted },
     interest: { earned: ip.earned, paid: ip.paid, net: ip.net, ended: ip.ended, notStarted: ip.notStarted },
@@ -180,7 +194,7 @@ export function buildState({ base = 'EUR', table, monthKey, accounts = [], spanF
     })(),
     // Things that repeat and have not been entered again. A list to confirm, never a total.
     missing: missingRecurring(spanFlows, w),
-    payFirst: debtVsInvesting(accounts, { expectedYieldPct: 7 }).filter((d) => d.payFirst),
+    payFirst: debtVsInvesting(accounts, { expectedYieldPct: 7, now }).filter((d) => d.payFirst),
     goal: g,
     plan: g ? yearsToGoal({ invested, monthlyContribution: Math.max(0, cur.surplus), goalMonthly: goal.monthly }) : null,
     // Ten years from what he ACTUALLY saved this month, plus whatever he has said will change.

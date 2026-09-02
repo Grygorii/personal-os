@@ -145,6 +145,10 @@ What you own:
   add deposit 495000 EGP 20% quarterly start 28.05.2024 end 28.05.2027
                            (dates and how often it pays — that is what turns
                             a rate into an amount on a date you can plan around)
+  add loan 445000 EGP 24% quarterly pays 58063.45 start 28.11.2024 end 28.05.2027
+                           ("pays" is what your statement actually charges. A loan
+                            repays principal too, so the rate alone is half the bill —
+                            and the payment is what reveals the real rate.)
   accounts                 — list them, with ids to remove
 
   month    — in, out, surplus, where it went

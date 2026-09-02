@@ -32,6 +32,11 @@ const accounts = [
   cleanAccount({ id: 'a4', label: 'Soon CD', kind: 'deposit', currency: 'EGP', value: 50000, ratePct: 18, payout: 'monthly', startsAt: utc(2025, 1, 1), endsAt: utc(2026, 11, 1) }),
   cleanAccount({ id: 'a5', label: 'Cairo flat', kind: 'property', currency: 'EGP', value: 2700000 }),
   cleanAccount({ id: 'a6', label: 'Visa', kind: 'card', currency: 'EUR', value: 1200, ratePct: 19 }),
+  // His real car loan, with the instalment off his own statement. The app used to show 26,700 a
+  // quarter here — interest only, about half the real bill — and count all 445,000 as still owed
+  // while he was seven payments of ten through it.
+  cleanAccount({ id: 'a8', label: 'Loan 1', kind: 'loan', currency: 'EGP', value: 445000, ratePct: 24, payout: 'quarterly', payment: 58063.45, startsAt: utc(2024, 11, 28), endsAt: utc(2027, 5, 28) }),
+  cleanAccount({ id: 'a9', label: 'Loan 2', kind: 'loan', currency: 'EGP', value: 513000, ratePct: 28, payout: 'monthly', startsAt: utc(2024, 10, 26), endsAt: utc(2027, 5, 26) }),
   cleanAccount({ id: 'a7', label: 'eToro', kind: 'portfolio', currency: 'USD', value: 1080 }),
 ];
 const spanFlows = [
@@ -106,6 +111,30 @@ function must(el, panel, needles, label) {
   if (el) {
     must(el, 'p-month', ['Repeats — not recorded yet', 'Yes, add it', 'Left over', 'September'], 'this month');
     must(el, 'p-worth', ['Cairo CD', 'earned so far', 'quarterly', 'matured on', 'matures in', 'Not counted:'], 'this month');
+    // A loan must never be described in the language of a deposit.
+    const worth = el('p-worth').innerHTML;
+    // lastIndexOf, not indexOf: the pay-this-first warnings name the same loans further up the
+    // page, and slicing from the first mention picks up the banner instead of the row.
+    const loanBlock = worth.slice(worth.lastIndexOf('Loan 1'), worth.lastIndexOf('Loan 2'));
+    if (!loanBlock.includes('paid so far')) fail('a loan says "paid so far", never "earned"');
+    if (loanBlock.includes('earned so far')) fail('a loan is showing money it "earned" — it is money he pays');
+    if (!loanBlock.includes('still owed of the')) fail('a part-repaid loan must show what is left, not what was borrowed');
+    if (!loanBlock.includes('% a year')) fail('a stated payment should reveal what the loan really costs');
+    if (!el('p-worth').innerHTML.includes('Estimated —')) fail('a loan with no stated payment must say its figure is an estimate');
+  }
+  {
+    // The numbers behind that block.
+    const l1 = S.accounts.find((a) => a.label === 'Loan 1');
+    if (Math.round(l1.term.schedule.perPayment) !== 58063) fail(`the stated payment must win: got ${l1.term.schedule.perPayment}`);
+    if (l1.term.schedule.made !== 7 || l1.term.schedule.total !== 10) fail('seven of ten payments made');
+    if (Math.round(l1.term.implied.nominalPct * 10) / 10 !== 20.6) fail(`the real rate is 20.6%, got ${l1.term.implied.nominalPct}`);
+    if (Math.round(l1.owedNow) !== 157664) fail(`157,664 EGP still owed, got ${Math.round(l1.owedNow)}`);
+    if (l1.owedNow >= l1.value) fail('a loan seven payments through must owe less than it borrowed');
+    const l2 = S.accounts.find((a) => a.label === 'Loan 2');
+    if (!l2.term.schedule.estimated) fail('with no stated payment the figure is an estimate and must say so');
+    if (Math.round(l2.term.schedule.perPayment) <= Math.round(513000 * 0.28 / 12)) {
+      fail('an estimated loan payment must include principal, not interest only');
+    }
     must(el, 'p-goal', ['Already contracted', 'a month is scheduled'], 'this month');
     must(el, 'p-plan', ['Year by year', 'second rental'], 'this month');
   }
