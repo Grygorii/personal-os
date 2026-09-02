@@ -659,7 +659,7 @@ test('an edit merges over what is stored — it never applies the whitelist to a
 // then went on subtracting the full 445,000 from his net worth while he was seven payments of
 // ten through clearing it, so paying it down looked like nothing happening at all.
 
-import { impliedRate, balanceNow } from '../src/pocket/money.js';
+import { impliedRate, balanceNow, breakEvenFall } from '../src/pocket/money.js';
 
 const LOAN1 = () => cleanAccount({
   label: 'Loan 1', kind: 'loan', currency: 'EGP', value: 445000, ratePct: 24,
@@ -759,10 +759,47 @@ test('netWorth counts what is owed today, not what was borrowed', () => {
   assert.equal(Math.round(egp.raw), -157664);
 });
 
-test('interest is charged on what is still owed, not on the opening balance', () => {
+test('interest is charged on what is still owed, at the rate the loan really carries', () => {
   const ip = interestPicture([LOAN1()], T, 'EUR', SEPT);
-  // 157,664 EGP at 24% is 37,839 EGP a year — 701 EUR, not the 1,978 the full principal implies.
-  assert.equal(Math.round(ip.paid), 701);
+  // Two corrections in one number. On what is still OWED (157,664 EGP), not the 445,000
+  // borrowed — and at the 20.6% his payments imply, not the 24% on the paperwork. Anything
+  // else and this card charges the loan at one rate directly under a warning quoting another.
+  assert.equal(Math.round(ip.paid), 602);
+  assert.notEqual(Math.round(ip.paid), 1978, 'not a full year on the opening balance');
+  assert.notEqual(Math.round(ip.paid), 701, 'and not at the headline rate either');
+  assert.ok(Math.abs(ip.rows[0].effectiveRatePct - 20.62) < 0.05);
+
+  // A deposit has no instalments to imply anything, so it keeps the rate it was given.
+  const dep = cleanAccount({ kind: 'deposit', currency: 'EGP', value: 540000, ratePct: 20 });
+  assert.equal(interestPicture([dep], T, 'EUR', SEPT).rows[0].effectiveRatePct, 20);
+});
+
+test('interestPicture: what a high foreign rate has to survive to be worth anything', () => {
+  // His actual shape: everything earned in Egyptian pounds, every bill paid in euro.
+  const accounts = [
+    cleanAccount({ label: 'D1', kind: 'deposit', currency: 'EGP', value: 495000, ratePct: 20 }),
+    cleanAccount({ label: 'D2', kind: 'deposit', currency: 'EGP', value: 120000, ratePct: 22.5 }),
+    cleanAccount({ label: 'Bank', kind: 'cash', currency: 'EUR', value: 5000, ratePct: 2 }),
+  ];
+  const ip = interestPicture(accounts, T, 'EUR', SEPT);
+  const egp = ip.foreign.find((f) => f.currency === 'EGP');
+
+  // Weighted by money, not by count: 20% on 495,000 and 22.5% on 120,000 is 20.49% overall.
+  assert.ok(Math.abs(egp.weightedRatePct - 20.49) < 0.02);
+  // And the bar the pound has to clear. 20.49% nominal is wiped out by a 17.0% fall — the same
+  // arithmetic as realReturn, solved for zero, needing no forecast and no rate history.
+  assert.ok(Math.abs(egp.breakEvenFallPct - 17.0) < 0.1);
+  assert.equal(ip.foreign.length, 1, 'the euro savings are not foreign to a euro household');
+
+  assert.equal(breakEvenFall(20), 100 * (0.2 / 1.2));
+  assert.ok(Math.abs(breakEvenFall(20) - 16.67) < 0.01);
+  assert.equal(breakEvenFall(0), null);
+  assert.equal(breakEvenFall(-5), null);
+
+  // It has to agree with realReturn, or the app tells him two different stories about one
+  // deposit: a fall of exactly the break-even leaves nothing.
+  const at = realReturn({ nominalPct: 20, rateThen: 54, rateNow: 54 * 1.2 });
+  assert.ok(Math.abs(at.realPct) < 1e-9, 'break-even means break-even');
 });
 
 test('debtVsInvesting compares the rate the payments imply, not the one on the paperwork', () => {

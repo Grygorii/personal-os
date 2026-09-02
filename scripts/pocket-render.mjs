@@ -117,7 +117,8 @@ function must(el, panel, needles, label) {
   const el = render(S, 'this month');
   if (el) {
     must(el, 'p-month', ['Repeats — not recorded yet', 'Yes, add it', 'Left over', 'September'], 'this month');
-    must(el, 'p-worth', ['Cairo CD', 'earned so far', 'quarterly', 'matured on', 'matures in', 'Not counted:'], 'this month');
+    must(el, 'p-worth', ['Cairo CD', 'earned so far', 'quarterly', 'matured on', 'matures in', 'Not counted:',
+      'and you spend EUR', 'of everything you own'], 'this month');
     // A loan must never be described in the language of a deposit.
     const worth = el('p-worth').innerHTML;
     // lastIndexOf, not indexOf: the pay-this-first warnings name the same loans further up the
@@ -137,6 +138,13 @@ function must(el, panel, needles, label) {
     if (Math.round(l1.term.implied.nominalPct * 10) / 10 !== 20.6) fail(`the real rate is 20.6%, got ${l1.term.implied.nominalPct}`);
     if (Math.round(l1.owedNow) !== 157664) fail(`157,664 EGP still owed, got ${Math.round(l1.owedNow)}`);
     if (l1.owedNow >= l1.value) fail('a loan seven payments through must owe less than it borrowed');
+    // The card and the warning must agree about the same loan.
+    const warned = S.payFirst.find((d) => d.label === 'Loan 1');
+    if (Math.abs(warned.effectiveCostPct - l1.term.implied.nominalPct) > 0.01) {
+      fail('the pay-this-first warning and the loan disagree about its rate');
+    }
+    const egp = S.interest.foreign.find((f) => f.currency === 'EGP');
+    if (!egp || !(egp.breakEvenFallPct > 0)) fail('foreign interest must say how far the currency can fall');
     const l2 = S.accounts.find((a) => a.label === 'Loan 2');
     if (!l2.term.schedule.estimated) fail('with no stated payment the figure is an estimate and must say so');
     if (Math.round(l2.term.schedule.perPayment) <= Math.round(513000 * 0.28 / 12)) {

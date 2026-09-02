@@ -48,6 +48,21 @@ deposit **lost** money in the only currency that buys his groceries. `realReturn
 the first is largely compensation for the second, and it is the same question the investing side
 asks about a high dividend yield.
 
+The "interest a year" card said this for one deposit and then printed a confident euro total for
+all of them — €6,622 a year, **24% of his entire net worth**, as though it were income. It now
+carries the bar the currency has to clear: his EGP deposits pay 19.5% on average, so **if the
+pound falls more than 16.3% against the euro this year that interest is a loss** in the money that
+buys his groceries. `breakEvenFall()` — the same arithmetic as `realReturn`, solved for zero, so
+it needs no forecast and no rate history. The rate is weighted by money, not by count: a rate on
+500,000 matters more than one on 5,000.
+
+### One loan, one rate
+
+The card charged Loan 1 at the 24% on its paperwork, directly beneath a warning saying the loan
+costs 20.6%. Two numbers on one screen disagreeing about the same loan — the shape of invariant 9
+in `CLAUDE.md`. Interest on a liability is now charged at the rate its payments imply, wherever
+that is known, so the warning and the card are the same figure.
+
 ## The grammar
 
 One line, no forms. Currency is optional and defaults to `BASE_CURRENCY`.
@@ -176,7 +191,12 @@ a price without one: it looks current.
 2. Railway → same project → **New Service** → same repo.
 3. Start command: `npm run start:pocket`.
 4. Env vars above, `DB_NAME=pocket` among them.
-5. Look for `[boot] pocket-1 · db=pocket · base=EUR`.
+5. Look for `[boot] pocket-5 · db=pocket · base=EUR`.
+
+**Which build is actually serving?** `GET /health` (or `/version`) answers without Telegram —
+`{"ok":true,"app":"pocket","version":"pocket-5"}`. The marker lives in `src/pocket/version.js`;
+bump it on every deploy. Kept has `GET /version` for exactly the same reason: "is my change even
+out there yet" is the first question of every deploy, and guessing at it wastes an evening.
 
 ## Layout
 

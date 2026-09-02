@@ -393,6 +393,18 @@ export function parseEntry(text, base = 'EUR') {
  *  a household's picture of itself that stopped arriving five years ago. A term that has not
  *  STARTED yet is the same mistake in the other direction. Both are excluded here and named, so
  *  the total is what is running today. */
+/** How far a currency can fall before a rate paid in it is worth nothing.
+ *
+ *  A 20% deposit in Egyptian pounds returns nothing at all to a euro household if the pound
+ *  loses 1/1.2 of its value — 16.7% — over the same year. Above that it is a loss. This needs no
+ *  exchange-rate history and no forecast: it is the bar the currency has to clear, stated so he
+ *  can judge it himself. The same arithmetic as realReturn(), solved for zero. */
+export function breakEvenFall(nominalPct) {
+  const r = num(nominalPct) / 100;
+  if (!(r > 0)) return null;
+  return (r / (1 + r)) * 100;
+}
+
 export function interestPicture(accounts, table, base = 'EUR', now = Date.now()) {
   const running = (a) => !(a.endsAt && now >= a.endsAt) && !(a.startsAt && now < a.startsAt);
   const rows = accounts
@@ -402,21 +414,51 @@ export function interestPicture(accounts, table, base = 'EUR', now = Date.now())
       // not still costing a full year's interest on its opening balance.
       const base_ = balanceNow(a, now).amount;
       const inBase = toBase(base_, a.currency, table);
-      const annualLocal = base_ * (a.ratePct / 100);
+      const liability = isLiability(a.kind);
+      // THE RATE THIS ACCOUNT ACTUALLY CARRIES. For a loan whose instalments he has entered
+      // that is the implied rate, not the headline — otherwise this card charges Loan 1 at 24%
+      // directly underneath a warning that says it costs 20.6%, and two numbers on one screen
+      // disagree about the same loan.
+      const implied = liability ? depositProgress(a, now)?.implied : null;
+      const ratePct = implied ? implied.nominalPct : a.ratePct;
+      const annualLocal = base_ * (ratePct / 100);
       return {
         ...a,
         inBase,
         annualLocal,
-        annualBase: inBase == null ? null : inBase * (a.ratePct / 100),
-        liability: isLiability(a.kind),
+        effectiveRatePct: ratePct,
+        annualBase: inBase == null ? null : inBase * (ratePct / 100),
+        liability,
       };
     });
   const known = rows.filter((r) => r.annualBase != null);
   const earned = known.filter((r) => !r.liability).reduce((n, r) => n + r.annualBase, 0);
   const paid = known.filter((r) => r.liability).reduce((n, r) => n + r.annualBase, 0);
+
+  // WHAT THAT INTEREST IS ACTUALLY WORTH.
+  //
+  // Nearly all of his is earned in Egyptian pounds and every bill he pays is in euro. A 20%
+  // rate is not a 20% return to him; high local rates and devaluation are not two separate
+  // facts, the first is largely compensation for the second. The app says this about a single
+  // deposit already (realReturn in fx.js) and then prints a confident euro total here as though
+  // it were income. So each foreign currency reports the rate it pays on average and how far it
+  // has to fall to wipe that out.
+  const byCurrency = {};
+  for (const r of known.filter((x) => !x.liability && x.currency !== base && x.inBase > 0)) {
+    const c = byCurrency[r.currency] || (byCurrency[r.currency] = { currency: r.currency, principalInBase: 0, annualBase: 0 });
+    c.principalInBase += r.inBase;
+    c.annualBase += r.annualBase;
+  }
+  const foreign = Object.values(byCurrency).map((c) => {
+    // Weighted by money, not by count: a rate on 500,000 matters more than one on 5,000.
+    const weightedRatePct = (c.annualBase / c.principalInBase) * 100;
+    return { ...c, weightedRatePct, breakEvenFallPct: breakEvenFall(weightedRatePct) };
+  }).sort((a, b) => b.annualBase - a.annualBase);
+
   return {
     base, rows, earned, paid,
     net: earned - paid,
+    foreign,
     // Named rather than silently dropped: "this deposit is not in the total, and here is why"
     // is information; a smaller number with no explanation is just a number he cannot check.
     ended: accounts.filter((a) => a.ratePct != null && a.endsAt && now >= a.endsAt).map((a) => a.label || a.kind),

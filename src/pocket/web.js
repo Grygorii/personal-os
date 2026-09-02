@@ -18,6 +18,7 @@ import { readFile } from 'fs/promises';
 import { fileURLToPath } from 'url';
 import { config } from '../config.js';
 import { verifyInitData } from '../miniapp.js';
+import { VERSION } from './version.js';
 import * as fx from '../fx.js';
 import * as store from './store.js';
 import {
@@ -164,7 +165,14 @@ export function buildState({ base = 'EUR', table, monthKey, accounts = [], spanF
     }),
     flows: flows.map((f) => ({ ...f, inBase: fx.toBase(f.amount, f.currency, table) })),
     worth: { total: n.total, assets: n.assets, debts: n.debts, exposure: n.exposure, unconverted: n.unconverted },
-    interest: { earned: ip.earned, paid: ip.paid, net: ip.net, ended: ip.ended, notStarted: ip.notStarted },
+    interest: {
+      earned: ip.earned, paid: ip.paid, net: ip.net,
+      ended: ip.ended, notStarted: ip.notStarted,
+      foreign: ip.foreign,
+      // What that interest is next to everything he owns. 6,622 a year against a net worth of
+      // 28,036 is 24% — the number that made him look twice, and correctly.
+      shareOfWorth: n.total > 0 ? (ip.earned / n.total) * 100 : null,
+    },
     // A term that is nearly up, or already up. A matured certificate sitting unnoticed is
     // capital earning nothing, and nothing else in the app would ever mention it again.
     terms: (() => {
@@ -245,7 +253,11 @@ export function startWeb(port = process.env.PORT || 3000) {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
         return res.end(html);
       }
-      if (url.pathname === '/health') return json(res, 200, { ok: true, app: 'pocket' });
+      // Open on purpose and carries no data: "which build is actually serving" has to be
+      // answerable without opening Telegram, or a deploy that never arrived looks like a bug.
+      if (url.pathname === '/health' || url.pathname === '/version') {
+        return json(res, 200, { ok: true, app: 'pocket', version: VERSION });
+      }
 
       if (url.pathname.startsWith('/api/')) {
         const gate = authorised(req);

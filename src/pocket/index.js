@@ -21,8 +21,7 @@ import { poll, setCommands, sendKeyboard, sendInline, setMenuButton } from '../t
 import * as bot from './bot.js';
 import { ensureIndexes } from './store.js';
 import { startWeb } from './web.js';
-
-const VERSION = 'pocket-4';
+import { VERSION } from './version.js';
 
 process.on('unhandledRejection', (reason) => {
   console.error('[fatal] unhandled rejection:', reason instanceof Error ? reason.stack : reason);
