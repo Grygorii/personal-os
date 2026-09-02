@@ -139,8 +139,31 @@ export async function getPlanEvents() {
   const doc = await col('settings').findOne({ _id: 'plan' });
   return {
     years: Number(doc?.years) || 10,
+    // Whether the plan starts from what he ACTUALLY saved this month, or only from the pieces
+    // he has listed. Both are honest; which he means is a decision, not a default to guess at.
+    // Measured, until he says otherwise — a plan built on a number he checked beats one built
+    // on a number he hoped for.
+    useMeasured: doc?.useMeasured !== false,
     list: (Array.isArray(doc?.list) ? doc.list : []).map(cleanEvent),
   };
+}
+
+export async function setPlanBase(useMeasured) {
+  await col('settings').updateOne({ _id: 'plan' }, { $set: { useMeasured: !!useMeasured } }, { upsert: true });
+  return !!useMeasured;
+}
+
+export async function updatePlanEvent(id, patch) {
+  const doc = await col('settings').findOne({ _id: 'plan' });
+  const list = (Array.isArray(doc?.list) ? doc.list : []);
+  const i = list.findIndex((e) => e.id === String(id || ''));
+  if (i < 0) return null;
+  // Merge then sanitise, the same way an account or a flow is edited: cleaning the fragment
+  // alone would drop every field the fragment did not mention.
+  const clean = cleanEvent({ ...list[i], ...patch, id: list[i].id });
+  list[i] = clean;
+  await col('settings').updateOne({ _id: 'plan' }, { $set: { list } });
+  return clean;
 }
 
 export async function addPlanEvent(e) {

@@ -191,10 +191,10 @@ a price without one: it looks current.
 2. Railway → same project → **New Service** → same repo.
 3. Start command: `npm run start:pocket`.
 4. Env vars above, `DB_NAME=pocket` among them.
-5. Look for `[boot] pocket-6 · db=pocket · base=EUR`.
+5. Look for `[boot] pocket-7 · db=pocket · base=EUR`.
 
 **Which build is actually serving?** `GET /health` (or `/version`) answers without Telegram —
-`{"ok":true,"app":"pocket","version":"pocket-6"}`. The marker lives in `src/pocket/version.js`;
+`{"ok":true,"app":"pocket","version":"pocket-7"}`. The marker lives in `src/pocket/version.js`;
 bump it on every deploy. Kept has `GET /version` for exactly the same reason: "is my change even
 out there yet" is the first question of every deploy, and guessing at it wastes an evening.
 
@@ -389,6 +389,38 @@ Green for money in, red for money out — which is the pair the palette validato
 **ΔE 7.7 for deuteranopia**, the commonest colour blindness. Measured, not guessed. The rule is
 that such a pair is legal only with a *secondary encoding*, so here money in is a **filled dot
 prefixed +** and money out is a **hollow ring prefixed −**. Either signal alone reads correctly.
+
+## The Plan tab: something you build
+
+His verdict on the first version was "completely not clear", and he was right. It projected from
+a measured surplus he could never see, through four `prompt()` boxes, at one yield for every kind
+of money. **A projection you cannot take apart is not a plan, it is a claim.**
+
+It is now a list of named pieces, in his words, each editable:
+
+| He says | It is |
+|---|---|
+| "500 from salary" | `contribution` — money he moves into the pot each month |
+| "rent from apartment 1" | `income` — money that arrives; also counts towards the goal |
+| "deposit 10000 under 2%" | `lump` with `ratePct: 2` — lands once, grows at **its own** rate |
+| "in year 3, another apartment" | `income` from `atYear: 3` |
+| "car insurance until year 4" | `spending` with `untilYear: 4` |
+
+The pieces are listed *before* the result, and the total that goes in each month is visibly their
+sum. The measured surplus is the first row in that list rather than a hidden ingredient — with a
+button to ignore it, because "start from what I actually saved" and "only count what I have
+listed" are both honest and which he means is a decision, not a default to guess at.
+
+### Money in buckets, one per rate
+
+**A deposit at 2% and a portfolio at whatever the market does are not the same money.** The old
+forecast compounded both at one figure and was therefore wrong about whichever it was not
+describing — over ten years, by tens of thousands. Each piece with a stated rate now gets its own
+bucket and compounds at its own rate; everything without one follows the scenario yield, and the
+passive income each throws off follows its own rate too.
+
+10,000 at 2% for ten years is 12,190. At the 5% middle case it would be 16,289. That gap, on one
+line, is the whole argument.
 
 ### Why the ten-year view is one colour, not three
 

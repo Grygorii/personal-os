@@ -523,16 +523,35 @@ export function debtVsInvesting(accounts, { expectedYieldPct = 5, rateThen, rate
 // 3.5% and 7% is not a detail, it is most of the answer — which is exactly why one line is a
 // lie and a range is not.
 
+// The pieces a plan is BUILT from, in his words:
+//
+//   "500 from salary"                  → contribution, 500 a month, from year 1
+//   "rent from apartment 1"            → income, 450 a month, from year 1
+//   "deposit 10000 under 2%"           → lump, 10,000 once, at its OWN 2%
+//   "in year 3 another apartment"      → income, from year 3
+//
+// `contribution` is money he puts in. `income` is money that arrives — it also counts towards
+// the passive-income goal, which is the only difference between the two. `spending` is a cost
+// that eats into what he can save. `lump` lands once.
 export const EVENT_KINDS = ['contribution', 'lump', 'income', 'spending'];
 
 export function cleanEvent(e) {
+  const atYear = Math.max(1, Math.min(60, Math.round(num(e?.atYear)) || 1));
   return {
     id: txt(e?.id, 32) || Date.now().toString(36),
     // Which year of the plan it takes effect. Year 1 is the next twelve months.
-    atYear: Math.max(1, Math.min(60, Math.round(num(e?.atYear)) || 1)),
+    atYear,
+    // And when it stops, if it does. "Rent until year 10" — a lease that ends, a loan that gets
+    // paid off, a child who leaves. Without this every plan runs every line for ever.
+    untilYear: e?.untilYear == null || !num(e.untilYear) ? null : Math.max(atYear, Math.min(60, Math.round(num(e.untilYear)))),
     kind: EVENT_KINDS.includes(e?.kind) ? e.kind : 'contribution',
     // A monthly figure for contribution/income/spending; a one-off total for a lump.
     amount: num(e?.amount),
+    // ITS OWN RATE, when the money has one. A deposit at 2% and a portfolio at 7% are not the
+    // same money, and a plan that compounds both at one figure is wrong about whichever it is
+    // not describing — usually by tens of thousands over ten years. Null means "whatever the
+    // market does", and it follows the scenario yield like everything else.
+    ratePct: e?.ratePct == null || e.ratePct === '' ? null : num(e.ratePct),
     label: txt(e?.label, 80),
   };
 }
@@ -556,34 +575,69 @@ export function forecast({
   const y = num(yieldPct) / 100;
   const evts = (Array.isArray(events) ? events : []).map(cleanEvent);
 
-  let capital = Math.max(0, num(startCapital));
-  let contribution = num(monthlySurplus);
-  let extraIncome = 0;     // passive income from events, on top of what the capital yields
+  // MONEY IN BUCKETS, ONE PER RATE.
+  //
+  // A deposit at 2% and a portfolio at whatever the market does are not the same money, and a
+  // plan that grows both at one figure is wrong about whichever it is not describing. Over ten
+  // years that is not a rounding error, it is tens of thousands. So each piece with its own rate
+  // gets its own bucket and compounds at its own rate; everything else sits in the default one
+  // and follows the scenario yield.
+  const buckets = new Map([['default', { rate: y, capital: Math.max(0, num(startCapital)), monthly: 0, label: null }]]);
+  const bucketFor = (e) => {
+    if (e.ratePct == null) return buckets.get('default');
+    const key = `r${e.ratePct}`;
+    if (!buckets.has(key)) buckets.set(key, { rate: num(e.ratePct) / 100, capital: 0, monthly: 0, label: `${e.ratePct}%` });
+    return buckets.get(key);
+  };
+
+  let baseMonthly = num(monthlySurplus);   // what he saves today, before anything he has listed
+  let extraIncome = 0;                     // income from pieces, on top of what the capital yields
   let extraSpending = 0;
   const rows = [];
 
   for (let year = 1; year <= n; year++) {
-    // Events land at the START of their year, so year 3 means "from year three onwards".
+    // Pieces start at the START of their year, so year 3 means "from year three onwards", and
+    // stop at the END of untilYear.
     for (const e of evts.filter((x) => x.atYear === year)) {
-      if (e.kind === 'contribution') contribution += e.amount;
-      else if (e.kind === 'income') { extraIncome += e.amount; contribution += e.amount; }
-      else if (e.kind === 'spending') { extraSpending += e.amount; contribution -= e.amount; }
-      else if (e.kind === 'lump') capital += e.amount;
+      const b = bucketFor(e);
+      if (e.kind === 'contribution') b.monthly += e.amount;
+      else if (e.kind === 'income') { extraIncome += e.amount; b.monthly += e.amount; }
+      else if (e.kind === 'spending') { extraSpending += e.amount; buckets.get('default').monthly -= e.amount; }
+      else if (e.kind === 'lump') b.capital += e.amount;
     }
+    for (const e of evts.filter((x) => x.untilYear != null && x.untilYear === year - 1)) {
+      const b = bucketFor(e);
+      if (e.kind === 'contribution') b.monthly -= e.amount;
+      else if (e.kind === 'income') { extraIncome -= e.amount; b.monthly -= e.amount; }
+      else if (e.kind === 'spending') { extraSpending -= e.amount; buckets.get('default').monthly += e.amount; }
+    }
+
     // Contributions through the year, then growth. Deliberately not the other way round: it
     // credits a full year of return to money that arrived in December.
-    const added = Math.max(0, contribution) * 12;
-    capital = capital * (1 + y) + added;
-    const passive = (capital * y) / 12 + extraIncome + monthlyPassiveNow;
+    const def = buckets.get('default');
+    const monthly = [...buckets.values()].reduce((t, b) => t + b.monthly, 0) + baseMonthly;
+    let contributedThisYear = 0;
+    for (const b of buckets.values()) {
+      const add = Math.max(0, (b === def ? b.monthly + baseMonthly : b.monthly)) * 12;
+      contributedThisYear += add;
+      b.capital = b.capital * (1 + b.rate) + add;
+    }
+    const capital = [...buckets.values()].reduce((t, b) => t + b.capital, 0);
+    // Each bucket yields at ITS rate, so a plan half in 2% deposits does not report itself as
+    // though all of it were in the market.
+    const fromCapital = [...buckets.values()].reduce((t, b) => t + (b.capital * b.rate) / 12, 0);
+    const passive = fromCapital + extraIncome + monthlyPassiveNow;
+
     rows.push({
       year,
       capital,
-      contributedThisYear: added,
-      monthlyContribution: contribution,
+      contributedThisYear,
+      monthlyContribution: monthly,
       passiveMonthly: passive,
       extraSpending,
       goalMet: goalMonthly > 0 ? passive >= goalMonthly : null,
       events: evts.filter((x) => x.atYear === year).map((x) => x.label || x.kind),
+      ends: evts.filter((x) => x.untilYear === year).map((x) => x.label || x.kind),
     });
   }
 
@@ -591,6 +645,9 @@ export function forecast({
   return {
     rows,
     yieldPct: num(yieldPct),
+    // What sits at a rate of its own, so the page can say "half of this is not market money".
+    ownRate: [...buckets.entries()].filter(([k]) => k !== 'default')
+      .map(([, b]) => ({ ratePct: b.rate * 100, capital: b.capital })),
     endCapital: rows[rows.length - 1].capital,
     endPassive: rows[rows.length - 1].passiveMonthly,
     goalReachedInYear: hit ? hit.year : null,

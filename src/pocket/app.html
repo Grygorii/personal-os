@@ -617,55 +617,91 @@ function drawPlan() {
   const mid = f.mid, low = f.low, high = f.high;
   const peak = high.rows[high.rows.length - 1].capital || 1;
   const goal = S.goal?.target || 0;
+  const yrs = mid.rows.length;
 
-  const rows = mid.rows.map((r, i) => {
-    const lo = low.rows[i].capital, hi = high.rows[i].capital;
-    const met = goal > 0 && r.passiveMonthly >= goal;
-    return `
-      <div style="margin-bottom:13px">
-        <div style="display:flex;justify-content:space-between;align-items:baseline;font-size:13px">
-          <span style="color:var(--dim)">Year ${r.year}${r.events.length ? ' · ' + esc(r.events.join(', ')) : ''}</span>
-          <span style="font-variant-numeric:tabular-nums;font-weight:600">${money(r.capital)}${met ? ' <span class="pill">goal</span>' : ''}</span>
-        </div>
-        <div class="bar" style="margin-top:5px"><i style="width:${Math.max(2, (r.capital / peak) * 100)}%"></i></div>
-        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--dim);margin-top:4px">
-          <span>${money(lo)} – ${money(hi)} depending on yield</span>
-          <span>${money(r.passiveMonthly)}/mo passive</span>
-        </div>
-      </div>`;
-  }).join('');
+  /* WHERE THE MONEY COMES FROM, listed before what it becomes.
+     The old tab handed him a number built from things he could not see: this month's measured
+     surplus, silently, plus four prompt() boxes. He said it was not clear, and he was right —
+     a projection you cannot take apart is not a plan, it is a claim. So the pieces come first,
+     each in his own words, each editable, and the total is visibly their sum. */
+  const money0 = (n) => money(n).replace(/\s*EUR$/, '');
+  const per = (e) => e.kind === 'lump'
+    ? `${money(e.amount)} once in year ${e.atYear}`
+    : `${money(e.amount)} a month from year ${e.atYear}${e.untilYear ? ` to ${e.untilYear}` : ''}`;
+  const what = { contribution: 'you put in', income: 'arrives', spending: 'goes out', lump: 'one-off' };
 
-  const evts = (S.events || []).map((e) => `
+  const pieces = (S.events || []).map((e) => `
     <div class="row">
-      <div class="rmain"><div class="rlabel">${esc(e.label || e.kind)}</div>
-        <div class="rmeta">from year ${e.atYear} · ${esc(e.kind)} ${money(e.amount)}${e.kind === 'lump' ? '' : '/mo'}</div></div>
+      <span class="dot ${e.kind === 'spending' ? 'out' : 'in'}"></span>
+      <div class="rmain">
+        <div class="rlabel">${esc(e.label || e.kind)}</div>
+        <div class="rmeta">${esc(what[e.kind] || e.kind)} · ${per(e)}${e.ratePct != null ? ` · grows at ${e.ratePct}%` : ''}</div>
+      </div>
+      <button class="edit" data-plan-edit="${esc(e.id)}" aria-label="Edit">✎</button>
       <button class="del" data-plan-del="${esc(e.id)}" aria-label="Remove">×</button>
     </div>`).join('');
 
+  const base = S.planBase || 0;
+  const listedMonthly = (S.events || [])
+    .filter((e) => e.kind !== 'lump')
+    .reduce((n, e) => n + (e.kind === 'spending' ? -e.amount : e.amount), 0);
+
   $('p-plan').innerHTML = `
     <div class="card">
-      <h2>In ${mid.rows.length} years</h2>
-      <div class="big in">${money(mid.endPassive)}<span style="font-size:15px;color:var(--dim);font-weight:400">/mo passive</span></div>
-      <div class="sub">${money(mid.endCapital)} invested · could be ${money(low.endCapital)} or ${money(high.endCapital)}</div>
-      ${mid.goalReachedInYear ? `<div class="sub in" style="margin-top:6px">Goal reached in year ${mid.goalReachedInYear}</div>`
-        : (goal > 0 ? `<div class="sub" style="margin-top:6px">Goal not reached inside ${mid.rows.length} years at these numbers.</div>` : '')}
+      <h2>What goes in</h2>
+      <div class="big ${base + listedMonthly >= 0 ? 'in' : 'out'}">${money(base + listedMonthly)}<span style="font-size:15px;color:var(--dim);font-weight:400"> a month</span></div>
+      <div class="sub">${base > 0 ? `${money(base)} measured + ` : ''}${money(listedMonthly)} from what you listed below</div>
     </div>
+
+    <div class="card">
+      <h2>Where it comes from</h2>
+      <div class="row">
+        <span class="dot ${S.planUseMeasured ? 'in' : 'out'}"></span>
+        <div class="rmain">
+          <div class="rlabel">What you actually saved this month</div>
+          <div class="rmeta">${S.planUseMeasured ? `${money(base)} a month, measured — not a guess` : 'switched off — only what you list below counts'}</div>
+        </div>
+        <button class="add" data-plan-base="${S.planUseMeasured ? 'off' : 'on'}">${S.planUseMeasured ? 'Ignore it' : 'Use it'}</button>
+      </div>
+      ${pieces}
+      <button class="btn ghost" id="addevent" style="margin-top:12px">+ Add money, income, or a cost</button>
+      <div class="note">Everything here is yours to set. Anything with its own rate — a deposit at
+      2%, a bond — grows at that rate; everything else grows at the market range below, because
+      those are not the same money.</div>
+    </div>
+
+    <div class="card">
+      <h2>What it becomes in ${yrs} years</h2>
+      <div class="big in">${money(mid.endPassive)}<span style="font-size:15px;color:var(--dim);font-weight:400">/mo without working</span></div>
+      <div class="sub">${money(mid.endCapital)} invested · could be ${money(low.endCapital)} or ${money(high.endCapital)}</div>
+      ${mid.ownRate.length ? `<div class="note">${mid.ownRate.map((b) => `${money(b.capital)} of that is at your own ${b.ratePct}%, not the market's`).join('. ')}.</div>` : ''}
+      ${mid.goalReachedInYear ? `<div class="sub in" style="margin-top:6px">You reach ${money(goal)} a month in year ${mid.goalReachedInYear}.</div>`
+        : (goal > 0 ? `<div class="sub" style="margin-top:6px">Not enough to reach ${money(goal)} a month inside ${yrs} years. Adding to what goes in moves this far more than a better yield does.</div>` : '')}
+    </div>
+
     <div class="card">
       <h2>Year by year</h2>
-      ${rows}
-      <div class="note">Bars are the middle case (5% a year). The range beside each is 3.5% to 7% —
-      over a decade that assumption is most of the answer, which is why it is shown as a spread
-      and not a number. Assumes ${esc(f.assumes)}.</div>
-    </div>
-    <div class="card">
-      <h2>What changes, and when</h2>
-      ${evts || '<div class="empty" style="padding:14px">Nothing added. The projection assumes today repeats.</div>'}
-      <button class="btn ghost" id="addevent" style="margin-top:10px">+ Add a change</button>
+      ${mid.rows.map((r, i) => {
+        const lo = low.rows[i].capital, hi = high.rows[i].capital;
+        const met = goal > 0 && r.passiveMonthly >= goal;
+        return `
+        <div style="margin-bottom:13px">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;font-size:13px">
+            <span style="color:var(--dim)">Year ${r.year}${r.events.length ? ' · ' + esc(r.events.join(', ')) : ''}${r.ends.length ? ' · ' + esc(r.ends.join(', ')) + ' ends' : ''}</span>
+            <span style="font-variant-numeric:tabular-nums;font-weight:600">${money(r.capital)}${met ? ' <span class="pill">goal</span>' : ''}</span>
+          </div>
+          <div class="bar" style="margin-top:5px"><i style="width:${Math.max(2, (r.capital / peak) * 100)}%"></i></div>
+          <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--dim);margin-top:4px">
+            <span>${money(lo)} – ${money(hi)} depending on yield</span>
+            <span>${money(r.passiveMonthly)}/mo</span>
+          </div>
+        </div>`;
+      }).join('')}
+      <div class="note">The bar is the middle case, 5% a year. The range beside it is 3.5% to 7% —
+      over a decade that assumption is most of the answer, which is why it is a spread and not a
+      number. Assumes ${esc(f.assumes)}.</div>
     </div>`;
 
-  // One form, not four prompt() boxes in a row. The old flow asked four questions with no way
-  // back, and answering the third wrong meant starting again — which is why nothing was ever
-  // added to the plan.
   $('addevent').onclick = () => openPlanEvent();
 }
 
@@ -825,9 +861,17 @@ $('esave').onclick = async () => {
     if (!v.label || !Number(v.amount) || !Number(v.atYear)) {
       $('eerr').textContent = 'It needs a name, an amount and a year.'; $('eerr').hidden = false; return;
     }
+    const piece = {
+      label: v.label, kind: v.kind,
+      amount: Number(v.amount), atYear: Number(v.atYear),
+      // Empty means "whatever the market does" and "forever" — both are real answers, so both
+      // are stored as null rather than as a zero that would quietly mean something else.
+      ratePct: v.ratePct === '' ? null : Number(v.ratePct),
+      untilYear: v.untilYear === '' ? null : Number(v.untilYear),
+    };
     $('esave').disabled = true;
     try {
-      S = await api('/api/plan', { label: v.label, kind: v.kind, amount: Number(v.amount), atYear: Number(v.atYear) });
+      S = await api('/api/plan', editing.id ? { edit: editing.id, patch: piece } : piece);
       draw(); closeEdit();
     } catch (err) { $('eerr').textContent = err.message; $('eerr').hidden = false; }
     finally { $('esave').disabled = false; }
@@ -852,26 +896,38 @@ $('esave').onclick = async () => {
   } finally { $('esave').disabled = false; }
 };
 
-/** Adding a change to the ten-year plan. Same sheet machinery as editing, so there is one way
- *  to fill in a form in this app rather than two. */
-function openPlanEvent() {
-  editing = { kind: 'planEvent' };
-  $('etitle').textContent = 'What changes, and when';
+/** A piece of the plan, in his words: "500 from salary", "rent from apartment 1",
+ *  "deposit 10000 under 2%", "in year 3 another apartment".
+ *
+ *  One form for adding and for editing, and the same sheet as everything else, so there is one
+ *  way to fill in a form in this app rather than two. */
+function openPlanEvent(existing) {
+  const e = existing || { kind: 'contribution', atYear: 1, amount: '', label: '', ratePct: '', untilYear: '' };
+  editing = { kind: 'planEvent', id: existing?.id };
+  $('etitle').textContent = existing ? 'Edit this piece' : 'Add to the plan';
   $('eerr').hidden = true;
   $('efields').innerHTML = `
-    ${field('What is it', input('label', '', 'placeholder="second rental"'))}
-    ${field('Kind', select('kind', [
-      { v: 'income', t: 'new income each month' },
-      { v: 'contribution', t: 'you save more each month' },
-      { v: 'spending', t: 'you spend more each month' },
-      { v: 'lump', t: 'a one-off amount' },
-    ], 'income'))}
+    ${field('What is it', input('label', e.label, 'placeholder="rent from apartment 1"'))}
+    ${field('What does it do', select('kind', [
+      { v: 'contribution', t: 'I put this in every month' },
+      { v: 'income', t: 'this money arrives every month' },
+      { v: 'lump', t: 'I add this once' },
+      { v: 'spending', t: 'this costs me every month' },
+    ], e.kind))}
     <div class="two">
-      ${field('Amount', input('amount', '', 'inputmode="decimal" placeholder="300"'))}
-      ${field('From year', input('atYear', '3', 'inputmode="numeric"'))}
+      ${field('Amount', input('amount', e.amount, 'inputmode="decimal" placeholder="500"'))}
+      ${field('Its own rate %', input('ratePct', e.ratePct ?? '', 'inputmode="decimal" placeholder="market"'))}
     </div>
-    <div class="note" style="margin-top:0">Year 1 is the next twelve months. Everything here is in
-    ${esc(S.base)} — the plan is a shape, not a ledger.</div>`;
+    <div class="two">
+      ${field('From year', input('atYear', e.atYear, 'inputmode="numeric"'))}
+      ${field('Until year', input('untilYear', e.untilYear ?? '', 'inputmode="numeric" placeholder="forever"'))}
+    </div>
+    <div class="note" style="margin-top:0">Year 1 is the next twelve months, so <b>from year 1</b>
+    means starting now. Leave the rate empty and it grows with the market range; put <b>2</b> there
+    for a deposit paying 2% and it grows at 2% instead. Everything is in ${esc(S.base)}.
+    <br><br><b>“I put this in”</b> is money you move from your pocket into the pot.
+    <b>“This money arrives”</b> is rent or a dividend — it goes into the pot too, and it counts
+    towards your ${money(S.goal?.target || 2000)} a month goal, which is the only difference.</div>`;
   $('esheet').hidden = false;
 }
 
@@ -914,6 +970,20 @@ document.body.addEventListener('click', async (e) => {
     if (await work(() => api('/api/charge', { id: chg.dataset.charge }))) {
       tg?.HapticFeedback?.notificationOccurred?.('success');
     }
+    return;
+  }
+
+  const planEdit = e.target.closest('[data-plan-edit]');
+  if (planEdit) {
+    const piece = (S.events || []).find((x) => x.id === planEdit.dataset.planEdit);
+    if (piece) openPlanEvent(piece);
+    return;
+  }
+  // Whether the plan starts from what he measured, or only from what he has listed. Both are
+  // honest; which he means is his call, and it has to be visible rather than assumed.
+  const planBase = e.target.closest('[data-plan-base]');
+  if (planBase) {
+    await work(() => api('/api/plan', { useMeasured: planBase.dataset.planBase === 'on' }));
     return;
   }
 

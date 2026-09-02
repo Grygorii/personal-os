@@ -26,7 +26,7 @@ import {
   parseEntry, ACCOUNT_KINDS, PAYOUT_KINDS, isLiability, forecastRange, depositProgress,
   monthWindowOf, recentMonths, monthsSummary, patchFrom, depositsSummary, contractedIncome,
   missingRecurring, cleanFlow, balanceNow, subsSummary, BILLING_PERIODS, cleanSub,
-  scheduledFlows,
+  scheduledFlows, EVENT_KINDS,
 } from './money.js';
 
 const json = (res, code, body) => {
@@ -244,9 +244,15 @@ export function buildState({ base = 'EUR', table, monthKey, accounts = [], spanF
     plan: g ? yearsToGoal({ invested, monthlyContribution: Math.max(0, cur.surplus), goalMonthly: goal.monthly }) : null,
     // Ten years from what he ACTUALLY saved this month, plus whatever he has said will change.
     // Three yields, because over a decade the yield assumption is most of the answer.
+    // The plan is BUILT, not inferred. `planBase` is the one number it starts from — what he
+    // actually saved this month — and he can switch it off and list everything himself instead.
+    planBase: events.useMeasured ? Math.max(0, cur.surplus) : 0,
+    planUseMeasured: events.useMeasured !== false,
+    planStartCapital: invested,
+    eventKinds: EVENT_KINDS,
     forecast: forecastRange({
       startCapital: invested,
-      monthlySurplus: cur.surplus,
+      monthlySurplus: events.useMeasured ? cur.surplus : 0,
       monthlyPassiveNow: 0,
       years: Number(events.years) || 10,
       events: events.list,
@@ -319,6 +325,8 @@ export function startWeb(port = process.env.PORT || 3000) {
           const body = await readBody(req);
           if (body.remove) await store.removePlanEvent(String(body.remove));
           else if (body.years) await store.setPlanYears(Number(body.years));
+          else if (body.useMeasured !== undefined) await store.setPlanBase(body.useMeasured);
+          else if (body.edit) await store.updatePlanEvent(String(body.edit), body.patch || {});
           else await store.addPlanEvent(body);
           return json(res, 200, await state(asked()));
         }

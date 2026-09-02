@@ -55,7 +55,19 @@ const subs = [
   cleanSub({ id: 's5', label: 'Old magazine', amount: 8, currency: 'EUR', every: 'monthly', startsAt: utc(2023, 1, 1), endsAt: utc(2026, 4, 1) }),
 ];
 const goal = { monthly: 2000, currency: 'EUR' };
-const events = { years: 10, list: [{ id: 'e1', atYear: 3, kind: 'income', amount: 400, label: 'second rental' }] };
+// The plan in his own words: "500 from salary, rent from apartment 1, deposit 10000 under 2%,
+// and in year 3 I will add another apartment".
+const events = {
+  years: 10,
+  useMeasured: true,
+  list: [
+    { id: 'e1', atYear: 1, kind: 'contribution', amount: 500, label: 'from salary' },
+    { id: 'e2', atYear: 1, kind: 'income', amount: 450, label: 'rent from apartment 1' },
+    { id: 'e3', atYear: 1, kind: 'lump', amount: 10000, ratePct: 2, label: 'deposit at 2%' },
+    { id: 'e4', atYear: 3, kind: 'income', amount: 600, label: 'second rental' },
+    { id: 'e5', atYear: 1, kind: 'spending', amount: 120, untilYear: 4, label: 'car insurance' },
+  ],
+};
 
 const html = readFileSync(new URL('../src/pocket/app.html', import.meta.url), 'utf8');
 const script = html.match(/<script>([\s\S]*?)<\/script>/g).pop().replace(/^<script>|<\/script>$/g, '');
@@ -154,7 +166,9 @@ function must(el, panel, needles, label) {
       fail('an estimated loan payment must include principal, not interest only');
     }
     must(el, 'p-goal', ['Already contracted', 'a month is scheduled'], 'this month');
-    must(el, 'p-plan', ['Year by year', 'second rental'], 'this month');
+    must(el, 'p-plan', ['Year by year', 'second rental', 'Where it comes from', 'What goes in',
+      'from salary', 'rent from apartment 1', 'grows at 2%', 'What you actually saved this month',
+      'at your own 2%'], 'this month');
     must(el, 'p-subs', ['Every subscription, per year', 'What that costs in capital', 'Netflix',
       'free trial', 'Old magazine'], 'this month');
   }
@@ -208,6 +222,29 @@ function must(el, panel, needles, label) {
   // The plan must not be rebuilt from whichever month he happens to be reading.
   const now = buildState({ base: 'EUR', table: T, accounts, spanFlows, subs, goal, events, now: NOW });
   if (S.forecast.mid.endCapital !== now.forecast.mid.endCapital) fail('reading August rewrote the ten-year plan');
+}
+{
+  // The plan is built from named pieces, each at its own rate.
+  const S = buildState({ base: 'EUR', table: T, accounts, spanFlows, subs, goal, events, now: NOW });
+  const mid = S.forecast.mid;
+  if (!mid.ownRate.length) fail('the 2% deposit must grow at 2%, not at the market yield');
+  if (Math.round(mid.ownRate[0].ratePct) !== 2) fail('and be reported at the rate it was given');
+  // 10,000 at 2% for ten years is ~12,190. At the 5% middle case it would be ~16,289 — the gap
+  // is the whole reason a plan cannot compound every kind of money at one rate.
+  if (Math.round(mid.ownRate[0].capital) !== 12190) fail(`10,000 at 2% for ten years is 12,190, got ${Math.round(mid.ownRate[0].capital)}`);
+
+  // A cost that ends stops costing. Without untilYear every line runs for ever.
+  const ends = mid.rows.find((r) => r.ends.length);
+  if (!ends || ends.year !== 4) fail('the car insurance ends in year 4 and the plan should say so');
+  if (mid.rows[4].monthlyContribution <= mid.rows[3].monthlyContribution) {
+    fail('once a cost ends, more is going in');
+  }
+
+  // Switching the measured surplus off leaves only what he listed.
+  const listed = buildState({ base: 'EUR', table: T, accounts, spanFlows, subs, goal,
+    events: { ...events, useMeasured: false }, now: NOW });
+  if (listed.planBase !== 0) fail('with measured off, the plan starts from what he listed and nothing else');
+  if (listed.forecast.mid.endCapital >= S.forecast.mid.endCapital) fail('and it must come out lower');
 }
 
 // ---- A month he typed nothing into still knows what his holdings did ----

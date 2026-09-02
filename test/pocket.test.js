@@ -1024,3 +1024,97 @@ test('scheduledFlows: nothing is invented for a holding with no schedule', () =>
   ];
   assert.deepEqual(scheduledFlows(accounts, NOV, { now: utc(2026, 11, 30) }), []);
 });
+
+// ---- A plan you build, not one you are handed ----
+//
+// "I want to add some amount and say I will add another amount, could be something with a %, but
+//  sometimes I will just add some money. 500 from salary, rent from apartment 1, deposit 10000
+//  under 2%. In year 3 I will add another apartment."
+//
+// The old tab projected from a measured surplus he could not see, at one yield for every kind of
+// money. A projection you cannot take apart is not a plan, it is a claim.
+
+test('cleanEvent: a piece can carry its own rate and its own end', () => {
+  const e = cleanEvent({ atYear: 1, kind: 'lump', amount: 10000, ratePct: 2, label: 'deposit' });
+  assert.equal(e.ratePct, 2);
+  assert.equal(e.untilYear, null, 'forever unless he says otherwise');
+  assert.equal(cleanEvent({ ratePct: '' }).ratePct, null, 'empty means "whatever the market does"');
+  assert.equal(cleanEvent({ ratePct: null }).ratePct, null);
+  assert.equal(cleanEvent({ ratePct: 0 }).ratePct, 0, 'but nought percent is a real answer and is kept');
+  // An end before the start is not an end.
+  assert.equal(cleanEvent({ atYear: 5, untilYear: 2 }).untilYear, 5);
+  assert.equal(cleanEvent({ atYear: 1, untilYear: 4 }).untilYear, 4);
+});
+
+test('forecast: money with its own rate grows at its own rate', () => {
+  const opts = {
+    startCapital: 0, monthlySurplus: 0, years: 10, yieldPct: 5,
+    events: [{ atYear: 1, kind: 'lump', amount: 10000, ratePct: 2, label: 'deposit at 2%' }],
+  };
+  const f = forecast(opts);
+  // 10,000 × 1.02^10 = 12,190. At the 5% the rest of the plan uses it would be 16,289 — and
+  // that gap over one line is why a plan cannot compound every kind of money at one figure.
+  assert.equal(Math.round(f.ownRate[0].capital), 12190);
+  assert.equal(f.ownRate[0].ratePct, 2);
+  assert.equal(Math.round(f.endCapital), 12190);
+
+  const market = forecast({ ...opts, events: [{ atYear: 1, kind: 'lump', amount: 10000, label: 'lump' }] });
+  assert.equal(Math.round(market.endCapital), Math.round(10000 * 1.05 ** 10));
+  assert.equal(market.ownRate.length, 0, 'no stated rate, no separate bucket');
+  assert.ok(market.endCapital > f.endCapital, '5% beats 2%, and the plan has to show which is which');
+
+  // The passive income each produces follows its own rate too, or a plan half in deposits
+  // reports itself as though all of it were in the market.
+  assert.ok(Math.abs(f.endPassive - (f.endCapital * 0.02) / 12) < 0.01);
+});
+
+test('forecast: his actual sentence, priced', () => {
+  const f = forecast({
+    startCapital: 0, monthlySurplus: 0, years: 10, yieldPct: 5, goalMonthly: 2000,
+    events: [
+      { atYear: 1, kind: 'contribution', amount: 500, label: 'from salary' },
+      { atYear: 1, kind: 'income', amount: 450, label: 'rent from apartment 1' },
+      { atYear: 1, kind: 'lump', amount: 10000, ratePct: 2, label: 'deposit at 2%' },
+      { atYear: 3, kind: 'income', amount: 600, label: 'second apartment' },
+    ],
+  });
+  // Year 1: 950 a month in, plus the 10,000 deposit.
+  assert.equal(f.rows[0].monthlyContribution, 950);
+  assert.equal(Math.round(f.rows[0].contributedThisYear), 11400);
+  // Year 3: the second apartment lands and 1,550 a month goes in.
+  assert.equal(f.rows[2].monthlyContribution, 1550);
+  assert.deepEqual(f.rows[2].events, ['second apartment']);
+  // Rent counts towards the goal the moment it arrives — that is what makes it income and not
+  // just a contribution.
+  assert.ok(f.rows[0].passiveMonthly > 450);
+  assert.ok(f.rows[2].passiveMonthly > 1050);
+  assert.equal(Math.round(f.endCapital), 224332);
+});
+
+test('forecast: a line that ends, ends', () => {
+  const f = forecast({
+    monthlySurplus: 1000, years: 6, yieldPct: 5,
+    events: [{ atYear: 1, kind: 'spending', amount: 200, untilYear: 3, label: 'car insurance' }],
+  });
+  assert.equal(f.rows[0].monthlyContribution, 800, 'the cost bites from year 1');
+  assert.equal(f.rows[2].monthlyContribution, 800, 'and through year 3');
+  assert.equal(f.rows[3].monthlyContribution, 1000, 'then stops');
+  assert.deepEqual(f.rows[2].ends, ['car insurance']);
+  // Without an end year it would run for ever, which is the old behaviour and still the default.
+  const forever = forecast({
+    monthlySurplus: 1000, years: 6, yieldPct: 5,
+    events: [{ atYear: 1, kind: 'spending', amount: 200, label: 'car insurance' }],
+  });
+  assert.equal(forever.rows[5].monthlyContribution, 800);
+});
+
+test('forecast: an income that ends stops counting towards the goal', () => {
+  const f = forecast({
+    monthlySurplus: 0, years: 5, yieldPct: 5,
+    events: [{ atYear: 1, kind: 'income', amount: 900, untilYear: 2, label: 'lodger' }],
+  });
+  const y2 = f.rows[1].passiveMonthly, y3 = f.rows[2].passiveMonthly;
+  assert.ok(y2 > 900, 'while the lodger is there it is income');
+  assert.ok(y3 < y2, 'when they leave it is not');
+  assert.ok(y3 < 900);
+});
