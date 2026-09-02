@@ -26,6 +26,7 @@ import {
   parseEntry, ACCOUNT_KINDS, PAYOUT_KINDS, isLiability, forecastRange, depositProgress,
   monthWindowOf, recentMonths, monthsSummary, patchFrom, depositsSummary, contractedIncome,
   missingRecurring, cleanFlow, balanceNow, subsSummary, BILLING_PERIODS, cleanSub,
+  scheduledFlows,
 } from './money.js';
 
 const json = (res, code, body) => {
@@ -90,7 +91,7 @@ export function spanFor(monthKey, now = Date.now()) {
  *  of its own, no network — so the entire payload the browser receives can be built from
  *  fixtures and checked, which is how the drawing code gets tested at all. */
 export function buildState({ base = 'EUR', table, monthKey, accounts = [], spanFlows = [], subs = [], goal = null, events = { years: 10, list: [] }, now = Date.now() }) {
-  const { w, strip } = spanFor(monthKey, now);
+  const { w, strip, span } = spanFor(monthKey, now);
   const flows = spanFlows.filter((f) => f.ts >= w.from && f.ts <= w.to);
 
   // Without rates nothing can be totalled honestly, so the page is told so rather than being
@@ -100,11 +101,21 @@ export function buildState({ base = 'EUR', table, monthKey, accounts = [], spanF
   }
 
   const n = netWorth(accounts, table, base, now);
-  const m = monthOf(flows, table, base, w);
+
+  // Deposit coupons and loan instalments, projected into the months on screen. Contractual and
+  // dated, so they belong in a month; but only the ones whose date has PASSED go into the
+  // totals, and any that he has already recorded by hand drop out entirely.
+  const recorded = new Set(spanFlows.map((f) => f.schedId).filter(Boolean));
+  const spanSched = scheduledFlows(accounts, { from: span.from, to: span.to }, { now, recorded });
+  const sched = spanSched.filter((f) => f.ts >= w.from && f.ts <= w.to);
+  const landed = (list) => list.filter((f) => f.due);
+
+  const m = monthOf(flows.concat(landed(sched)), table, base, w);
   // The Goal and Plan tabs are always about NOW, never about whichever month he happens to be
   // reading. Browsing back to a thin August must not quietly rewrite the ten-year projection.
   const nowWindow = strip[strip.length - 1];
-  const cur = w.key === nowWindow.key ? m : monthOf(spanFlows, table, base, nowWindow);
+  const cur = w.key === nowWindow.key ? m
+    : monthOf(spanFlows.concat(landed(spanSched)), table, base, nowWindow);
   const ip = interestPicture(accounts, table, base, now);
   const g = goalProgress(cur.passive, goal);
   const invested = netWorth(accounts.filter((a) => ['portfolio', 'deposit'].includes(a.kind)), table, base, now).total;
@@ -124,7 +135,7 @@ export function buildState({ base = 'EUR', table, monthKey, accounts = [], spanF
     // browser can name the month in his own locale — naming it here would hard-code English.
     monthKey: w.key,
     monthFrom: w.from,
-    months: monthsSummary(spanFlows, table, base, { count: STRIP_MONTHS, now }),
+    months: monthsSummary(spanFlows.concat(landed(spanSched)), table, base, { count: STRIP_MONTHS, now }),
     // Each account with its converted value alongside the original — the euro figure alone
     // hides a devaluation, so the page always has both.
     accounts: accounts.map((a) => {
@@ -163,7 +174,23 @@ export function buildState({ base = 'EUR', table, monthKey, accounts = [], spanF
       })(),
       };
     }),
-    flows: flows.map((f) => ({ ...f, inBase: fx.toBase(f.amount, f.currency, table) })),
+    // Recorded and scheduled together, newest first, each saying which it is. The month list
+    // has to show the coupon and the instalment or the totals above it cannot be checked.
+    flows: [...flows, ...landed(sched)]
+      .sort((a, b) => b.ts - a.ts)
+      .map((f) => ({ ...f, inBase: fx.toBase(f.amount, f.currency, table) })),
+    // Still to come before the month is out. Kept OUT of In/Out/Left over on purpose — folding
+    // a charge that has not happened into them turns the record of a month into a forecast.
+    upcoming: (() => {
+      const ahead = sched.filter((f) => !f.due).map((f) => ({ ...f, inBase: fx.toBase(f.amount, f.currency, table) })).sort((a, b) => a.ts - b.ts);
+      const sum = (dir) => ahead.filter((f) => f.dir === dir).reduce((n2, f) => n2 + (f.inBase || 0), 0);
+      const income = sum('in'), spending = sum('out');
+      return { rows: ahead, income, spending, surplusAfter: m.surplus + income - spending };
+    })(),
+    // How much of the month's outgoings is buying back his own debt rather than being spent.
+    principalRepaid: landed(sched)
+      .filter((f) => f.principalPart != null)
+      .reduce((n2, f) => n2 + (fx.toBase(f.principalPart, f.currency, table) || 0), 0),
     worth: { total: n.total, assets: n.assets, debts: n.debts, exposure: n.exposure, unconverted: n.unconverted },
     interest: {
       earned: ip.earned, paid: ip.paid, net: ip.net,
@@ -338,6 +365,27 @@ export function startWeb(port = process.env.PORT || 3000) {
             amount: sub.amount, currency: sub.currency,
             ts: inThisMonth ? now : w.from,
             subId: sub.id,
+          }));
+          return json(res, 200, await state(asked()));
+        }
+
+        // "It went through, and this is what it actually was." A scheduled payment already
+        // counts in the month; confirming it turns the projection into a REAL flow carrying its
+        // schedule id, which both replaces the projection (never adds to it) and makes it
+        // editable — banks round, add fees, and miss days, and then his number beats ours.
+        if (url.pathname === '/api/confirm' && req.method === 'POST') {
+          const body = await readBody(req);
+          const schedId = String(body.schedId || '');
+          const w = monthWindowOf(asked());
+          const accounts = await store.accounts();
+          const already = new Set((await store.flows({ from: w.from, to: w.to })).map((f) => f.schedId).filter(Boolean));
+          if (already.has(schedId)) return json(res, 200, await state(asked()));
+          const hit = scheduledFlows(accounts, w, { now: Date.now() }).find((f) => f.schedId === schedId);
+          if (!hit) return json(res, 404, { error: 'No scheduled payment with that id' });
+          await store.addFlow(cleanFlow({
+            dir: hit.dir, category: hit.category, note: hit.label,
+            amount: body.amount != null && Number(body.amount) > 0 ? Number(body.amount) : hit.amount,
+            currency: hit.currency, ts: hit.ts, passive: hit.passive, schedId,
           }));
           return json(res, 200, await state(asked()));
         }

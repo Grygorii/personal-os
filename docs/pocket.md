@@ -191,10 +191,10 @@ a price without one: it looks current.
 2. Railway → same project → **New Service** → same repo.
 3. Start command: `npm run start:pocket`.
 4. Env vars above, `DB_NAME=pocket` among them.
-5. Look for `[boot] pocket-5 · db=pocket · base=EUR`.
+5. Look for `[boot] pocket-6 · db=pocket · base=EUR`.
 
 **Which build is actually serving?** `GET /health` (or `/version`) answers without Telegram —
-`{"ok":true,"app":"pocket","version":"pocket-5"}`. The marker lives in `src/pocket/version.js`;
+`{"ok":true,"app":"pocket","version":"pocket-6"}`. The marker lives in `src/pocket/version.js`;
 bump it on every deploy. Kept has `GET /version` for exactly the same reason: "is my change even
 out there yet" is the first question of every deploy, and guessing at it wastes an evening.
 
@@ -290,6 +290,36 @@ Other decisions:
 
 `out 40 monthly gym` is still a spend called "monthly gym". The two shapes stay apart, or every
 gym bill becomes a commitment.
+
+## What the month already knows
+
+A deposit coupon and a loan instalment are the two largest and most predictable movements in this
+household, and for a long time neither appeared in a month at all: **In** and **Out** counted only
+what he had typed. A month missing 1,075 EUR of loan payments and a 419 EUR coupon is not a
+picture of the month.
+
+These are not guesses. A certificate paying 24,750 EGP on 28 November and a car loan billing
+58,063.45 on the same day are contractual and dated — which is exactly what separates them from
+"salary probably arrives". So they are projected in. Two rules keep that honest:
+
+1. **Only a payment whose date has passed counts.** One still ahead gets its own "still due this
+   month" card and a projected month-end figure, because *left over* has to keep meaning what
+   actually happened. Folding a future charge into it turns the record of a month into a forecast
+   of one, and then the same number means two different things depending on the date.
+2. **Every projection has a stable id** (`<accountId>:<YYYY-MM-DD>`) and a recorded flow carrying
+   that id **replaces** it. That one field is all that stands between this and a month counting
+   the same coupon twice — which is worse than never showing it, because a wrong total is trusted
+   and a missing one is noticed. The ✓ on a scheduled row records it, so there is never a reason
+   to type it by hand.
+
+A coupon is `passive`, so it joins the goal on the day it pays. The Goal tab's "already
+contracted" card is the yearly *rate* behind those holdings; the figure above it counts only what
+has landed.
+
+**And a loan instalment is not all spending.** Part of it buys back his own debt — 49,936 of that
+58,063, this late in the term. That part is saving wearing the clothes of an expense: he is poorer
+in cash and exactly that much less in debt. The Month tab splits it and says so, because a surplus
+that treats debt repayment as consumption understates what he is actually building.
 
 ### The year along the top
 

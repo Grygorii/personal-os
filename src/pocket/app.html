@@ -74,6 +74,8 @@
 
   .pill{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:20px;background:var(--in-bg);color:var(--in)}
   .pill.out{background:var(--out-bg);color:var(--out)}
+  /* A projection is not a record, and must never look like one. */
+  .pill.sched{background:var(--line);color:var(--dim)}
 
   /* ---- Bars ---- */
   .bar{height:8px;border-radius:5px;background:var(--line);overflow:hidden;margin-top:8px}
@@ -270,15 +272,36 @@ function drawMonth() {
     <div class="row">
       <span class="dot ${f.dir === 'in' ? 'in' : 'out'}"></span>
       <div class="rmain">
-        <div class="rlabel">${esc(f.category || 'uncategorised')}${f.passive ? ' <span class="pill">passive</span>' : ''}</div>
-        <div class="rmeta">${new Date(f.ts).toLocaleDateString(undefined,{day:'numeric',month:'short'})}${f.recurring ? ' · repeats' : ''}</div>
+        <div class="rlabel">${esc(f.scheduled ? f.label : (f.category || 'uncategorised'))}${f.passive ? ' <span class="pill">passive</span>' : ''}${f.scheduled ? ' <span class="pill sched">scheduled</span>' : ''}</div>
+        <div class="rmeta">${new Date(f.ts).toLocaleDateString(undefined,{day:'numeric',month:'short'})}${f.recurring ? ' · repeats' : ''}${
+          f.scheduled && f.principalPart != null ? ` · ${Math.round(f.interestPart).toLocaleString()} interest, ${Math.round(f.principalPart).toLocaleString()} off the debt` : ''}${
+          f.scheduled && f.estimated ? ' · estimated' : ''}</div>
       </div>
       <div class="ramt ${f.dir === 'in' ? 'in' : 'out'}">${f.dir === 'in' ? '+' : '−'}${money(f.inBase)}
-        ${f.currency !== S.base ? `<span class="rorig">${esc(f.amount.toLocaleString())} ${esc(f.currency)}</span>` : ''}
+        ${f.currency !== S.base ? `<span class="rorig">${esc(Math.round(f.amount).toLocaleString())} ${esc(f.currency)}</span>` : ''}
       </div>
-      <button class="edit" data-edit="flow" data-id="${esc(f.id)}" aria-label="Edit">✎</button>
-      <button class="del" data-del="flow" data-id="${esc(f.id)}" aria-label="Remove">×</button>
+      ${f.scheduled
+        ? `<button class="edit" data-confirm="${esc(f.schedId)}" title="Confirm this went through" aria-label="Confirm">✓</button>`
+        : `<button class="edit" data-edit="flow" data-id="${esc(f.id)}" aria-label="Edit">✎</button>
+           <button class="del" data-del="flow" data-id="${esc(f.id)}" aria-label="Remove">×</button>`}
     </div>`).join('');
+
+  /* Still to come before the month is out.
+     Deliberately NOT in In / Out / Left over. A charge that has not happened folded into those
+     turns the record of a month into a forecast of one, and then "left over" means two different
+     things depending on the date. It gets its own line and its own projected total instead. */
+  const up = S.upcoming || { rows: [] };
+  const upcoming = !up.rows.length ? '' : `
+    <div class="card"><h2>Still due this month</h2>
+      ${up.rows.map((f) => `<div class="row">
+        <span class="dot ${f.dir === 'in' ? 'in' : 'out'}"></span>
+        <div class="rmain"><div class="rlabel">${esc(f.label)}</div>
+          <div class="rmeta">${new Date(f.ts).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}</div></div>
+        <div class="ramt ${f.dir === 'in' ? 'in' : 'out'}">${f.dir === 'in' ? '+' : '−'}${money(f.inBase)}</div>
+      </div>`).join('')}
+      <div class="note">Not in the totals above — those count what has actually moved.
+      After these, the month ends at <b class="${up.surplusAfter >= 0 ? 'in' : 'out'}">${money(up.surplusAfter)}</b>.</div>
+    </div>`;
 
   const cats = m.spendingByCategory.slice(0, 8);
   const worst = cats[0]?.amount || 1;
@@ -310,6 +333,9 @@ function drawMonth() {
       <h2>Left over</h2>
       <div class="big ${m.surplus >= 0 ? 'in' : 'out'}">${money(m.surplus)}</div>
       <div class="sub">${m.savingsRatePct != null ? m.savingsRatePct.toFixed(0) + '% of what came in' : ''}${m.passive > 0 ? ' · ' + money(m.passive) + ' passive' : ''}</div>
+      ${S.principalRepaid > 0 ? `<div class="note"><b>${money(S.principalRepaid)} of what went out this month bought back your own debt.</b>
+        That part is not spending — you are poorer in cash and exactly that much less in debt, so the real
+        gap between what you earn and what you consume is ${money(m.surplus + S.principalRepaid)}.</div>` : ''}
     </div>
     ${cats.length ? `<div class="card"><h2>Where it went</h2>${cats.map((c) => `
       <div style="margin-bottom:11px">
@@ -319,6 +345,7 @@ function drawMonth() {
         <div class="catbar" style="width:${Math.max(4, (c.amount / worst) * 100)}%"></div>
       </div>`).join('')}</div>` : ''}
     ${m.unconverted.length ? `<div class="warn">No exchange rate for ${esc(m.unconverted.join(', '))} — not counted above.</div>` : ''}
+    ${upcoming}
     ${todo ? `<div class="card"><h2>Repeats — not recorded yet</h2>${todo}
       <div class="note">Not counted in anything above. Money that has not arrived is not income.</div></div>` : ''}
     <div class="card"><h2>${esc(showing)}</h2>${rows || '<div class="empty">Nothing recorded in ' + esc(showing) + '.</div>'}
@@ -551,8 +578,9 @@ function drawGoal() {
         <div class="ramt">${money(r.inBase)}</div>
       </div>`).join('')}
       ${c.owedPerMonth > 0 ? `<div class="note out">And about ${money(c.owedPerMonth)} a month goes back out on what you owe.</div>` : ''}
-      <div class="note">None of this is in the figure above. That one counts money that actually
-      arrived and was recorded — which is the only version of this number worth having.</div>
+      <div class="note">This is the yearly <i>rate</i> behind those holdings. The figure above counts
+      only what has actually landed and been dated into a month — each coupon joins it on the day it
+      pays, not before. A promise is not income until it arrives.</div>
     </div>` : '';
 
   $('p-goal').innerHTML = `
@@ -871,6 +899,16 @@ document.body.addEventListener('click', async (e) => {
   // A subscription charged. It becomes a real spend in the month, tagged with the subscription
   // it came from — never on a schedule, because a charge can fail, be refunded, or be cancelled
   // the week before, and the app must not invent spending that did not happen.
+  // "It went through." Turns a projection into a real, editable flow — replacing it, never
+  // adding to it, because the projection was already counted.
+  const cfm = e.target.closest('[data-confirm]');
+  if (cfm) {
+    if (await work(() => api('/api/confirm', { schedId: cfm.dataset.confirm }))) {
+      tg?.HapticFeedback?.notificationOccurred?.('success');
+    }
+    return;
+  }
+
   const chg = e.target.closest('[data-charge]');
   if (chg) {
     if (await work(() => api('/api/charge', { id: chg.dataset.charge }))) {

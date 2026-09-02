@@ -105,6 +105,10 @@ export function cleanFlow(f) {
     // also flagged `recurring`: the subscription IS the recurring record, and having both would
     // put the same bill in two "you have not entered this yet" lists.
     subId: txt(f?.subId, 32) || null,
+    // Which scheduled payment this flow IS — "<accountId>:<YYYY-MM-DD>". A recorded flow
+    // carrying one replaces the projection for that date, and that single field is all that
+    // stands between this and a month counting the same coupon twice.
+    schedId: txt(f?.schedId, 64) || null,
     // Passive is set explicitly, but a category that is obviously passive defaults to true so
     // he does not have to remember a flag for the thing the whole goal is about.
     passive: f?.passive == null ? PASSIVE_KINDS.includes(category) : !!f.passive,
@@ -1136,4 +1140,99 @@ export function subsSummary(subs, table, base = 'EUR', now = Date.now()) {
     // the goal uses, because one number here would be a promise about the next thirty years.
     capitalNeeded: perYear > 0 ? [0.035, 0.07].map((y) => ({ yieldPct: y * 100, capital: perYear / y })) : [],
   };
+}
+
+
+// ---- What the month already knows is going to happen ----
+//
+// A deposit coupon and a loan instalment are the two largest, most predictable movements in this
+// household, and until now neither appeared in a month at all: In and Out counted only what he
+// had typed. A month that omits 1,075 EUR of loan payments and a 419 EUR coupon is not a picture
+// of the month.
+//
+// These are not guesses. A fixed-term certificate paying 24,750 EGP on 28 November and a car loan
+// billing 58,063.45 on the same day are contractual, dated, and known — which is exactly what
+// separates them from "salary probably arrives". So they are projected into the month.
+//
+// TWO RULES KEEP IT HONEST:
+//
+//   1. Only a payment whose DATE HAS PASSED counts in the totals. One still ahead is shown
+//      separately as "still due", because "left over" must keep meaning what actually happened.
+//      Folding a future charge into it would turn the record of a month into a forecast of one.
+//   2. Every projection has a stable id, and a recorded flow carrying that id REPLACES it. That
+//      is the only thing standing between this feature and a month that counts the same coupon
+//      twice, which is worse than not counting it at all.
+
+/** Every date a holding pays or bills, inside a window. */
+export function paymentDates(a, { from = 0, to = Number.MAX_SAFE_INTEGER } = {}) {
+  const t = termProgress(a);
+  const s = t?.schedule;
+  if (!s || !a.startsAt) return [];
+  if (s.payout === 'maturity') {
+    return a.endsAt && a.endsAt >= from && a.endsAt <= to ? [a.endsAt] : [];
+  }
+  const every = PAYOUT_MONTHS[s.payout];
+  if (!every) return [];
+  const out = [];
+  for (let i = 1; i <= 2400; i++) {
+    const at = addMonths(a.startsAt, i * every);
+    if (a.endsAt && at > a.endsAt) break;
+    if (at > to) break;
+    if (at >= from) out.push(at);
+  }
+  return out;
+}
+
+/** The scheduled movements inside a month, as flow-shaped rows the rest of the app can total.
+ *
+ *  `recorded` is the set of schedule ids already entered as real flows; those are dropped, so
+ *  confirming a payment swaps a projection for the real thing rather than adding to it. */
+export function scheduledFlows(accounts, window = {}, { now = Date.now(), recorded = new Set() } = {}) {
+  const out = [];
+  for (const a of accounts || []) {
+    const t = depositProgress(a, now);
+    if (!t?.schedule) continue;
+    const owed = isLiability(a.kind);
+    const perPayment = t.schedule.perPayment;
+    if (!(perPayment > 0)) continue;
+
+    for (const at of paymentDates(a, window)) {
+      const schedId = `${a.id}:${new Date(at).toISOString().slice(0, 10)}`;
+      if (recorded.has(schedId)) continue;
+
+      // A LOAN INSTALMENT IS NOT ALL SPENDING. Part of it buys back his own debt, and that part
+      // is saving wearing the clothes of an expense. The split is the interest on the balance
+      // outstanding at that moment; everything above it comes off the principal.
+      let interestPart = null, principalPart = null;
+      if (owed) {
+        const bal = balanceNow(a, at - 1).amount;
+        const rate = t.implied ? t.implied.perPeriodPct / 100
+          : (a.value > 0 ? (t.perYear / a.value) * ((t.schedule.every || 12) / 12) : 0);
+        interestPart = Math.min(perPayment, bal * rate);
+        principalPart = Math.max(0, perPayment - interestPart);
+      }
+
+      out.push({
+        id: schedId,
+        schedId,
+        accountId: a.id,
+        label: a.label || a.kind,
+        dir: owed ? 'out' : 'in',
+        category: owed ? (a.kind === 'card' ? 'card' : 'loan') : 'interest',
+        amount: perPayment,
+        currency: a.currency,
+        ts: at,
+        // A deposit coupon is money arriving without him working for it, which is the whole
+        // point of the goal. It has to count towards it the moment it lands.
+        passive: !owed,
+        scheduled: true,
+        // Passed means it happened; ahead means it is coming. Only the first counts.
+        due: at <= now,
+        estimated: !!t.schedule.estimated,
+        interestPart,
+        principalPart,
+      });
+    }
+  }
+  return out.sort((x, y) => y.ts - x.ts);
 }

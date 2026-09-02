@@ -116,7 +116,10 @@ function must(el, panel, needles, label) {
   const S = buildState({ base: 'EUR', table: T, accounts, spanFlows, subs, goal, events, now: NOW });
   const el = render(S, 'this month');
   if (el) {
-    must(el, 'p-month', ['Repeats — not recorded yet', 'Yes, add it', 'Left over', 'September'], 'this month');
+    // Mid-September: the Soon CD coupon has landed (1st), Loan 2's instalment has not (26th).
+    // One of each, which is exactly the pair this feature has to keep apart.
+    must(el, 'p-month', ['Repeats — not recorded yet', 'Yes, add it', 'Left over', 'September',
+      'scheduled', 'Still due this month', 'After these, the month ends at'], 'this month');
     must(el, 'p-worth', ['Cairo CD', 'earned so far', 'quarterly', 'matured on', 'matures in', 'Not counted:',
       'and you spend EUR', 'of everything you own'], 'this month');
     // A loan must never be described in the language of a deposit.
@@ -184,17 +187,69 @@ function must(el, panel, needles, label) {
   const el = render(S, 'a past month');
   if (el) must(el, 'p-month', ['August', 'salary'], 'a past month');
   if (S.monthKey !== '2026-08') fail('the month asked for is the month shown');
-  if (S.month.income !== 3700) fail(`August took in 3,200 EUR and 27,000 EGP = 3,700, got ${S.month.income}`);
+  // 3,200 EUR salary + 27,000 EGP rent = 3,700, PLUS the two deposit coupons that actually paid
+  // in August: 24,750 EGP from the Cairo certificate on the 28th and 750 EGP from Soon CD on the
+  // 1st — 472.22 EUR. A month that leaves those out is not a picture of the month.
+  if (Math.round(S.month.income) !== 4172) fail(`August: 3,700 typed plus 472 of coupons = 4,172, got ${S.month.income}`);
+  if (!S.flows.some((f) => f.scheduled && f.label === 'Cairo CD')) fail('the coupon should appear in the list, marked scheduled');
+  if (S.month.passive < 400) fail('a deposit coupon is passive income and must count towards the goal');
+}
+{
+  // The two halves of the rule, on one month: what has passed is counted, what is ahead is not.
+  const S = buildState({ base: 'EUR', table: T, accounts, spanFlows, subs, goal, events, now: NOW });
+  const landed = S.flows.filter((f) => f.scheduled);
+  if (!landed.length) fail('the coupon that paid on 1 September should be in the month');
+  if (landed.some((f) => f.ts > NOW)) fail('nothing dated after today may be counted as having happened');
+  if (!S.upcoming.rows.length) fail("Loan 2's instalment on the 26th is still ahead and should be listed");
+  if (S.upcoming.rows.some((f) => f.ts <= NOW)) fail('something already paid is not "still due"');
+  if (Math.round(S.upcoming.surplusAfter) >= Math.round(S.month.surplus)) {
+    fail('an instalment still to come has to leave the month ending lower');
+  }
   // The plan must not be rebuilt from whichever month he happens to be reading.
   const now = buildState({ base: 'EUR', table: T, accounts, spanFlows, subs, goal, events, now: NOW });
   if (S.forecast.mid.endCapital !== now.forecast.mid.endCapital) fail('reading August rewrote the ten-year plan');
 }
 
-// ---- A month with nothing in it ----
+// ---- A month he typed nothing into still knows what his holdings did ----
 {
   const S = buildState({ base: 'EUR', table: T, monthKey: '2026-02', accounts, spanFlows, subs, goal, events, now: NOW });
-  const el = render(S, 'an empty month');
-  if (el) must(el, 'p-month', ['Nothing recorded in'], 'an empty month');
+  const el = render(S, 'a month he typed nothing into');
+  if (el) must(el, 'p-month', ['scheduled', 'Loan 1'], 'a month he typed nothing into');
+  if (!S.flows.length) fail('February had a coupon and two instalments — it is not empty');
+  if (S.flows.some((f) => !f.scheduled)) fail('nothing was typed into February');
+  if (!(S.principalRepaid > 0)) fail('part of a loan instalment buys back debt and must be named');
+}
+
+// ---- Nothing scheduled at all: no projections, no upcoming block ----
+{
+  const plain = [cleanAccount({ id: 'c1', label: 'Bank', kind: 'cash', currency: 'EUR', value: 5000 })];
+  const S = buildState({ base: 'EUR', table: T, accounts: plain, spanFlows, subs: [], goal, events, now: NOW });
+  const el = render(S, 'nothing scheduled');
+  if (el) must(el, 'p-month', ['Left over'], 'nothing scheduled');
+  if (S.flows.some((f) => f.scheduled)) fail('a cash account has no schedule to project');
+  if (S.upcoming.rows.length) fail('and nothing is due');
+  if (S.principalRepaid !== 0) fail('no debt, nothing repaid');
+}
+
+// ---- A payment recorded by hand REPLACES its projection ----
+{
+  // Same certificate, same day, entered manually with its schedule id: the month must count it
+  // once. Double-counting a coupon is worse than never showing it.
+  const w = { from: utc(2026, 8, 1), to: utc(2026, 9, 1) - 1 };
+  const before = buildState({ base: 'EUR', table: T, monthKey: '2026-08', accounts, spanFlows, subs, goal, events, now: NOW });
+  const byHand = cleanFlow({
+    id: 'fx1', dir: 'in', category: 'interest', amount: 24750, currency: 'EGP',
+    ts: utc(2026, 8, 28), passive: true, schedId: 'a2:2026-08-28',
+  });
+  const after = buildState({ base: 'EUR', table: T, monthKey: '2026-08', accounts, spanFlows: [...spanFlows, byHand], subs, goal, events, now: NOW });
+  if (Math.round(after.month.income) !== Math.round(before.month.income)) {
+    fail(`recording a scheduled coupon must replace the projection, not add to it: ${before.month.income} -> ${after.month.income}`);
+  }
+  if (after.flows.filter((f) => f.ts === utc(2026, 8, 28) && f.dir === 'in').length !== 1) {
+    fail('the coupon appears twice in the month list');
+  }
+  if (after.flows.find((f) => f.id === 'fx1')?.scheduled) fail('once recorded it is a real flow, not a projection');
+  if (w.from > w.to) fail('unreachable');
 }
 
 // ---- No exchange rates: nothing is totalled, and the page says so ----

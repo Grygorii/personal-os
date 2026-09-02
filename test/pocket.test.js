@@ -940,3 +940,87 @@ test('a subscription charge is tagged, and is not also flagged recurring', () =>
   const older = cleanFlow({ dir: 'out', category: 'subscriptions', amount: 12.99, currency: 'EUR', subId: 's1', ts: utc(2026, 8, 5) });
   assert.deepEqual(missingRecurring([older, charge], w), [], 'the Subs tab reminds him, not the Month tab');
 });
+
+// ---- Deposit coupons and loan instalments, inside the month ----
+//
+// A month that omitted 1,075 EUR of loan payments and a 419 EUR coupon was not a picture of the
+// month. These are contractual and dated, which is what separates them from "salary probably
+// arrives" — so they are projected in. Two rules keep that honest: only a date that has PASSED
+// counts, and a recorded flow carrying the schedule id replaces the projection rather than
+// adding to it.
+
+import { scheduledFlows, paymentDates } from '../src/pocket/money.js';
+
+const DEP = () => cleanAccount({
+  id: 'd1', label: 'Deposit 1', kind: 'deposit', currency: 'EGP', value: 495000, ratePct: 20,
+  payout: 'quarterly', startsAt: utc(2024, 5, 28), endsAt: utc(2027, 5, 28),
+});
+const NOV = { from: utc(2026, 11, 1), to: utc(2026, 12, 1) - 1 };
+
+test('paymentDates: only the dates inside the window, on the calendar', () => {
+  assert.deepEqual(paymentDates(DEP(), NOV), [utc(2026, 11, 28)]);
+  assert.deepEqual(paymentDates(DEP(), { from: utc(2026, 10, 1), to: utc(2026, 10, 31) }), [], 'a quarterly deposit does not pay every month');
+  // Never past the end of the term.
+  assert.deepEqual(paymentDates(DEP(), { from: utc(2027, 8, 1), to: utc(2027, 9, 1) }), []);
+  assert.deepEqual(paymentDates(cleanAccount({ kind: 'cash', currency: 'EUR', value: 100 }), NOV), [], 'cash has no schedule');
+});
+
+test('scheduledFlows: the coupon comes in, the instalment goes out', () => {
+  const accounts = [DEP(), LOAN1()];
+  const rows = scheduledFlows(accounts, NOV, { now: utc(2026, 11, 30) });
+  assert.equal(rows.length, 2);
+
+  const coupon = rows.find((r) => r.accountId === 'd1');
+  assert.equal(coupon.dir, 'in');
+  assert.equal(coupon.amount, 24750);
+  assert.equal(coupon.currency, 'EGP');
+  assert.equal(coupon.passive, true, 'interest is passive income — it is what the goal measures');
+  assert.equal(coupon.ts, utc(2026, 11, 28));
+  assert.equal(coupon.schedId, 'd1:2026-11-28', 'a stable id, so it can be matched and replaced');
+
+  const instalment = rows.find((r) => r.dir === 'out');
+  assert.equal(Math.round(instalment.amount), 58063);
+  assert.equal(instalment.passive, false);
+  // A loan instalment is not all spending: part of it buys back his own debt.
+  assert.ok(instalment.principalPart > instalment.interestPart, 'late in a loan, most of a payment is principal');
+  assert.ok(Math.abs(instalment.interestPart + instalment.principalPart - instalment.amount) < 0.01);
+});
+
+test('scheduledFlows: what has passed happened; what is ahead has not', () => {
+  const rows = scheduledFlows([DEP()], NOV, { now: utc(2026, 11, 10) });
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].due, false, 'the 28th has not arrived on the 10th');
+  assert.equal(scheduledFlows([DEP()], NOV, { now: utc(2026, 11, 30) })[0].due, true);
+});
+
+test('scheduledFlows: a recorded payment replaces its projection, never doubles it', () => {
+  const window = NOV, now = utc(2026, 11, 30);
+  const plain = scheduledFlows([DEP()], window, { now });
+  assert.equal(plain.length, 1);
+
+  // The same coupon, entered by hand, carrying the schedule id.
+  const recorded = new Set(['d1:2026-11-28']);
+  assert.deepEqual(scheduledFlows([DEP()], window, { now, recorded }), [], 'the projection steps aside');
+
+  // And the month totals agree either way. Counting a coupon twice is worse than never showing
+  // it, because a wrong total is trusted and a missing one is noticed.
+  const asFlow = cleanFlow({ dir: 'in', category: 'interest', amount: 24750, currency: 'EGP', ts: utc(2026, 11, 28), passive: true, schedId: 'd1:2026-11-28' });
+  const viaProjection = monthOf(plain.filter((r) => r.due), T, 'EUR', window);
+  const viaRecord = monthOf([asFlow], T, 'EUR', window);
+  assert.equal(Math.round(viaProjection.income), Math.round(viaRecord.income));
+  assert.equal(Math.round(viaProjection.passive), Math.round(viaRecord.passive));
+  assert.equal(asFlow.schedId, 'd1:2026-11-28');
+  assert.equal(cleanFlow({ dir: 'in', amount: 1 }).schedId, null);
+});
+
+test('scheduledFlows: nothing is invented for a holding with no schedule', () => {
+  const accounts = [
+    cleanAccount({ kind: 'cash', currency: 'EUR', value: 5000 }),
+    cleanAccount({ kind: 'property', currency: 'EGP', value: 2700000 }),
+    // A rate but no dates: there is no payment date to project.
+    cleanAccount({ kind: 'deposit', currency: 'EGP', value: 100000, ratePct: 15 }),
+    // A term that finished: nothing is paid after it ends.
+    cleanAccount({ kind: 'deposit', currency: 'EGP', value: 100000, ratePct: 15, payout: 'monthly', startsAt: utc(2020, 1, 1), endsAt: utc(2021, 1, 1) }),
+  ];
+  assert.deepEqual(scheduledFlows(accounts, NOV, { now: utc(2026, 11, 30) }), []);
+});
