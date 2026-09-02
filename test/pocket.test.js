@@ -949,7 +949,7 @@ test('a subscription charge is tagged, and is not also flagged recurring', () =>
 // counts, and a recorded flow carrying the schedule id replaces the projection rather than
 // adding to it.
 
-import { scheduledFlows, paymentDates } from '../src/pocket/money.js';
+import { scheduledFlows, paymentDates, matchRecorded } from '../src/pocket/money.js';
 
 const DEP = () => cleanAccount({
   id: 'd1', label: 'Deposit 1', kind: 'deposit', currency: 'EGP', value: 495000, ratePct: 20,
@@ -1323,4 +1323,55 @@ test('contractedIncome: each stream says what kind of income it is, and whether 
   // The distinction the whole thing exists for: one of these stops.
   assert.equal(rent.endsAt, null, 'a flat he owns keeps paying');
   assert.equal(interest.endsAt, utc(2027, 5, 28), 'a certificate hands the money back and stops');
+});
+
+// ---- His own words for his own money ----
+//
+// He calls the Cairo rent "Apt 1". The passive split keyed on that, found nothing it recognised,
+// and painted the largest slice of his goal in the grey reserved for "something else" — while
+// the app knew perfectly well, two cards further down, that the flat pays 27,000 EGP a month.
+
+test('matchRecorded: a flow under his own name is matched to the holding it came from', () => {
+  const flat = cleanAccount({
+    id: 'p1', label: 'Cairo apartment', kind: 'property', currency: 'EGP',
+    value: 2700000, payout: 'monthly', payment: 27000, startsAt: utc(2023, 6, 1),
+  });
+  const w = { from: utc(2026, 9, 1), to: utc(2026, 10, 1) - 1 };
+  const now = utc(2026, 9, 20);
+  const byHand = cleanFlow({ id: 'f1', dir: 'in', category: 'apt 1', amount: 27000, currency: 'EGP', ts: utc(2026, 9, 2), passive: true });
+
+  const m = matchRecorded([flat], w, { now, flows: [byHand] });
+  assert.equal(m.get('f1').source, 'rent');
+  assert.equal(m.get('f1').accountId, 'p1');
+
+  // It is the SAME rule that stops the rent being counted twice, so the two can never disagree
+  // about which flow is which.
+  assert.deepEqual(scheduledFlows([flat], w, { now, flows: [byHand] }), []);
+
+  // And it is just as tight: different money stays different.
+  for (const f of [
+    cleanFlow({ id: 'x', dir: 'in', category: 'apt 1', amount: 19000, currency: 'EGP', ts: utc(2026, 9, 2) }),
+    cleanFlow({ id: 'x', dir: 'in', category: 'apt 1', amount: 27000, currency: 'EGP', ts: utc(2026, 9, 25) }),
+    cleanFlow({ id: 'x', dir: 'in', category: 'apt 1', amount: 27000, currency: 'EUR', ts: utc(2026, 9, 2) }),
+    cleanFlow({ id: 'x', dir: 'out', category: 'apt 1', amount: 27000, currency: 'EGP', ts: utc(2026, 9, 2) }),
+  ]) {
+    assert.equal(matchRecorded([flat], w, { now, flows: [f] }).size, 0);
+  }
+  // A flow already tagged to a schedule or a subscription is not up for matching.
+  assert.equal(matchRecorded([flat], w, { now, flows: [{ ...byHand, schedId: 'p1:2026-09-01' }] }).size, 0);
+});
+
+test('monthOf: the split follows the source, but the list keeps his name for it', () => {
+  const now = utc(2026, 9, 10);
+  const flows = [
+    { ...cleanFlow({ dir: 'in', category: 'apt 1', amount: 27000, currency: 'EGP', ts: now, passive: true }), source: 'rent' },
+    cleanFlow({ dir: 'in', category: 'interest', amount: 24750, currency: 'EGP', ts: now }),
+  ];
+  const m = monthOf(flows, T, 'EUR');
+  const cats = m.passiveByCategory.map((x) => x.category);
+  assert.ok(cats.includes('rent'), 'the slice is rent, so it wears the rent colour');
+  assert.ok(!cats.includes('apt 1'), 'and does not also appear under his own name');
+  // Without a source, his word stands — the app never invents a category it has not worked out.
+  const unknown = monthOf([cleanFlow({ dir: 'in', category: 'apt 1', amount: 100, currency: 'EUR', ts: now, passive: true })], T, 'EUR');
+  assert.deepEqual(unknown.passiveByCategory.map((x) => x.category), ['apt 1']);
 });

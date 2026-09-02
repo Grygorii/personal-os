@@ -26,7 +26,7 @@ import {
   parseEntry, ACCOUNT_KINDS, PAYOUT_KINDS, isLiability, forecastRange, depositProgress,
   monthWindowOf, recentMonths, monthsSummary, patchFrom, depositsSummary, contractedIncome,
   missingRecurring, cleanFlow, balanceNow, subsSummary, BILLING_PERIODS, cleanSub,
-  scheduledFlows, EVENT_KINDS, parseDate,
+  scheduledFlows, EVENT_KINDS, parseDate, matchRecorded,
 } from './money.js';
 
 const json = (res, code, body) => {
@@ -106,16 +106,20 @@ export function buildState({ base = 'EUR', table, monthKey, accounts = [], spanF
   // dated, so they belong in a month; but only the ones whose date has PASSED go into the
   // totals, and any that he has already recorded by hand drop out entirely.
   const recorded = new Set(spanFlows.map((f) => f.schedId).filter(Boolean));
+  // What his own words mean. A flow he called "Apt 1" that matches the flat's rent to the euro
+  // and the week IS the flat's rent, and the split should colour it as such.
+  const matched = matchRecorded(accounts, { from: span.from, to: span.to }, { now, flows: spanFlows });
+  const withSource = (list) => list.map((f) => (matched.has(f.id) ? { ...f, source: matched.get(f.id).source } : f));
   const spanSched = scheduledFlows(accounts, { from: span.from, to: span.to }, { now, recorded, flows: spanFlows });
   const sched = spanSched.filter((f) => f.ts >= w.from && f.ts <= w.to);
   const landed = (list) => list.filter((f) => f.due);
 
-  const m = monthOf(flows.concat(landed(sched)), table, base, w);
+  const m = monthOf(withSource(flows).concat(landed(sched)), table, base, w);
   // The Goal and Plan tabs are always about NOW, never about whichever month he happens to be
   // reading. Browsing back to a thin August must not quietly rewrite the ten-year projection.
   const nowWindow = strip[strip.length - 1];
   const cur = w.key === nowWindow.key ? m
-    : monthOf(spanFlows.concat(landed(spanSched)), table, base, nowWindow);
+    : monthOf(withSource(spanFlows).concat(landed(spanSched)), table, base, nowWindow);
   const ip = interestPicture(accounts, table, base, now);
   const g = goalProgress(cur.passive, goal);
   const invested = netWorth(accounts.filter((a) => ['portfolio', 'deposit'].includes(a.kind)), table, base, now).total;
@@ -251,8 +255,36 @@ export function buildState({ base = 'EUR', table, monthKey, accounts = [], spanF
     goal: g && {
       ...g,
       // Split by where it comes from, in a FIXED order so a source never changes colour when
-      // another one appears or disappears.
-      sources: (cur.passiveByCategory || []).map((x) => ({ ...x, pctOfTarget: g.target > 0 ? (x.amount / g.target) * 100 : 0 })),
+      // another one appears or disappears — and each source carries BOTH numbers.
+      //
+      // `amount` is what actually landed this month. `coming` is the rest of what that source is
+      // contracted to pay in a month and has not paid yet: on the 2nd of September no certificate
+      // has paid a coupon, so a bar showing only what arrived shows him one flat and nothing
+      // else, which is not the shape of his income. The two are drawn differently and only the
+      // first is in the headline figure.
+      sources: (() => {
+        const contractedBy = {};
+        for (const r of contractedIncome(accounts, now).streams) {
+          if (r.liability) continue;
+          const v = fx.toBase(r.perYear, r.currency, table);
+          if (v == null) continue;
+          contractedBy[r.category] = (contractedBy[r.category] || 0) + v / 12;
+        }
+        const arrivedBy = Object.fromEntries((cur.passiveByCategory || []).map((x) => [x.category, x.amount]));
+        const all = [...new Set([...Object.keys(arrivedBy), ...Object.keys(contractedBy)])];
+        return all.map((category) => {
+          const amount = arrivedBy[category] || 0;
+          // Never negative: a source that paid MORE than its contract this month has nothing
+          // still coming, it just had a good month.
+          const coming = Math.max(0, (contractedBy[category] || 0) - amount);
+          return {
+            category, amount, coming,
+            pctOfTarget: g.target > 0 ? (amount / g.target) * 100 : 0,
+            pctComing: g.target > 0 ? (coming / g.target) * 100 : 0,
+          };
+        }).filter((x) => x.amount > 0 || x.coming > 0)
+          .sort((a2, b2) => (b2.amount + b2.coming) - (a2.amount + a2.coming));
+      })(),
     },
     // HOW MUCH OF IT ENDS. A certificate that matures in 2027 is not the same income as a flat
     // he owns, and a progress bar that treats them alike says he is closer than he is.

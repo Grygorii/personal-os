@@ -309,7 +309,9 @@ export function monthOf(flows, table, base = 'EUR', { from, to } = {}) {
   for (const f of inWindow.filter((x) => x.dir === 'in' && x.passive)) {
     const v = conv(f);
     if (v == null) continue;
-    const k = f.category || 'other';
+    // `source` is what the app worked out this money IS; `category` is what he called it.
+    // Colour follows the source, so "Apt 1" is rent — but the list keeps his name for it.
+    const k = f.source || f.category || 'other';
     passiveBy[k] = (passiveBy[k] || 0) + v;
   }
 
@@ -1388,6 +1390,47 @@ export function paymentDates(a, { from = 0, to = Number.MAX_SAFE_INTEGER } = {})
  *
  *  `recorded` is the set of schedule ids already entered as real flows; those are dropped, so
  *  confirming a payment swaps a projection for the real thing rather than adding to it. */
+/** Which recorded flows ARE scheduled payments he typed himself.
+ *
+ *  He calls his rent "Apt 1", so the app had no idea it was rent: it went into the passive split
+ *  as an unknown source, in the grey reserved for "something else". It is not something else, it
+ *  is the flat. Matching a hand-typed flow to the holding it came from teaches the app what his
+ *  own words mean — and it is the same match that stops the rent being counted twice, so the two
+ *  can never disagree about which flow is which.
+ *
+ *  Returns a Map of flow id → { source, accountId, label }.
+ */
+export function matchRecorded(accounts, window = {}, { now = Date.now(), flows = [] } = {}) {
+  const out = new Map();
+  const untagged = (flows || []).filter((f) => !f.schedId && !f.subId);
+  if (!untagged.length) return out;
+
+  for (const a of accounts || []) {
+    const t = depositProgress(a, now);
+    if (!t?.schedule) continue;
+    const perPayment = t.schedule.perPayment;
+    if (!(perPayment > 0)) continue;
+    const owed = isLiability(a.kind);
+    const source = owed ? (a.kind === 'card' ? 'card' : 'loan')
+      : a.kind === 'property' ? 'rent'
+      : a.kind === 'portfolio' ? 'dividend'
+      : 'interest';
+
+    for (const at of paymentDates(a, window)) {
+      for (const f of untagged) {
+        if (out.has(f.id)) continue;
+        if (f.dir !== (owed ? 'out' : 'in')) continue;
+        if (f.currency !== a.currency) continue;
+        if (Math.abs(f.amount - perPayment) > Math.max(0.01, perPayment * 0.01)) continue;
+        if (Math.abs(f.ts - at) > 5 * DAY) continue;
+        out.set(f.id, { source, accountId: a.id, label: a.label || a.kind });
+        break;
+      }
+    }
+  }
+  return out;
+}
+
 export function scheduledFlows(accounts, window = {}, { now = Date.now(), recorded = new Set(), flows = [] } = {}) {
   // AND THE ONE HE HAS BEEN TYPING BY HAND.
   //

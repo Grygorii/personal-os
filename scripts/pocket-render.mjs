@@ -58,6 +58,8 @@ const spanFlows = [
   cleanFlow({ id: 'f4', dir: 'out', category: 'food', amount: 52, currency: 'EUR', ts: utc(2026, 9, 4) }),
   cleanFlow({ id: 'f5', dir: 'in', category: 'salary', amount: 3200, currency: 'EUR', ts: utc(2026, 9, 1), recurring: true }),
   cleanFlow({ id: 'f6', dir: 'out', category: 'flights', amount: 640, currency: 'EUR', ts: utc(2026, 7, 12) }),
+  // The rent, typed by hand under his own name for it. The app has to work out this is the flat.
+  cleanFlow({ id: 'f7', dir: 'in', category: 'apt 1', amount: 27000, currency: 'EGP', ts: utc(2026, 9, 2), passive: true }),
 ];
 const subs = [
   cleanSub({ id: 's1', label: 'Netflix', amount: 12.99, currency: 'EUR', every: 'monthly', startsAt: utc(2024, 3, 5) }),
@@ -196,9 +198,17 @@ function must(el, panel, needles, label) {
     // if the flat's 324,000 EGP of rent leaked in, this would read 8,000.
     if (Math.round(S.interest.earned) !== 2000) fail(`interest is the deposits alone (2,000), got ${Math.round(S.interest.earned)}`);
     if (!S.contracted.streams.some((r) => r.label === 'Cairo flat')) fail('rent is contracted income');
-    const rent = S.flows.find((f) => f.scheduled && f.label === 'Cairo flat');
-    if (!rent) fail('the rent should land in the month on its own');
-    if (rent.category !== 'rent' || !rent.passive) fail('rent is rent, and it is passive — that is what the goal counts');
+    // He typed September's rent himself, under his own name for it, so the flat's own projection
+    // steps aside — one rent, not two. August is the month where nobody typed it and the flat
+    // produced it on its own.
+    if (S.flows.filter((f) => f.dir === 'in' && Math.round(f.amount) === 27000).length !== 1) {
+      fail('the rent is in this month exactly once');
+    }
+    // July: he typed a spend and nothing else, so the flat is on its own there.
+    const jul = buildState({ base: 'EUR', table: T, monthKey: '2026-07', accounts, spanFlows, subs, goal, events, now: NOW });
+    const autoRent = jul.flows.find((f) => f.scheduled && f.label === 'Cairo flat');
+    if (!autoRent) fail('in a month he typed nothing, the flat should produce its own rent');
+    if (autoRent.category !== 'rent' || !autoRent.passive) fail('rent is rent, and it is passive — that is what the goal counts');
     const l2 = S.accounts.find((a) => a.label === 'Loan 2');
     if (!l2.term.schedule.estimated) fail('with no stated payment the figure is an estimate and must say so');
     if (Math.round(l2.term.schedule.perPayment) <= Math.round(513000 * 0.28 / 12)) {
@@ -209,8 +219,10 @@ function must(el, panel, needles, label) {
       // line about income that expires is present.
       'class="meter"', 'class="legend"', 'var(--src-1)', 'comes from holdings that end'], 'this month');
     const goalHtml = el('p-goal').innerHTML;
-    const segs = (goalHtml.match(/background:var\(--src-\d\)/g) || []).length;
-    if (segs < 2) fail('with rent and interest both arriving the bar has to have two segments');
+    const segs = (goalHtml.match(/--src-\d\)/g) || []).length;
+    if (segs < 2) fail('with rent arrived and interest still coming the bar needs two segments');
+    if (!goalHtml.includes('class="coming"')) fail('what is contracted but has not arrived needs its own hatched band');
+    if (!goalHtml.includes('to come')) fail('and the legend has to say so in words, not only in texture');
     // Colour never carries identity alone: every segment is also named in the legend.
     for (const name of S.goal.sources.map((x) => x.category)) {
       if (!goalHtml.includes(`>${name}<`)) fail(`the legend must name "${name}", not just colour it`);
@@ -233,10 +245,18 @@ function must(el, panel, needles, label) {
   // Passive income split by where it comes from.
   const src = S.goal.sources;
   if (!src.length) fail('the goal has to say what its passive income is made of');
-  if (src.some((x) => !(x.amount > 0))) fail('a source with nothing in it is not a source');
+  if (src.some((x) => !(x.amount > 0) && !(x.coming > 0))) fail('a source with nothing in it is not a source');
   if (Math.abs(src.reduce((t, x) => t + x.amount, 0) - S.goal.now) > 0.01) {
-    fail('the segments have to add up to the figure above them');
+    fail('the solid segments have to add up to the figure above them');
   }
+  // His own word for the rent, understood. "apt 1" is the flat, so it is rent, so it is green.
+  const rentSlice = src.find((x) => x.category === 'rent');
+  if (!rentSlice) fail('a flow he called "apt 1" that matches the flat IS rent — it must not fall into "other"');
+  if (src.some((x) => x.category === 'apt 1')) fail('and it must not appear twice under his own name as well');
+  // The deposits: nothing paid yet this month, but contracted, so they belong on the bar.
+  const interest = src.find((x) => x.category === 'interest');
+  if (!interest || !(interest.coming > 0)) fail('the certificates are contracted and should show as still to come');
+  if (interest.coming + interest.amount <= 0) fail('a source that pays nothing at all is not on the bar');
   // And the part that expires. Soon CD ends Nov 2026; the flat does not end at all.
   if (!S.passiveEnds.rows.some((r) => r.label === 'Soon CD')) fail('a certificate that matures is income that ends');
   if (S.passiveEnds.rows.some((r) => r.label === 'Cairo flat')) fail('a flat he owns does not stop paying rent');

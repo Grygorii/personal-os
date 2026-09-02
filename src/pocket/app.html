@@ -101,6 +101,19 @@
   /* A 2px gap of track between fills, so two segments never read as one long bar. */
   .meter{display:flex;gap:2px;height:10px;border-radius:5px;background:var(--line);overflow:hidden;margin-top:8px}
   .meter>i{display:block;height:100%;border-radius:5px;min-width:3px}
+  /* ARRIVED versus STILL COMING, told apart by TEXTURE and not by another hue.
+     On the 2nd of the month no certificate has paid a coupon yet, so a bar of only what landed
+     shows one flat and nothing else — which is not the shape of his income. But money that has
+     not arrived must never look like money that has. Same colour, so the source is still
+     readable; hatched and half-opaque, so the difference survives being colour-blind, printed,
+     or looked at quickly. Only the solid part is in the headline figure. */
+  .meter>i.coming{
+    opacity:.55;
+    background-image:repeating-linear-gradient(135deg,
+      rgba(0,0,0,0) 0 3px, rgba(0,0,0,.45) 3px 6px);
+  }
+  .swatch.coming{opacity:.55;background-image:repeating-linear-gradient(135deg,
+      rgba(0,0,0,0) 0 2px, rgba(0,0,0,.45) 2px 4px)}
   .legend{display:flex;flex-direction:column;gap:6px;margin-top:10px}
   .legend>div{display:flex;align-items:center;gap:8px;font-size:13px}
   .swatch{width:10px;height:10px;border-radius:3px;flex:none}
@@ -651,16 +664,25 @@ function drawGoal() {
      every segment is named with its amount underneath, because two of these steps sit under 3:1
      on a light background — and because colour never carries meaning alone anywhere in this app. */
   const slotOf = (c) => SLOT[c] || 4;
-  const sources = (g.sources || []).filter((x) => x.amount > 0);
+  const sources = g.sources || [];
+  const coming = sources.reduce((t, x) => t + x.coming, 0);
   const meter = !sources.length
     ? `<div class="bar"><i style="width:${Math.min(100, g.pct)}%"></i></div>`
-    : `<div class="meter">${sources.map((x) =>
-        `<i style="width:${Math.min(100, x.pctOfTarget)}%;background:var(--src-${slotOf(x.category)})"></i>`).join('')}</div>
+    : `<div class="meter">
+        ${sources.map((x) => x.amount > 0
+          ? `<i style="width:${Math.min(100, x.pctOfTarget)}%;background:var(--src-${slotOf(x.category)})"></i>` : '').join('')}
+        ${sources.map((x) => x.coming > 0
+          ? `<i class="coming" style="width:${Math.min(100, x.pctComing)}%;background-color:var(--src-${slotOf(x.category)})"></i>` : '').join('')}
+       </div>
        <div class="legend">${sources.map((x) => `<div>
-         <span class="swatch" style="background:var(--src-${slotOf(x.category)})"></span>
+         <span class="swatch ${x.amount > 0 ? '' : 'coming'}" style="background-color:var(--src-${slotOf(x.category)})"></span>
          <span class="lname">${esc(x.category)}</span>
-         <span class="lamt">${money(x.amount, g.currency)}</span>
-       </div>`).join('')}</div>`;
+         <span class="lamt">${x.amount > 0 ? money(x.amount, g.currency) : ''}${
+           x.coming > 0 ? `<span style="color:var(--dim);font-weight:400">${x.amount > 0 ? ' + ' : ''}${money(x.coming, g.currency)} to come</span>` : ''}</span>
+       </div>`).join('')}</div>
+       ${coming > 0 ? `<div class="note">The hatched part is contracted and has not arrived yet this month —
+       ${money(coming, g.currency)} of it. It is not in the ${money(g.now, g.currency)} above, which counts only
+       what has actually landed.</div>` : ''}`;
 
   /* AND THE HONEST PART. A certificate that matures in 2027 is not the same income as a flat he
      owns. A progress bar that treats them alike tells him he is closer than he is. */

@@ -216,10 +216,10 @@ a price without one: it looks current.
 2. Railway → same project → **New Service** → same repo.
 3. Start command: `npm run start:pocket`.
 4. Env vars above, `DB_NAME=pocket` among them.
-5. Look for `[boot] pocket-10 · db=pocket · base=EUR`.
+5. Look for `[boot] pocket-11 · db=pocket · base=EUR`.
 
 **Which build is actually serving?** `GET /health` (or `/version`) answers without Telegram —
-`{"ok":true,"app":"pocket","version":"pocket-10"}`. The marker lives in `src/pocket/version.js`;
+`{"ok":true,"app":"pocket","version":"pocket-11"}`. The marker lives in `src/pocket/version.js`;
 bump it on every deploy. Kept has `GET /version` for exactly the same reason: "is my change even
 out there yet" is the first question of every deploy, and guessing at it wastes an evening.
 
@@ -496,6 +496,20 @@ dark / 9.2 light, worst normal-vision ΔE 20.9 dark / 24.0 light. Measured, not 
 the light steps fall under 3:1 on a light surface, which obliges relief — so **every segment is
 also named, with its amount, in a legend below the bar.** Same rule as everywhere else here:
 colour never carries identity alone.
+
+**Arrived and still-to-come are on the same bar, told apart by texture.** On the 2nd of the month
+no certificate has paid a coupon yet, so a bar of only what landed showed him one flat and nothing
+else — which is not the shape of his income. What a holding is contracted to pay and has not paid
+yet is drawn in the same hue, hatched and half-opaque: the source stays readable, but money that
+has not arrived can never look like money that has. Only the solid part is in the headline figure,
+and the legend says the rest in words as well as texture.
+
+**And the app now understands his own words.** He calls the Cairo rent "Apt 1", so the split found
+nothing it recognised and painted the largest slice of his goal in the grey reserved for
+"something else" — while the app knew perfectly well, two cards below, that the flat pays 27,000
+EGP a month. `matchRecorded()` matches a hand-typed flow to the holding it came from, using the
+same near-match rule that stops the rent being counted twice, so the two can never disagree about
+which flow is which. The slice is coloured as rent; the month's list keeps his name for it.
 
 And the sentence the split makes possible:
 
