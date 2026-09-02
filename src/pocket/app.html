@@ -77,6 +77,36 @@
   /* A projection is not a record, and must never look like one. */
   .pill.sched{background:var(--line);color:var(--dim)}
 
+  /* ---- Where passive income comes from ----
+     Rent from a flat he owns and interest from a certificate that matures in 2027 are not the
+     same progress towards the goal, and one green bar says they are. Three hues, in a FIXED
+     order per source so a colour never moves when a source appears or disappears.
+
+     Taken from the reference categorical palette and run through its validator against this
+     app's own card colour, all-pairs, in both modes: worst CVD ΔE 9.4 dark / 9.2 light, worst
+     normal-vision ΔE 20.9 dark / 24.0 light. Not eyeballed.
+
+     Two of the light steps sit under 3:1 on a light surface, which obliges relief — so every
+     segment is also named and given its amount in the legend below the bar. Colour never
+     carries identity alone here, same rule as the rest of the app. */
+  :root{
+    --src-1:#199e70;   /* rent      */
+    --src-2:#3987e5;   /* interest  */
+    --src-3:#d95926;   /* dividend  */
+    --src-4:#8b8f99;   /* anything else */
+  }
+  @media (prefers-color-scheme: light){
+    :root{ --src-1:#1baf7a; --src-2:#2a78d6; --src-3:#eb6834; --src-4:#6b6f79; }
+  }
+  /* A 2px gap of track between fills, so two segments never read as one long bar. */
+  .meter{display:flex;gap:2px;height:10px;border-radius:5px;background:var(--line);overflow:hidden;margin-top:8px}
+  .meter>i{display:block;height:100%;border-radius:5px;min-width:3px}
+  .legend{display:flex;flex-direction:column;gap:6px;margin-top:10px}
+  .legend>div{display:flex;align-items:center;gap:8px;font-size:13px}
+  .swatch{width:10px;height:10px;border-radius:3px;flex:none}
+  .legend .lname{flex:1;min-width:0;text-transform:capitalize}
+  .legend .lamt{font-variant-numeric:tabular-nums;font-weight:600}
+
   /* ---- Bars ---- */
   .bar{height:8px;border-radius:5px;background:var(--line);overflow:hidden;margin-top:8px}
   .bar>i{display:block;height:100%;background:var(--in);border-radius:5px}
@@ -585,6 +615,9 @@ function drawGoal() {
     return;
   }
   const g = S.goal, p = S.plan, c = S.contracted;
+  // Fixed slots, never by rank: rent keeps its colour when a dividend appears beside it, and the
+  // "already contracted" list below wears the same colours as the bar above it.
+  const SLOT = { rent: 1, interest: 2, dividend: 3 };
 
   /* Contracted, not counted.
      The big number is what actually LANDED this month, and it has to stay that way: a promise
@@ -597,8 +630,9 @@ function drawGoal() {
       <h2>Already contracted</h2>
       ${c.perMonth > 0 ? `<div class="sub" style="font-size:15px;color:var(--ink)">About ${money(c.perMonth)} a month is scheduled to arrive from what you already hold.</div>` : ''}
       ${c.streams.map((r) => `<div class="row">
+        <span class="swatch" style="background:var(--src-${SLOT[r.category] || 4})"></span>
         <div class="rmain"><div class="rlabel">${esc(r.label)}</div>
-          <div class="rmeta">${esc(Math.round(r.perPayment).toLocaleString())} ${esc(r.currency)} ${esc(r.payout)}${r.next ? ' · next ' + dd(r.next) : ''}</div></div>
+          <div class="rmeta">${esc(Math.round(r.perPayment).toLocaleString())} ${esc(r.currency)} ${esc(r.payout)}${r.next ? ' · next ' + dd(r.next) : ''}${r.endsAt ? ' · ends ' + dd(r.endsAt) : ''}</div></div>
         <div class="ramt in">${money((r.inBase || 0) / 12)}<span class="rorig">a month</span></div>
       </div>`).join('')}
       ${c.lumps.map((r) => `<div class="row">
@@ -612,14 +646,42 @@ function drawGoal() {
       pays, not before. A promise is not income until it arrives.</div>
     </div>` : '';
 
+  /* The bar, split by where the money comes from.
+     Fixed slots, never by rank: rent keeps its colour when a dividend appears beside it. And
+     every segment is named with its amount underneath, because two of these steps sit under 3:1
+     on a light background — and because colour never carries meaning alone anywhere in this app. */
+  const slotOf = (c) => SLOT[c] || 4;
+  const sources = (g.sources || []).filter((x) => x.amount > 0);
+  const meter = !sources.length
+    ? `<div class="bar"><i style="width:${Math.min(100, g.pct)}%"></i></div>`
+    : `<div class="meter">${sources.map((x) =>
+        `<i style="width:${Math.min(100, x.pctOfTarget)}%;background:var(--src-${slotOf(x.category)})"></i>`).join('')}</div>
+       <div class="legend">${sources.map((x) => `<div>
+         <span class="swatch" style="background:var(--src-${slotOf(x.category)})"></span>
+         <span class="lname">${esc(x.category)}</span>
+         <span class="lamt">${money(x.amount, g.currency)}</span>
+       </div>`).join('')}</div>`;
+
+  /* AND THE HONEST PART. A certificate that matures in 2027 is not the same income as a flat he
+     owns. A progress bar that treats them alike tells him he is closer than he is. */
+  const ends = S.passiveEnds || { rows: [] };
+  const ending = !ends.rows.length ? '' : `
+    <div class="warn" style="border-left-color:var(--src-2);background:rgba(57,135,229,.12)">
+      <b>${money(ends.perMonth)} a month of this comes from holdings that end.</b>
+      ${ends.rows.map((r) => `${esc(r.label)} stops paying on ${dd(r.endsAt)}`).join(', ')}.
+      Rent from something you own keeps arriving; a certificate hands the money back and stops.
+      Reaching ${money(g.target, g.currency)} on terms that expire is reaching it until they do.
+    </div>`;
+
   $('p-goal').innerHTML = `
     <div class="card">
       <h2>Passive income</h2>
       <div class="big in">${money(g.now, g.currency)}</div>
       <div class="sub">of ${money(g.target, g.currency)} a month · ${g.pct.toFixed(1)}%</div>
-      <div class="bar"><i style="width:${Math.min(100, g.pct)}%"></i></div>
-      <div class="sub" style="margin-top:8px">${money(g.gap, g.currency)} a month still to go</div>
+      ${meter}
+      <div class="sub" style="margin-top:10px">${money(g.gap, g.currency)} a month still to go</div>
     </div>
+    ${ending}
     ${contracted}
     ${p && p.fastest != null ? `<div class="card">
       <h2>What it would take</h2>

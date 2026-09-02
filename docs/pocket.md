@@ -216,10 +216,10 @@ a price without one: it looks current.
 2. Railway → same project → **New Service** → same repo.
 3. Start command: `npm run start:pocket`.
 4. Env vars above, `DB_NAME=pocket` among them.
-5. Look for `[boot] pocket-9 · db=pocket · base=EUR`.
+5. Look for `[boot] pocket-10 · db=pocket · base=EUR`.
 
 **Which build is actually serving?** `GET /health` (or `/version`) answers without Telegram —
-`{"ok":true,"app":"pocket","version":"pocket-9"}`. The marker lives in `src/pocket/version.js`;
+`{"ok":true,"app":"pocket","version":"pocket-10"}`. The marker lives in `src/pocket/version.js`;
 bump it on every deploy. Kept has `GET /version` for exactly the same reason: "is my change even
 out there yet" is the first question of every deploy, and guessing at it wastes an evening.
 
@@ -480,6 +480,28 @@ passive income each throws off follows its own rate too.
 
 10,000 at 2% for ten years is 12,190. At the 5% middle case it would be 16,289. That gap, on one
 line, is the whole argument.
+
+### The goal bar is split by where the money comes from
+
+One green bar said he was 15% of the way to €2,000 a month. It did not say whether that 15% was a
+flat he owns or a certificate that matures in 2027 — **and those are not the same progress.**
+
+The bar is now stacked by source, in **fixed slots** (rent, interest, dividend, other) so a colour
+follows the entity and never its rank: rent keeps its colour when a dividend appears beside it.
+The "already contracted" list below wears the same colours, so the two agree at a glance.
+
+The three hues are the reference categorical palette's first three slots, run through its
+validator against this app's own card colour, **all pairs, in both modes**: worst CVD ΔE 9.4
+dark / 9.2 light, worst normal-vision ΔE 20.9 dark / 24.0 light. Measured, not eyeballed. Two of
+the light steps fall under 3:1 on a light surface, which obliges relief — so **every segment is
+also named, with its amount, in a legend below the bar.** Same rule as everywhere else here:
+colour never carries identity alone.
+
+And the sentence the split makes possible:
+
+> **€38 a month of this comes from holdings that end.** Soon CD stops paying on 1 Nov 2026. Rent
+> from something you own keeps arriving; a certificate hands the money back and stops. Reaching
+> €2,000 on terms that expire is reaching it until they do.
 
 ### Why the ten-year view is one colour, not three
 

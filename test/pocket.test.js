@@ -659,7 +659,7 @@ test('an edit merges over what is stored — it never applies the whitelist to a
 // then went on subtracting the full 445,000 from his net worth while he was seven payments of
 // ten through clearing it, so paying it down looked like nothing happening at all.
 
-import { impliedRate, balanceNow, breakEvenFall } from '../src/pocket/money.js';
+import { impliedRate, balanceNow, breakEvenFall, contractedIncome } from '../src/pocket/money.js';
 
 const LOAN1 = () => cleanAccount({
   label: 'Loan 1', kind: 'loan', currency: 'EGP', value: 445000, ratePct: 24,
@@ -1279,4 +1279,48 @@ test('cleanPayment: an extra payment is sanitised like everything else', () => {
   assert.equal(two[0].at, 1000, 'kept in date order, because the balance is walked through them');
   // And an asset never grows one.
   assert.equal(balanceNow(cleanAccount({ kind: 'property', currency: 'EGP', value: 100, payments: [{ at: 1, amount: 50 }] }), TODAY).amount, 100);
+});
+
+// ---- Where the passive income comes from ----
+//
+// One green bar says he is 15% of the way to 2,000 a month. It does not say whether that 15% is
+// a flat he owns or a certificate that matures in 2027, and those are not the same progress.
+
+test('monthOf: passive income is split by source, largest first', () => {
+  const now = utc(2026, 9, 10);
+  const flows = [
+    cleanFlow({ dir: 'in', category: 'rent', amount: 18000, currency: 'EGP', ts: now }),      // 333.33
+    cleanFlow({ dir: 'in', category: 'interest', amount: 24750, currency: 'EGP', ts: now }),  // 458.33
+    cleanFlow({ dir: 'in', category: 'dividend', amount: 54, currency: 'USD', ts: now }),     // 50
+    cleanFlow({ dir: 'in', category: 'salary', amount: 3200, currency: 'EUR', ts: now }),
+  ];
+  const m = monthOf(flows, T, 'EUR');
+  const by = m.passiveByCategory;
+  assert.deepEqual(by.map((x) => x.category), ['interest', 'rent', 'dividend']);
+  assert.equal(Math.round(by[0].amount), 458);
+  assert.equal(Math.round(by[1].amount), 333);
+  assert.equal(by.find((x) => x.category === 'salary'), undefined, 'a salary is not passive');
+  // The parts have to add up to the whole, or the bar and the number above it disagree.
+  assert.ok(Math.abs(by.reduce((t, x) => t + x.amount, 0) - m.passive) < 1e-9);
+});
+
+test('monthOf: nothing passive is an empty split, not a phantom slice', () => {
+  const m = monthOf([cleanFlow({ dir: 'in', category: 'salary', amount: 100, currency: 'EUR', ts: Date.now() })], T, 'EUR');
+  assert.deepEqual(m.passiveByCategory, []);
+  assert.equal(m.passive, 0);
+});
+
+test('contractedIncome: each stream says what kind of income it is, and whether it ends', () => {
+  const now = utc(2026, 9, 15);
+  const flat = cleanAccount({ label: 'Flat', kind: 'property', currency: 'EGP', value: 2700000, payout: 'monthly', payment: 18000, startsAt: utc(2023, 6, 1) });
+  const cd = cleanAccount({ label: 'CD', kind: 'deposit', currency: 'EGP', value: 495000, ratePct: 20, payout: 'quarterly', startsAt: utc(2024, 5, 28), endsAt: utc(2027, 5, 28) });
+  const c = contractedIncome([flat, cd], now);
+
+  const rent = c.streams.find((r) => r.label === 'Flat');
+  const interest = c.streams.find((r) => r.label === 'CD');
+  assert.equal(rent.category, 'rent');
+  assert.equal(interest.category, 'interest');
+  // The distinction the whole thing exists for: one of these stops.
+  assert.equal(rent.endsAt, null, 'a flat he owns keeps paying');
+  assert.equal(interest.endsAt, utc(2027, 5, 28), 'a certificate hands the money back and stops');
 });

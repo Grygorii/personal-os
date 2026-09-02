@@ -302,6 +302,17 @@ export function monthOf(flows, table, base = 'EUR', { from, to } = {}) {
     byCategory[f.category || 'uncategorised'] = (byCategory[f.category || 'uncategorised'] || 0) + v;
   }
 
+  // WHERE THE PASSIVE INCOME CAME FROM. One total says he is 15% of the way to the goal; the
+  // split says whether that 15% is a flat he owns or a certificate that matures in 2027, and
+  // those are not the same progress.
+  const passiveBy = {};
+  for (const f of inWindow.filter((x) => x.dir === 'in' && x.passive)) {
+    const v = conv(f);
+    if (v == null) continue;
+    const k = f.category || 'other';
+    passiveBy[k] = (passiveBy[k] || 0) + v;
+  }
+
   return {
     base,
     income: income.total,
@@ -311,6 +322,7 @@ export function monthOf(flows, table, base = 'EUR', { from, to } = {}) {
     // The lever he actually controls, and at his stage the one that moves the goal fastest.
     savingsRatePct: income.total > 0 ? ((income.total - spending.total) / income.total) * 100 : null,
     spendingByCategory: Object.entries(byCategory).map(([category, amount]) => ({ category, amount })).sort((a, b) => b.amount - a.amount),
+    passiveByCategory: Object.entries(passiveBy).map(([category, amount]) => ({ category, amount })).sort((a, b) => b.amount - a.amount),
     unconverted: [...income.unconverted, ...spending.unconverted].map((f) => `${f.category || f.dir} (${f.currency})`),
   };
 }
@@ -1155,6 +1167,12 @@ export function contractedIncome(accounts, now = Date.now()) {
     const row = {
       label: a.label || a.kind,
       currency: a.currency,
+      // The same word the month uses, so the same source wears the same colour in both places.
+      category: isLiability(a.kind) ? 'loan'
+        : a.kind === 'property' ? 'rent'
+        : a.kind === 'portfolio' ? 'dividend'
+        : 'interest',
+      endsAt: a.endsAt || null,
       liability: isLiability(a.kind),
       payout: t.schedule.payout,
       perPayment: t.schedule.perPayment,

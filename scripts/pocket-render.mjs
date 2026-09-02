@@ -204,7 +204,17 @@ function must(el, panel, needles, label) {
     if (Math.round(l2.term.schedule.perPayment) <= Math.round(513000 * 0.28 / 12)) {
       fail('an estimated loan payment must include principal, not interest only');
     }
-    must(el, 'p-goal', ['Already contracted', 'a month is scheduled'], 'this month');
+    must(el, 'p-goal', ['Already contracted', 'a month is scheduled',
+      // The bar is split by source, every segment is named with its amount, and the honest
+      // line about income that expires is present.
+      'class="meter"', 'class="legend"', 'var(--src-1)', 'comes from holdings that end'], 'this month');
+    const goalHtml = el('p-goal').innerHTML;
+    const segs = (goalHtml.match(/background:var\(--src-\d\)/g) || []).length;
+    if (segs < 2) fail('with rent and interest both arriving the bar has to have two segments');
+    // Colour never carries identity alone: every segment is also named in the legend.
+    for (const name of S.goal.sources.map((x) => x.category)) {
+      if (!goalHtml.includes(`>${name}<`)) fail(`the legend must name "${name}", not just colour it`);
+    }
     must(el, 'p-plan', ['Year by year', 'second rental', 'Where it comes from', 'What goes in',
       'from salary', 'rent from apartment 1', 'grows at 2%', 'What you actually saved this month',
       'at your own 2%'], 'this month');
@@ -219,6 +229,17 @@ function must(el, panel, needles, label) {
   if (!S.interest.ended.includes('Old CD')) fail('a term that ended must not still count as earning');
   // 167 from the two live certificates, plus 500 of rent from the flat.
   if (Math.round(S.contracted.perMonth) !== 667) fail(`contracted income should be 667/month, got ${Math.round(S.contracted.perMonth)}`);
+
+  // Passive income split by where it comes from.
+  const src = S.goal.sources;
+  if (!src.length) fail('the goal has to say what its passive income is made of');
+  if (src.some((x) => !(x.amount > 0))) fail('a source with nothing in it is not a source');
+  if (Math.abs(src.reduce((t, x) => t + x.amount, 0) - S.goal.now) > 0.01) {
+    fail('the segments have to add up to the figure above them');
+  }
+  // And the part that expires. Soon CD ends Nov 2026; the flat does not end at all.
+  if (!S.passiveEnds.rows.some((r) => r.label === 'Soon CD')) fail('a certificate that matures is income that ends');
+  if (S.passiveEnds.rows.some((r) => r.label === 'Cairo flat')) fail('a flat he owns does not stop paying rent');
 
   // Subscriptions, normalised. 12.99 monthly = 155.88; 90 yearly = 90; 4,500 EGP quarterly =
   // 18,000 EGP = 333.33; 20 USD monthly = 240 USD = 222.22. The cancelled one counts nothing.

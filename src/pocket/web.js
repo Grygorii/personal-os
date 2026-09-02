@@ -248,7 +248,31 @@ export function buildState({ base = 'EUR', table, monthKey, accounts = [], spanF
       return { ...sum, rows: sum.rows.map((r) => ({ ...r, paidThisMonth: paidThisMonth.has(r.id) })) };
     })(),
     payFirst: debtVsInvesting(accounts, { expectedYieldPct: 7, now }).filter((d) => d.payFirst),
-    goal: g,
+    goal: g && {
+      ...g,
+      // Split by where it comes from, in a FIXED order so a source never changes colour when
+      // another one appears or disappears.
+      sources: (cur.passiveByCategory || []).map((x) => ({ ...x, pctOfTarget: g.target > 0 ? (x.amount / g.target) * 100 : 0 })),
+    },
+    // HOW MUCH OF IT ENDS. A certificate that matures in 2027 is not the same income as a flat
+    // he owns, and a progress bar that treats them alike says he is closer than he is.
+    passiveEnds: (() => {
+      const rows = accounts
+        .filter((a) => !isLiability(a.kind) && a.endsAt)
+        .map((a) => ({ a, t: depositProgress(a, now) }))
+        .filter((x) => x.t?.schedule && !x.t.matured)
+        .map((x) => ({
+          label: x.a.label || x.a.kind,
+          endsAt: x.a.endsAt,
+          perMonthInBase: fx.toBase(x.t.perYear / 12, x.a.currency, table),
+        }))
+        .sort((p, q) => p.endsAt - q.endsAt);
+      return {
+        rows,
+        perMonth: rows.reduce((t2, r) => t2 + (r.perMonthInBase || 0), 0),
+        firstEndsAt: rows.length ? rows[0].endsAt : null,
+      };
+    })(),
     plan: g ? yearsToGoal({ invested, monthlyContribution: Math.max(0, cur.surplus), goalMonthly: goal.monthly }) : null,
     // Ten years from what he ACTUALLY saved this month, plus whatever he has said will change.
     // Three yields, because over a decade the yield assumption is most of the answer.
