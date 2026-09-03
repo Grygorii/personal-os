@@ -184,6 +184,8 @@
   .yrs thead th:not(:first-child){text-align:right}
   .yrs td{padding:7px 0;border-top:1px solid var(--line)}
   .yrs tr.hit td{color:var(--in)}
+  .yrs tbody tr{cursor:pointer}
+  .yrs tbody tr:active td{background:var(--line)}
   details>summary{list-style:none}
   details>summary::-webkit-details-marker{display:none}
   details>summary::before{content:'▸ ';display:inline-block;transition:none}
@@ -893,13 +895,13 @@ function drawPlan() {
       <summary style="cursor:pointer;color:var(--dim);font-size:13px;font-weight:600;letter-spacing:.03em;text-transform:uppercase">Year by year</summary>
       <table class="yrs">
         <thead><tr><th>Year</th><th>Invested</th><th>Per month</th></tr></thead>
-        <tbody>${mid.rows.map((r) => `<tr${goal > 0 && r.passiveMonthly >= goal ? ' class="hit"' : ''}>
+        <tbody>${mid.rows.map((r) => `<tr${goal > 0 && r.passiveMonthly >= goal ? ' class="hit"' : ''} data-plan-year="${r.year}">
           <td>${r.year}${r.events.length ? ` <span style="color:var(--dim)">· ${esc(r.events.join(', '))}</span>` : ''}${r.ends.length ? ` <span style="color:var(--dim)">· ${esc(r.ends.join(', '))} ends</span>` : ''}${r.sold?.length ? ` <span style="color:var(--dim)">· ${esc(r.sold.join(', '))} sold</span>` : ''}</td>
           <td class="n">${money(r.capital)}</td>
           <td class="n">${money(r.passiveMonthly)}</td>
         </tr>`).join('')}</tbody>
       </table>
-      <div class="note">${f.runs.length > 1 ? `The middle case, your ${S.planYieldPct}% on money with no rate of its own.` : 'Every rate here is one you stated.'} Assumes ${esc(f.assumes)}.</div>
+      <div class="note">${f.runs.length > 1 ? `The middle case, your ${S.planYieldPct}% on money with no rate of its own.` : 'Every rate here is one you stated.'} Assumes ${esc(f.assumes)}. Tap a year to see what it is made of.</div>
     </details>`;
 
   $('addevent').onclick = () => openPlanEvent();
@@ -1201,7 +1203,7 @@ function openEdit(kind, id) {
     : kind === 'sub' ? subFields(it) : accountFields(it);
   $('esheet').hidden = false;
 }
-const closeEdit = () => { $('esheet').hidden = true; editing = null; };
+const closeEdit = () => { $('esheet').hidden = true; $('esave').hidden = false; editing = null; };
 $('ecancel').onclick = closeEdit;
 $('esheet').onclick = (e) => { if (e.target === $('esheet')) closeEdit(); };
 $('efields').onclick = (e) => {
@@ -1341,6 +1343,45 @@ function openPlanEvent(existing) {
   $('esheet').hidden = false;
 }
 
+const PLAN_KIND_WORDS = { contribution: 'you put this in', income: 'arrives', spending: 'goes out', lump: 'a one-off', asset: 'something you own' };
+
+/** "Where did this come from?" — the same rule that put his own pieces above the ten-year card in
+ *  the first place, applied to a single year instead of the whole plan: a total nobody can take
+ *  apart is a claim, not a plan. Read-only, so it borrows the edit sheet without its Save button —
+ *  there is nothing here to change, only to see. */
+function openYearInfo(year) {
+  const r = (S.forecast?.mid?.rows || []).find((x) => x.year === year);
+  if (!r) return;
+  editing = { kind: 'yearInfo' };
+  $('etitle').textContent = `Year ${year}, month by month`;
+  $('eerr').hidden = true;
+  const b = r.breakdown || { base: 0, pieces: [], buckets: [], everythingElse: null };
+  const line = (label, meta, val) => `
+    <div class="row">
+      <span class="dot ${val >= 0 ? 'in' : 'out'}"></span>
+      <div class="rmain">
+        <div class="rlabel">${esc(label)}</div>
+        ${meta ? `<div class="rmeta">${meta}</div>` : ''}
+      </div>
+      <div class="ramt ${val >= 0 ? 'in' : 'out'}">${money(val)}</div>
+    </div>`;
+  const monthly = [
+    b.base ? line('What you already save', 'measured, not a guess', b.base) : '',
+    ...b.pieces.filter((p) => p.monthly != null)
+      .map((p) => line(p.label, p.auto ? 'added on its own — a live holding you never typed a piece for' : PLAN_KIND_WORDS[p.kind] || p.kind, p.monthly)),
+    ...b.buckets.map((x) => line(x.label, `${Math.round(x.ratePct * 10) / 10}% on ${money(x.capital)} held, flat — a certificate does not compound`, x.monthly)),
+    b.everythingElse ? line('Everything else', `assumed ${Math.round(b.everythingElse.ratePct * 10) / 10}% on ${money(b.everythingElse.capital)}`, b.everythingElse.monthly) : '',
+  ].filter(Boolean).join('');
+  const onceOff = b.pieces.filter((p) => p.once != null)
+    .map((p) => line(p.label, p.auto ? 'added on its own, this year' : 'this year', p.once)).join('');
+  $('efields').innerHTML = `
+    <div class="note" style="margin-top:0">Every line that adds up to this year's ${money(r.passiveMonthly)} a month.</div>
+    ${monthly || '<div class="empty" style="padding:16px">Nothing recurring yet.</div>'}
+    ${onceOff ? `<h3 style="margin:14px 0 4px">Landing this year</h3>${onceOff}` : ''}`;
+  $('esave').hidden = true;
+  $('esheet').hidden = false;
+}
+
 document.body.addEventListener('click', async (e) => {
   // Which month is being read. The whole state comes back for it, so every tab stays in step.
   const mo = e.target.closest('[data-month]');
@@ -1406,6 +1447,9 @@ document.body.addEventListener('click', async (e) => {
   // honest; which he means is his call, and it has to be visible rather than assumed.
   // How far ahead to look. The server could always do this; the page never offered it, so the
   // plan was stuck at ten years whatever he wanted to see.
+  const yearRow = e.target.closest('[data-plan-year]');
+  if (yearRow) { openYearInfo(Number(yearRow.dataset.planYear)); return; }
+
   const yearsBtn = e.target.closest('[data-plan-years]');
   if (yearsBtn) {
     await work(() => api('/api/plan', { years: Number(yearsBtn.dataset.planYears) }));

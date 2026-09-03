@@ -1983,3 +1983,59 @@ test('a certificate is principal held flat, not principal compounding', () => {
   assert.ok(f.rows[0].passiveMonthly >= 140);
   assert.equal(Math.round(f.rows[2].passiveMonthly), 0, 'no coupon, no passive income — which is the truth');
 });
+
+// "You left deposits there and it did not make sense" — four real certificates sat in the plan's
+// opening capital at 0%, earning nothing, because crediting their coupon had quietly become
+// something he had to remember to type. `holdingId` is how the app tells its own automatic coupon
+// apart from a piece he already built himself, so the two can never both count the same money.
+
+test('cleanEvent: holdingId and auto travel with a piece, and default to nothing he did not set', () => {
+  const plain = cleanEvent({ kind: 'income', amount: 10, atYear: 1 });
+  assert.equal(plain.holdingId, null);
+  assert.equal(plain.auto, false);
+  const tagged = cleanEvent({ kind: 'income', amount: 10, atYear: 1, holdingId: 'd1', auto: true });
+  assert.equal(tagged.holdingId, 'd1');
+  assert.equal(tagged.auto, true);
+});
+
+test('planTemplate: every piece it writes for a holding names that holding', () => {
+  const t = planTemplate(HIS(), [], SEPT26);
+  const by = (label) => t.find((e) => e.label === label);
+  assert.equal(by('Deposit 1 interest').holdingId, 'd1');
+  assert.equal(by('Loan 2 payment').holdingId, 'l1');
+  assert.equal(by('apartment').holdingId, 'p1');
+  assert.equal(by('apartment rent').holdingId, 'p1');
+  // The one piece that is not about a single holding.
+  assert.equal(t.find((e) => e.label === 'subscriptions'), undefined, 'no subs in this fixture');
+});
+
+test('forecast: a year is a total nobody has to take on trust', () => {
+  const f = forecast({
+    startBuckets: [{ id: 'd1', capital: 8386, ratePct: 0, label: 'Deposit 1', untilYear: 2 }],
+    monthlySurplus: 100, years: 4, yieldPct: 3,
+    events: [
+      { id: 'i1', atYear: 1, kind: 'income', amount: 140, label: 'Deposit 1 interest', untilYear: 2, auto: true, holdingId: 'd1' },
+      { id: 's1', atYear: 1, kind: 'spending', amount: 30, label: 'subscriptions' },
+      { id: 'l1', atYear: 1, kind: 'lump', amount: 500, label: 'a windfall' },
+    ],
+  });
+  // Year 1: the measured baseline, the automatic coupon (flagged as such), and the spending piece
+  // — every one of them named, so tapping the year shows exactly where its number came from.
+  const y1 = f.rows[0].breakdown;
+  assert.equal(y1.base, 100);
+  const coupon = y1.pieces.find((p) => p.label === 'Deposit 1 interest');
+  assert.ok(coupon, 'the coupon he never typed still shows up in the breakdown');
+  assert.equal(coupon.auto, true, 'and it is marked as something the app added, not something he wrote');
+  assert.equal(coupon.monthly, 140);
+  const spend = y1.pieces.find((p) => p.label === 'subscriptions');
+  assert.equal(spend.monthly, -30, 'spending is negative, so a breakdown sums to the headline figure');
+  assert.equal(spend.auto, false, 'a piece he wrote himself is never mislabelled as automatic');
+  const windfall = y1.pieces.find((p) => p.label === 'a windfall');
+  assert.equal(windfall.once, 500, 'a lump is a one-off, not a monthly line');
+  assert.ok(!y1.pieces.some((p) => p.monthly === 500), 'and it never shows up as a monthly amount too');
+  // Year 3: the deposit's term ran out at year 2, so its coupon and its bucket are both gone from
+  // the breakdown — not just from the total, but from the list a tap on the year actually shows.
+  const y3 = f.rows[2].breakdown;
+  assert.ok(!y3.pieces.some((p) => p.label === 'Deposit 1 interest'), 'a matured coupon stops appearing, not just stops paying');
+  assert.ok(!y3.buckets.some((b) => b.label === 'Deposit 1'), 'and its bucket is gone too — the money is just cash now');
+});

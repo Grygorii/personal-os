@@ -264,7 +264,9 @@ function must(el, panel, needles, label) {
       // Where every rate came from, and the one that is a guess.
       'you already have this', 'Everything else grows at 0% a year', 'every rate here is one you stated',
       // What he typed, beside what it comes to. The converted figure alone hides the currency.
-      '18,000 EGP'], 'this month');
+      '18,000 EGP',
+      // A year is a total nobody has to take on trust — tapping it says what made it up.
+      'data-plan-year="1"', 'Tap a year to see what it is made of.'], 'this month');
     const plan = el('p-plan').innerHTML;
     if (plan.indexOf('Your plan') > plan.indexOf('What it comes to')) {
       fail('what he builds belongs above what it comes to');
@@ -272,6 +274,14 @@ function must(el, panel, needles, label) {
     if (!plan.includes('<details')) fail('the year-by-year is behind a fold, not the page');
     if ((plan.match(/class="bar"/g) || []).length) fail('ten bars over numbers that are already labelled is decoration');
     if (!plan.includes('<table class="yrs"')) fail('and the years read as a table');
+    // "You left deposits there and it did not make sense": a live certificate now credits its own
+    // coupon to the plan without him having to add a piece for it — the fix for exactly that.
+    const y1 = S.forecast.mid.rows[0].breakdown;
+    const autoCoupon = y1.pieces.find((p) => p.auto && /interest/.test(p.label));
+    if (!autoCoupon) fail('a live deposit with no matching piece must credit its coupon automatically');
+    if (!(autoCoupon.monthly > 0)) fail('the automatic coupon has to be worth something, not a placeholder zero');
+    if (!y1.buckets.some((b) => b.label === 'Cairo CD')) fail('the breakdown must also show the capital it sits in, flat');
+
     must(el, 'p-subs', ['Every subscription, per year', 'What that costs in capital', 'Netflix',
       'free trial', 'Old magazine'], 'this month');
     must(el, 'p-fx', ['EGP', 'to 1 EUR', 'You put in', 'It is worth', 'The rate has',
@@ -552,6 +562,12 @@ function must(el, panel, needles, label) {
   if (S.forecast.mid.rows[0].monthlyContribution >= 0) {
     fail('template: with real instalments outweighing real coupons, year one has to show money going out');
   }
+  // Once he has a piece for a holding — from the template, same as if he typed it — the automatic
+  // coupon stands down. Counting Cairo CD's interest twice would be the exact bug that started this.
+  const tmplY1 = S.forecast.mid.rows[0].breakdown;
+  const cairoLines = tmplY1.pieces.filter((p) => p.label === 'Cairo CD interest');
+  if (cairoLines.length !== 1) fail(`template: Cairo CD interest must appear exactly once in a year's breakdown, got ${cairoLines.length}`);
+  if (cairoLines[0].auto) fail('template: a piece he has (even one generated for him) is not the automatic one');
 }
 
 // ---- Nothing entered at all: the first thing he ever sees ----

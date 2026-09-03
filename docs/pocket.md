@@ -231,10 +231,10 @@ a price without one: it looks current.
 2. Railway → same project → **New Service** → same repo.
 3. Start command: `npm run start:pocket`.
 4. Env vars above, `DB_NAME=pocket` among them.
-5. Look for `[boot] pocket-20 · db=pocket · base=EUR`.
+5. Look for `[boot] pocket-21 · db=pocket · base=EUR`.
 
 **Which build is actually serving?** `GET /health` (or `/version`) answers without Telegram —
-`{"ok":true,"app":"pocket","version":"pocket-20"}`. The marker lives in `src/pocket/version.js`;
+`{"ok":true,"app":"pocket","version":"pocket-21"}`. The marker lives in `src/pocket/version.js`;
 bump it on every deploy. Kept has `GET /version` for exactly the same reason: "is my change even
 out there yet" is the first question of every deploy, and guessing at it wastes an evening.
 
@@ -704,6 +704,38 @@ EUR/month in year one** once every coupon and every instalment is counted honest
 are not, in fact, covering his loans yet. That is the number the old, invented 5% could never have
 shown him, and it is exactly why he asked for this: a template is a starting point to edit, not an
 answer.
+
+### The deposits were sitting there earning nothing
+
+His first real look at the finished template: "you left deposits there, what not make sense." He
+was right, and it was worse than it looked. Four real certificates sat in the plan's opening
+capital — the row that says *"you already have this"* — and each was announced as ending on its
+own maturity year, but not one of them was earning anything in between. The "per month" figure in
+the year-by-year table never moved.
+
+The deposit-buckets fix earlier in this same round of feedback had held a certificate's principal
+flat, correctly, so the coupon would only ever be counted once — as a plan piece. What it did not
+account for: **crediting that coupon had quietly become something he had to remember to do.** A
+holding with no matching piece paid nothing at all, silently, and the only sign anything was wrong
+was a "per month" column that never changed.
+
+**A live deposit now credits its own coupon to the plan on its own**, the moment it would otherwise
+sit there earning nothing — using the same figure the "earned so far" card already shows, not a
+guess. The one thing this must never do is count a coupon twice: `holdingId` on a plan piece says
+which account it came from, and an automatic coupon stands down the moment a piece — hand-typed or
+from the template — already names that holding. Turning the template on and off, or editing a
+piece afterwards, can never produce two lines for the same certificate.
+
+### Tapping a year says what it is made of
+
+Told to build the plan himself, he also asked for the other half of "a total nobody can take apart
+is a claim, not a plan": **"I want to be able to press on year number and see from what it
+created."** Every row in the year-by-year table is a button now. Tapping one opens exactly what
+went into that year — his own pieces, the coupon the app added on its own and says so, what each
+certificate and the market portion are earning, all signed and named. It is the same discipline
+that put his pieces above the ten-year projection in the first place, aimed at a single year
+instead of the whole plan — the same drill-down would have caught the deposits-earning-nothing bug
+immediately, instead of needing a screenshot to surface it.
 
 ### The goal bar is split by where the money comes from
 

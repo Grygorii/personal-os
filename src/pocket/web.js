@@ -151,6 +151,26 @@ export function buildState({ base = 'EUR', table, monthKey, accounts = [], spanF
     }))
     .filter((b) => b.capital != null && b.capital > 0);
 
+  // The coupon a certificate is going to pay is not a guess — it is on the paperwork, the same
+  // figure the "earned so far" card already uses. So a live deposit credits it to the plan on its
+  // own, the moment it holds still and pays nothing: "you left the deposits there and it made no
+  // sense" was this — four real certificates sitting in the plan's opening capital at 0%, paying
+  // nothing, because crediting them had been made something he had to remember to type.
+  //
+  // The one thing that must never happen twice: once he has told the plan about a holding himself
+  // — by pressing "Start from what I hold" or adding a piece by hand — `holdingId` says so, and
+  // the automatic version stands down for that account.
+  const explicitHoldingIds = new Set(plan.list.filter((e) => e.holdingId).map((e) => e.holdingId));
+  const autoCoupons = accounts
+    .filter((a) => a.kind === 'deposit' && !explicitHoldingIds.has(a.id))
+    .map((a) => ({ a, t: depositProgress(a, now) }))
+    .filter(({ t }) => t?.schedule && t.perYear > 0 && !t.ended)
+    .map(({ a, t }) => cleanEvent({
+      id: `auto:${a.id}`, kind: 'income', label: `${a.label || 'deposit'} interest`,
+      currency: a.currency, amount: t.perYear / 12, atYear: 1, untilYear: yearOf(a.endsAt),
+      holdingId: a.id, auto: true,
+    }));
+
   return {
     base,
     ratesAvailable: true,
@@ -376,7 +396,7 @@ export function buildState({ base = 'EUR', table, monthKey, accounts = [], spanF
       startCapital: 0,
       startBuckets: planBuckets,
       monthlySurplus: plan.useMeasured ? cur.surplus : 0,
-      events: plan.list
+      events: [...plan.list, ...autoCoupons]
         .map((e) => ({
           ...e,
           amount: fx.toBase(e.amount, e.currency, table),

@@ -695,6 +695,15 @@ export function cleanEvent(e) {
     sellAtYear: e?.sellAtYear == null || !num(e.sellAtYear) ? null : Math.max(atYear, Math.min(60, Math.round(num(e.sellAtYear)))),
     sellFor: e?.sellFor == null || e.sellFor === '' ? null : Math.max(0, num(e.sellFor)),
     label: txt(e?.label, 80),
+    // Which holding this piece came from, when it came from one — so a deposit he has already
+    // told the plan about (by hand or from the template) is not ALSO credited automatically.
+    // Without this, "the deposits are paying the loan" recurs every time an account and a piece
+    // both describe the same coupon.
+    holdingId: txt(e?.holdingId, 40) || null,
+    // Written by the app, not by him — a coupon the plan credits on its own because he has a live
+    // certificate and never told the plan otherwise. The one place this matters is the drill-down:
+    // he should be able to see that a year's total includes money he never typed.
+    auto: !!e?.auto,
   };
 }
 
@@ -823,6 +832,30 @@ export function forecast({
     const fromCapital = [...buckets.values()].reduce((t, b) => t + (b.capital * b.rate) / 12, 0);
     const passive = fromCapital + extraIncome + monthlyPassiveNow;
 
+    // WHAT THIS YEAR IS MADE OF. A total nobody can take apart is not a plan, it is a claim — the
+    // sentence that built this whole tab in the first place, and it applies to a single year's
+    // figure exactly as much as it applied to the ten-year one. `auto` marks a piece the app added
+    // on its own (a coupon from a certificate he never told the plan about) so the drill-down can
+    // say so, rather than let it read as something he typed.
+    const breakdown = {
+      base: baseMonthly,
+      pieces: [
+        ...evts.filter((x) => ['contribution', 'income', 'spending'].includes(x.kind)
+          && x.atYear <= year && (x.untilYear == null || x.untilYear >= year))
+          .map((x) => ({ label: x.label || x.kind, kind: x.kind, auto: x.auto, monthly: x.kind === 'spending' ? -x.amount : x.amount })),
+        ...evts.filter((x) => x.kind === 'lump' && x.atYear === year)
+          .map((x) => ({ label: x.label || 'lump', kind: 'lump', auto: x.auto, once: x.amount })),
+        ...evts.filter((x) => x.kind === 'asset' && x.atYear === year)
+          .map((x) => ({ label: x.label || 'asset', kind: 'asset', auto: x.auto, once: x.amount })),
+        ...evts.filter((x) => x.kind === 'asset' && x.sellAtYear === year)
+          .map((x) => ({ label: `${x.label || 'asset'} sold`, kind: 'sale', auto: x.auto, once: x.sellFor })),
+      ],
+      // What is actually growing, bucket by bucket — a 2% deposit and the market are not one line.
+      buckets: [...buckets.entries()].filter(([k, b]) => k !== 'default' && b.capital > 0)
+        .map(([, b]) => ({ label: b.label, capital: b.capital, ratePct: b.rate * 100, monthly: (b.capital * b.rate) / 12 })),
+      everythingElse: def.capital > 0 ? { capital: def.capital, ratePct: y * 100, monthly: (def.capital * y) / 12 } : null,
+    };
+
     rows.push({
       year,
       capital,
@@ -836,6 +869,7 @@ export function forecast({
       // Kept apart from `ends`: a line stopping and an asset being sold are different events,
       // and the wording for each belongs in the view, not baked into the data.
       sold: soldThisYear,
+      breakdown,
     });
   }
 
@@ -1860,12 +1894,12 @@ export function planTemplate(accounts = [], subs = [], now = Date.now()) {
         const inst = t.schedule.every ? (t.schedule.perPayment * (12 / t.schedule.every)) / 12 : perMonth;
         add({
           kind: 'spending', label: `${a.label || a.kind} payment`, currency: a.currency,
-          amount: inst, atYear: 1, untilYear: endsIn,
+          amount: inst, atYear: 1, untilYear: endsIn, holdingId: a.id,
         });
       } else {
         add({
           kind: 'income', label: `${a.label || a.kind} ${a.kind === 'property' ? 'rent' : 'interest'}`,
-          currency: a.currency, amount: perMonth, atYear: 1, untilYear: endsIn,
+          currency: a.currency, amount: perMonth, atYear: 1, untilYear: endsIn, holdingId: a.id,
         });
       }
     }
@@ -1874,7 +1908,7 @@ export function planTemplate(accounts = [], subs = [], now = Date.now()) {
     // otherwise. The certificates are already in the plan's opening capital, so they are not
     // repeated here.
     if (a.kind === 'property' && a.value > 0) {
-      add({ kind: 'asset', label: a.label || 'property', currency: a.currency, amount: a.value, atYear: 1 });
+      add({ kind: 'asset', label: a.label || 'property', currency: a.currency, amount: a.value, atYear: 1, holdingId: a.id });
     }
   }
 
