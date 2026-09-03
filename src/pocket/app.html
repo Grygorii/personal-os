@@ -828,18 +828,12 @@ function drawPlan() {
         <span class="${goesIn >= 0 ? 'in' : 'out'}" style="font-weight:700;font-variant-numeric:tabular-nums">${money(goesIn)}<span style="color:var(--dim);font-weight:400"> a month</span></span>
       </div>
 
-      ${/* Each holding at the rate it actually pays. This was one lump grown at one invented
-            rate — which is where his "5% a year" came from, attached to certificates paying
-            twenty and to cash paying nothing. */ ''}
-      ${(S.planBuckets || []).map((b) => `<div class="row">
-        <span class="dot in"></span>
-        <div class="rmain">
-          <div class="rlabel">${esc(b.label)}</div>
-          <div class="rmeta">you already have this${b.ratePct ? ` · grows at its own ${b.ratePct}%` : ' · earns nothing on its own'}${
-            b.untilYear ? ` until year ${b.untilYear}, then it is just cash` : ''}</div>
-        </div>
-        <div class="ramt in">${money(b.capital)}</div>
-      </div>`).join('')}
+      ${/* ONLY WHAT HE ADDS. Holdings used to sit here as four read-only rows — "you already have
+            this, earns nothing on its own" — because that was where the old build put them. He
+            said, twice now, that this list is his to build and nothing else belongs in it. What
+            each holding is actually worth and actually earns has not gone anywhere: it is in
+            "What it comes to" below, in one sentence instead of a row per certificate, because
+            that is a result he reads, not a piece he adds. */ ''}
       <div class="row">
         <span class="dot ${S.planUseMeasured ? 'in' : 'out'}"></span>
         <div class="rmain">
@@ -851,16 +845,6 @@ function drawPlan() {
       ${pieces || '<div class="empty" style="padding:16px">Nothing listed yet. Add what you put in, what arrives, and what it costs.</div>'}
       ${(S.planUnconverted || []).length ? `<div class="warn" style="margin:10px 0 0">No exchange rate for
         ${esc(S.planUnconverted.join(', '))} — left out of everything below rather than counted as ${esc(S.base)}.</div>` : ''}
-      <div class="row">
-        <span class="dot ${S.planYieldPct > 0 ? 'in' : 'out'}"></span>
-        <div class="rmain">
-          <div class="rlabel">Everything else grows at ${S.planYieldPct}% a year</div>
-          <div class="rmeta">${S.planYieldPct > 0
-            ? 'your guess about the market — the only number here the app did not get from you'
-            : 'money with no rate of its own does not grow. Set a rate if you expect one.'}</div>
-        </div>
-        <button class="add" data-plan-yield="1">${S.planYieldPct > 0 ? 'Change' : 'Set a rate'}</button>
-      </div>
       <button class="btn ghost" id="addevent" style="margin-top:12px">+ Add money, income, or a cost</button>
       ${/* A plan to start from, written from what he already has. Every piece is editable after,
             which is the point — he asked for a template, not a verdict. */ ''}
@@ -882,10 +866,27 @@ function drawPlan() {
       <div class="sub">${money(mid.endCapital)} after ${yrs} years${f.runs.length > 1
         ? ` · ${money(low.endCapital)} to ${money(high.endCapital)} if your ${S.planYieldPct}% is a point and a half out either way`
         : ' · no range, because every rate here is one you stated'}</div>
-      ${mid.ownRate.length ? `<div class="note">${mid.ownRate.map((b) => b.asset
-        ? `${money(b.capital)} of that is ${esc(b.label)}, ${b.ratePct ? `growing at ${b.ratePct}%` : 'held at what it is worth'} — not money in the market`
-        : b.held ? `${money(b.capital)} of that is ${esc(b.label)} at its own ${b.ratePct}%`
-        : `${money(b.capital)} of that is at your own ${b.ratePct}%`).join('. ')}.</div>` : ''}
+      ${/* What he already holds, in one sentence rather than a row per certificate — a result, not
+            a piece he built. This is CURRENT holdings (`planBuckets`), not the end-of-forecast
+            state (`ownRate`): his real certificates mature well inside the horizon he was looking
+            at, so by year 5 they had already merged into plain cash and the sentence built from
+            the end state said nothing at all — the exact information the row-per-holding list used
+            to carry, gone silently. A held deposit's coupon counts wherever that coupon is: a piece
+            he added, or, if he never got round to it, credited on its own — either way it is not
+            here, because this is the principal, sitting flat. Anything he listed himself — a
+            2% lump, the flat — is already a row above and is not repeated here. */ ''}
+      ${(S.planBuckets || []).length ? `<div class="note">${money((S.planBuckets || []).reduce((t, b) => t + b.capital, 0))} of this you already have — ${(S.planBuckets || []).map((b) =>
+        `${esc(b.label)}${b.ratePct ? `, growing at its own ${b.ratePct}%` : ', held flat (its coupon counts on its own, wherever it is earning)'}`).join('; ')}.</div>` : ''}
+      <div class="row" style="margin-top:8px">
+        <span class="dot ${S.planYieldPct > 0 ? 'in' : 'out'}"></span>
+        <div class="rmain">
+          <div class="rlabel">Money with no rate of its own assumes ${S.planYieldPct}%</div>
+          <div class="rmeta">${S.planYieldPct > 0
+            ? 'your guess about the market — the only number here the app did not get from you'
+            : 'nought is the default: money that just sits does not grow'}</div>
+        </div>
+        <button class="add" data-plan-yield="1">${S.planYieldPct > 0 ? 'Change' : 'Set a rate'}</button>
+      </div>
       ${goal > 0 ? (mid.goalReachedInYear
         ? `<div class="sub in" style="margin-top:8px">You reach ${money(goal)} a month in year ${mid.goalReachedInYear}.</div>`
         : `<div class="sub" style="margin-top:8px">Not enough to reach ${money(goal)} a month inside ${yrs} years. Adding to what goes in moves this far more than a better yield does.</div>`) : ''}

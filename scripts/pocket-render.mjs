@@ -260,9 +260,10 @@ function must(el, panel, needles, label) {
     // is a plain table behind a fold, not ten bar blocks.
     must(el, 'p-plan', ['Your plan', 'What it comes to', 'Year by year',
       'from salary', 'rent from apartment 1', 'grows at 2%', 'What you actually saved this month',
-      'at your own 2%', 'second rental', 'data-plan-years',
-      // Where every rate came from, and the one that is a guess.
-      'you already have this', 'Everything else grows at 0% a year', 'every rate here is one you stated',
+      'second rental', 'data-plan-years',
+      // Where every rate came from, and the one that is a guess — now a result in "What it comes
+      // to", not a row he has to scroll past to reach his own pieces.
+      'of this you already have', 'Money with no rate of its own assumes 0%', 'every rate here is one you stated',
       // What he typed, beside what it comes to. The converted figure alone hides the currency.
       '18,000 EGP',
       // A year is a total nobody has to take on trust — tapping it says what made it up.
@@ -270,6 +271,17 @@ function must(el, panel, needles, label) {
     const plan = el('p-plan').innerHTML;
     if (plan.indexOf('Your plan') > plan.indexOf('What it comes to')) {
       fail('what he builds belongs above what it comes to');
+    }
+    // ONLY WHAT HE ADDS. Holdings used to sit in "Your plan" as read-only rows he never asked for
+    // and could not touch — exactly the clutter he pointed at, twice.
+    const yourPlanCard = plan.slice(plan.indexOf('Your plan'), plan.indexOf('What it comes to'));
+    if (yourPlanCard.includes('you already have this')) fail('a holding must not appear as a row in the list he builds');
+    // The regression this exact change nearly reintroduced: "what you already have" has to be
+    // read from CURRENT holdings, not from the end of a ten-year run. Every certificate here
+    // matures within year 1 — by year 10 the end-of-horizon view (mid.ownRate) has nothing left
+    // to show, and a summary built from it would go silent about capital he plainly still holds.
+    if (!plan.includes('Cairo CD, held flat')) {
+      fail('"what you already have" must name a holding even once it has matured inside the forecast horizon');
     }
     if (!plan.includes('<details')) fail('the year-by-year is behind a fold, not the page');
     if ((plan.match(/class="bar"/g) || []).length) fail('ten bars over numbers that are already labelled is decoration');

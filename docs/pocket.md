@@ -231,10 +231,10 @@ a price without one: it looks current.
 2. Railway → same project → **New Service** → same repo.
 3. Start command: `npm run start:pocket`.
 4. Env vars above, `DB_NAME=pocket` among them.
-5. Look for `[boot] pocket-21 · db=pocket · base=EUR`.
+5. Look for `[boot] pocket-22 · db=pocket · base=EUR`.
 
 **Which build is actually serving?** `GET /health` (or `/version`) answers without Telegram —
-`{"ok":true,"app":"pocket","version":"pocket-21"}`. The marker lives in `src/pocket/version.js`;
+`{"ok":true,"app":"pocket","version":"pocket-22"}`. The marker lives in `src/pocket/version.js`;
 bump it on every deploy. Kept has `GET /version` for exactly the same reason: "is my change even
 out there yet" is the first question of every deploy, and guessing at it wastes an evening.
 
@@ -610,7 +610,8 @@ as. €2,771,911 became €46,048.
 
 He asked why year one read €39,162 when he had listed €304 a month. It was right, and it was
 unexplained: the plan starts from what he **already has invested** — his deposits and portfolio —
-and the tab listed only what he *adds*. That figure is now a row in the plan like any other.
+and the tab listed only what he *adds*. That figure counted from the first version on; where it
+sits changed later — see "Only what he adds" below.
 
 Then the piece he actually wanted: `asset`. A flat is not money in a pot.
 
@@ -736,6 +737,31 @@ certificate and the market portion are earning, all signed and named. It is the 
 that put his pieces above the ten-year projection in the first place, aimed at a single year
 instead of the whole plan — the same drill-down would have caught the deposits-earning-nothing bug
 immediately, instead of needing a screenshot to surface it.
+
+### Only what he adds
+
+Two rounds after "make plan page clean," the same complaint came back, pointed at the same tab:
+"remove everything, I want to have only what I will add." He was looking at four read-only rows —
+*Deposit 1 · Deposit 2 · Deposit 3 · Deposit 4*, "you already have this," no ✎, no × — sitting
+above the one piece he had actually typed. Nothing was wrong with the arithmetic this time; the
+list he builds had a second, silent list living inside it that he never asked for and could not
+touch.
+
+**"Your plan" is now only what he added — full stop.** The holdings rows are gone from it, and so
+is the "everything else grows at X%" row, which was never a piece either: it is an assumption about
+money with no rate of its own, not something to add. What each holding is actually worth moved to
+*"What it comes to"*, as one sentence instead of a row per certificate — a **result** he reads,
+never a piece he builds: *"61,058 EUR of this you already have — Deposit 1, held flat (its coupon
+counts on its own, wherever it is earning); …"*. The market-rate assumption moved there too, next
+to the figure it actually explains.
+
+**The one bug this nearly reintroduced, caught before it shipped:** that sentence was first built
+from `forecast().ownRate`, the state of each bucket at the *end* of the run. His real certificates
+all mature inside year one or two of any horizon he'd pick — so by year ten, `ownRate` reported
+nothing, and a sentence built from it would have gone silent about capital he plainly still holds.
+Fixed by reading `planBuckets` instead — what he holds **now**, not what is left of it after the
+forecast has run its course. `pocket-render.mjs` pins this: a fixture where every holding matures
+inside year one, checked at a ten-year horizon, still has to name them.
 
 ### The goal bar is split by where the money comes from
 

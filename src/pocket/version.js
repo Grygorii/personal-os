@@ -3,4 +3,4 @@
 // out there yet" is the first question of every deploy, and guessing at it wastes an evening.
 //
 // Bump it on every deploy.
-export const VERSION = 'pocket-21';
+export const VERSION = 'pocket-22';
