@@ -1706,3 +1706,43 @@ test('with neither a basis nor a diary, nothing is invented', () => {
   // But the size of the bet needs no history at all, and is still there.
   assert.ok(egp.sensitivity[0].deltaInBase < 0);
 });
+
+// ---- A plan piece is an amount, so it has a currency ----
+//
+// The one place in this app that broke its own founding rule. He typed his Cairo rent as
+// "18,000 a month" — 18,000 EGP, about 305 euro — the plan read it as 18,000 EUR, and the ten-year
+// line came out at 2.77 MILLION. The form even told him everything was in euro.
+
+test('cleanEvent: a plan piece carries the currency it is in', () => {
+  assert.equal(cleanEvent({ amount: 18000, currency: 'EGP' }).currency, 'EGP');
+  assert.equal(cleanEvent({ amount: 500 }).currency, 'EUR', 'anything stored before pieces had one was typed as the base');
+  assert.equal(cleanEvent({ currency: 'not a code' }).currency, 'EUR', 'junk is never a currency');
+});
+
+test('the plan projects a foreign amount at its own value, not at face value', () => {
+  const rentEGP = [{ atYear: 1, kind: 'income', amount: 18000, currency: 'EGP', label: 'Cairo rent' }];
+  const rentEUR = [{ atYear: 1, kind: 'income', amount: 18000 / 54, currency: 'EUR', label: 'Cairo rent' }];
+  const opts = { startCapital: 0, monthlySurplus: 0, years: 10, yieldPct: 5 };
+  const conv = (list) => list.map((e) => ({ ...e, amount: toBase(e.amount, e.currency, T) }));
+
+  const egp = forecast({ ...opts, events: conv(rentEGP) });
+  const eur = forecast({ ...opts, events: conv(rentEUR) });
+  assert.equal(Math.round(egp.endCapital), Math.round(eur.endCapital), '18,000 EGP is 333 EUR either way');
+
+  // What it must NOT be: the same number read as euro, 54 times too big.
+  const faceValue = forecast({ ...opts, events: [{ atYear: 1, kind: 'income', amount: 18000 }] });
+  assert.ok(faceValue.endCapital > 50 * egp.endCapital, 'which is the size of the mistake');
+  assert.ok(egp.endCapital < 100000 && faceValue.endCapital > 2000000);
+});
+
+test('a plan piece in a currency with no rate is dropped and named, never passed through', () => {
+  // Same rule as everywhere else here: a missing rate is null and is reported, never 1:1.
+  assert.equal(toBase(999, 'XYZ', T), null);
+  const kept = { atYear: 1, kind: 'income', amount: 300, currency: 'EUR', label: 'good' };
+  const lost = { atYear: 1, kind: 'income', amount: 999, currency: 'XYZ', label: 'mystery' };
+  const usable = [kept, lost].map((e) => ({ ...e, amount: toBase(e.amount, e.currency, T) })).filter((e) => e.amount != null);
+  assert.equal(usable.length, 1);
+  const f = forecast({ startCapital: 0, monthlySurplus: 0, years: 5, yieldPct: 5, events: usable });
+  const only = forecast({ startCapital: 0, monthlySurplus: 0, years: 5, yieldPct: 5, events: [{ ...kept }] });
+  assert.equal(f.endCapital, only.endCapital);
+});

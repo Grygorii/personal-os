@@ -78,7 +78,9 @@ const events = {
   useMeasured: true,
   list: [
     { id: 'e1', atYear: 1, kind: 'contribution', amount: 500, label: 'from salary' },
-    { id: 'e2', atYear: 1, kind: 'income', amount: 450, label: 'rent from apartment 1' },
+    // His Cairo rent, in the currency it is actually paid in. Read as EUR it put 2.77 MILLION on
+    // the ten-year line.
+    { id: 'e2', atYear: 1, kind: 'income', amount: 18000, currency: 'EGP', label: 'rent from apartment 1' },
     { id: 'e3', atYear: 1, kind: 'lump', amount: 10000, ratePct: 2, label: 'deposit at 2%' },
     { id: 'e4', atYear: 3, kind: 'income', amount: 600, label: 'second rental' },
     { id: 'e5', atYear: 1, kind: 'spending', amount: 120, untilYear: 4, label: 'car insurance' },
@@ -258,7 +260,9 @@ function must(el, panel, needles, label) {
     // is a plain table behind a fold, not ten bar blocks.
     must(el, 'p-plan', ['Your plan', 'What it comes to', 'Year by year',
       'from salary', 'rent from apartment 1', 'grows at 2%', 'What you actually saved this month',
-      'at your own 2%', 'second rental', 'data-plan-years'], 'this month');
+      'at your own 2%', 'second rental', 'data-plan-years',
+      // What he typed, beside what it comes to. The converted figure alone hides the currency.
+      '18,000 EGP'], 'this month');
     const plan = el('p-plan').innerHTML;
     if (plan.indexOf('Your plan') > plan.indexOf('What it comes to')) {
       fail('what he builds belongs above what it comes to');
@@ -325,6 +329,14 @@ function must(el, panel, needles, label) {
   if (flatRate.rateSource !== 'holding') fail('the flat also has one of its own in this fixture');
   const loanRate = egpFx.holdings.find((h) => h.owed);
   if (loanRate.rateSource !== 'basis') fail('everything else falls back to what he exchanged at');
+
+  // A plan piece in a currency with no rate is left out and named — never counted as EUR.
+  const odd = buildState({ base: 'EUR', table: T, accounts, spanFlows, subs, goal, basis,
+    events: { ...events, list: [...events.list, { id: 'x', atYear: 1, kind: 'income', amount: 999, currency: 'XYZ', label: 'mystery' }] }, now: NOW });
+  if (!odd.planUnconverted.some((x) => x.includes('mystery'))) fail('an unconvertible plan piece has to be named');
+  if (Math.round(odd.forecast.mid.endCapital) !== Math.round(S.forecast.mid.endCapital)) {
+    fail('and left out of the projection entirely, not added at 1:1');
+  }
 
   // With no basis and no diary, nothing is invented.
   const bare = buildState({ base: 'EUR', table: T, accounts, spanFlows, subs, goal, events, basis: {}, now: NOW });
@@ -399,6 +411,19 @@ function must(el, panel, needles, label) {
   // The plan is built from named pieces, each at its own rate.
   const S = buildState({ base: 'EUR', table: T, accounts, spanFlows, subs, goal, events, basis, now: NOW });
   const mid = S.forecast.mid;
+  // AN AMOUNT WITHOUT A CURRENCY IS NOT AN AMOUNT — the rule this file was built on, and the one
+  // place that broke it. 18,000 EGP is about 333 EUR, not 18,000.
+  const rentPiece = S.events.find((e) => e.label === 'rent from apartment 1');
+  if (rentPiece.currency !== 'EGP') fail('a plan piece carries the currency it is in');
+  if (Math.round(rentPiece.amountInBase) !== 333) fail(`18,000 EGP is 333 EUR, got ${rentPiece.amountInBase}`);
+  // The exact check, not a threshold: the same plan with that rent typed in euro at the converted
+  // amount has to come out the same. If EGP were being read as EUR it would be 54 times larger.
+  const inEur = buildState({ base: 'EUR', table: T, accounts, spanFlows, subs, goal, basis, now: NOW,
+    events: { ...events, list: events.list.map((e) => (e.id === 'e2' ? { ...e, amount: 18000 / 54, currency: 'EUR' } : e)) } });
+  if (Math.round(mid.endCapital) !== Math.round(inEur.forecast.mid.endCapital)) {
+    fail(`18,000 EGP must project as 333 EUR: ${Math.round(mid.endCapital)} vs ${Math.round(inEur.forecast.mid.endCapital)}`);
+  }
+
   if (!mid.ownRate.length) fail('the 2% deposit must grow at 2%, not at the market yield');
   if (Math.round(mid.ownRate[0].ratePct) !== 2) fail('and be reported at the rate it was given');
   // 10,000 at 2% for ten years is ~12,190. At the 5% middle case it would be ~16,289 — the gap

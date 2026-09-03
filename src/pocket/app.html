@@ -786,9 +786,14 @@ function drawPlan() {
      decoration sitting on top of the only part he can actually change.
      So this is a workbench now. What he builds is the page; what it comes to is one card under
      it; and the year-by-year is a plain table behind a fold, for when he wants to read it. */
+  // What he typed, and — where it is not already in his own currency — what it comes to. Both,
+  // always: the converted figure alone hides which currency the money is really in.
+  const amt = (e) => (e.currency && e.currency !== S.base)
+    ? `${Math.round(e.amount).toLocaleString()} ${esc(e.currency)}${e.amountInBase != null ? ` (${money(e.amountInBase)})` : ' — no rate'}`
+    : money(e.amount);
   const per = (e) => e.kind === 'lump'
-    ? `${money(e.amount)} once in year ${e.atYear}`
-    : `${money(e.amount)} a month from year ${e.atYear}${e.untilYear ? ` to ${e.untilYear}` : ''}`;
+    ? `${amt(e)} once in year ${e.atYear}`
+    : `${amt(e)} a month from year ${e.atYear}${e.untilYear ? ` to ${e.untilYear}` : ''}`;
   const what = { contribution: 'you put in', income: 'arrives', spending: 'goes out', lump: 'one-off' };
 
   const pieces = (S.events || []).map((e) => `
@@ -804,8 +809,8 @@ function drawPlan() {
 
   const base = S.planBase || 0;
   const listedMonthly = (S.events || [])
-    .filter((e) => e.kind !== 'lump')
-    .reduce((n, e) => n + (e.kind === 'spending' ? -e.amount : e.amount), 0);
+    .filter((e) => e.kind !== 'lump' && e.amountInBase != null)
+    .reduce((n, e) => n + (e.kind === 'spending' ? -e.amountInBase : e.amountInBase), 0);
   const goesIn = base + listedMonthly;
 
   $('p-plan').innerHTML = `
@@ -824,6 +829,8 @@ function drawPlan() {
         <button class="add" data-plan-base="${S.planUseMeasured ? 'off' : 'on'}">${S.planUseMeasured ? 'Ignore it' : 'Use it'}</button>
       </div>
       ${pieces || '<div class="empty" style="padding:16px">Nothing listed yet. Add what you put in, what arrives, and what it costs.</div>'}
+      ${(S.planUnconverted || []).length ? `<div class="warn" style="margin:10px 0 0">No exchange rate for
+        ${esc(S.planUnconverted.join(', '))} — left out of everything below rather than counted as ${esc(S.base)}.</div>` : ''}
       <button class="btn ghost" id="addevent" style="margin-top:12px">+ Add money, income, or a cost</button>
     </div>
 
@@ -1199,7 +1206,7 @@ $('esave').onclick = async () => {
       $('eerr').textContent = 'It needs a name, an amount and a year.'; $('eerr').hidden = false; return;
     }
     const piece = {
-      label: v.label, kind: v.kind,
+      label: v.label, kind: v.kind, currency: v.currency,
       amount: Number(v.amount), atYear: Number(v.atYear),
       // Empty means "whatever the market does" and "forever" — both are real answers, so both
       // are stored as null rather than as a zero that would quietly mean something else.
@@ -1253,15 +1260,19 @@ function openPlanEvent(existing) {
     ], e.kind))}
     <div class="two">
       ${field('Amount', input('amount', e.amount, 'inputmode="decimal" placeholder="500"'))}
-      ${field('Its own rate %', input('ratePct', e.ratePct ?? '', 'inputmode="decimal" placeholder="market"'))}
+      ${field('Currency', select('currency', currencyOptions(e.currency || S.base), e.currency || S.base))}
     </div>
+    ${field('Its own rate %', input('ratePct', e.ratePct ?? '', 'inputmode="decimal" placeholder="market — leave empty"'))}
     <div class="two">
       ${field('From year', input('atYear', e.atYear, 'inputmode="numeric"'))}
       ${field('Until year', input('untilYear', e.untilYear ?? '', 'inputmode="numeric" placeholder="forever"'))}
     </div>
     <div class="note" style="margin-top:0">Year 1 is the next twelve months, so <b>from year 1</b>
     means starting now. Leave the rate empty and it grows with the market range; put <b>2</b> there
-    for a deposit paying 2% and it grows at 2% instead. Everything is in ${esc(S.base)}.
+    for a deposit paying 2% and it grows at 2% instead.
+    <br><br><b>Say which currency.</b> Cairo rent of 18,000 is 18,000 EGP — about
+    ${money(18000 / 59)} — and read as ${esc(S.base)} it would put two and a half million on the
+    ten-year line. It is converted at today's rate wherever it is shown.
     <br><br><b>“I put this in”</b> is money you move from your pocket into the pot.
     <b>“This money arrives”</b> is rent or a dividend — it goes into the pot too, and it counts
     towards your ${money(S.goal?.target || 2000)} a month goal, which is the only difference.</div>`;

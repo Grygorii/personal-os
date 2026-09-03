@@ -231,10 +231,10 @@ a price without one: it looks current.
 2. Railway → same project → **New Service** → same repo.
 3. Start command: `npm run start:pocket`.
 4. Env vars above, `DB_NAME=pocket` among them.
-5. Look for `[boot] pocket-16 · db=pocket · base=EUR`.
+5. Look for `[boot] pocket-17 · db=pocket · base=EUR`.
 
 **Which build is actually serving?** `GET /health` (or `/version`) answers without Telegram —
-`{"ok":true,"app":"pocket","version":"pocket-16"}`. The marker lives in `src/pocket/version.js`;
+`{"ok":true,"app":"pocket","version":"pocket-17"}`. The marker lives in `src/pocket/version.js`;
 bump it on every deploy. Kept has `GET /version` for exactly the same reason: "is my change even
 out there yet" is the first question of every deploy, and guessing at it wastes an evening.
 
@@ -588,6 +588,23 @@ them.
 in the page to call it, so the plan was stuck at ten years. 5 / 10 / 20 / 30 sit beside the result.
 That is not cosmetic: at ten years his plan reads "not enough to reach €2,000 a month", and at
 twenty it reads **"you reach it in year 11"**. He was one year short of seeing it.
+
+### The one place that broke the rule
+
+**An amount without a currency is not an amount** — the sentence this whole app is built on, and
+plan pieces did not have one. He typed his Cairo rent as "18,000 a month", meaning 18,000 EGP
+(about €305), the plan read it as €18,000, and the ten-year line came out at **€2,771,911**. The
+form even told him everything was in euro.
+
+Pieces carry a currency now, the form asks for it, and the list shows both — `18,000 EGP (305 EUR)
+a month from year 1` — because the converted figure alone hides which currency the money is really
+in. Conversion happens once, in `buildState`; `forecast` stays pure arithmetic in a single currency
+and never learns about exchange rates. A piece in a currency with no rate is **dropped and named**,
+never passed through as though the number were euro — which is precisely the failure that put 2.7
+million on his screen.
+
+Anything stored before pieces had a currency reads as the base, because that is what it was typed
+as. €2,771,911 became €46,048.
 
 ### Money in buckets, one per rate
 

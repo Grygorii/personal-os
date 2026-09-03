@@ -671,6 +671,13 @@ export function cleanEvent(e) {
     kind: EVENT_KINDS.includes(e?.kind) ? e.kind : 'contribution',
     // A monthly figure for contribution/income/spending; a one-off total for a lump.
     amount: num(e?.amount),
+    // AND THE CURRENCY IT IS IN.
+    //
+    // The one place in this app that broke its own founding rule. He typed his Cairo rent as
+    // "18,000 a month" — 18,000 EGP, about 305 euro — and the plan read it as 18,000 EUR and
+    // projected 2.77 MILLION over ten years. Every other figure here carries its currency;
+    // these did not, and the form even told him everything was in euro.
+    currency: cleanCurrency(e?.currency) || 'EUR',
     // ITS OWN RATE, when the money has one. A deposit at 2% and a portfolio at 7% are not the
     // same money, and a plan that compounds both at one figure is wrong about whichever it is
     // not describing — usually by tens of thousands over ten years. Null means "whatever the

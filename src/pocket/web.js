@@ -26,7 +26,7 @@ import {
   parseEntry, ACCOUNT_KINDS, PAYOUT_KINDS, isLiability, forecastRange, depositProgress,
   monthWindowOf, recentMonths, monthsSummary, patchFrom, depositsSummary, contractedIncome,
   missingRecurring, cleanFlow, balanceNow, subsSummary, BILLING_PERIODS, cleanSub,
-  scheduledFlows, EVENT_KINDS, parseDate, matchRecorded, subChargeDates, currencyPicture,
+  scheduledFlows, EVENT_KINDS, parseDate, matchRecorded, subChargeDates, currencyPicture, cleanEvent,
 } from './money.js';
 
 const json = (res, code, body) => {
@@ -99,6 +99,11 @@ export function buildState({ base = 'EUR', table, monthKey, accounts = [], spanF
   if (!table) {
     return { base, ratesAvailable: false, accounts, flows, subs: { rows: [] }, goal, kinds: ACCOUNT_KINDS, events: events.list };
   }
+
+  // Sanitised here rather than trusted from the caller: a plan piece stored before pieces had a
+  // currency has none, and treating that as "unconvertible" would drop it from the plan instead
+  // of reading it as the base — which is what it was typed as.
+  const plan = { ...events, list: (events.list || []).map(cleanEvent) };
 
   const n = netWorth(accounts, table, base, now);
 
@@ -328,20 +333,30 @@ export function buildState({ base = 'EUR', table, monthKey, accounts = [], spanF
     // Three yields, because over a decade the yield assumption is most of the answer.
     // The plan is BUILT, not inferred. `planBase` is the one number it starts from — what he
     // actually saved this month — and he can switch it off and list everything himself instead.
-    planBase: events.useMeasured ? Math.max(0, cur.surplus) : 0,
-    planUseMeasured: events.useMeasured !== false,
+    //
+    // Its pieces are converted here, once, for the same reason every other figure in this app is:
+    // an amount without a currency is not an amount. The forecast itself stays pure arithmetic in
+    // a single currency and never learns about exchange rates.
+    planUnconverted: plan.list.filter((e) => fx.toBase(e.amount, e.currency, table) == null)
+      .map((e) => `${e.label || e.kind} (${e.currency})`),
+    planBase: plan.useMeasured ? Math.max(0, cur.surplus) : 0,
+    planUseMeasured: plan.useMeasured !== false,
     planStartCapital: invested,
     eventKinds: EVENT_KINDS,
     forecast: forecastRange({
       startCapital: invested,
-      monthlySurplus: events.useMeasured ? cur.surplus : 0,
+      monthlySurplus: plan.useMeasured ? cur.surplus : 0,
+      events: plan.list
+        .map((e) => ({ ...e, amount: fx.toBase(e.amount, e.currency, table) }))
+        // No rate, no amount. Excluded and named above, never passed through as though the
+        // number were euro — which is exactly the failure that put 2.77 million on his screen.
+        .filter((e) => e.amount != null),
       monthlyPassiveNow: 0,
-      years: Number(events.years) || 10,
-      events: events.list,
+      years: Number(plan.years) || 10,
       goalMonthly: goal?.monthly || 0,
     }),
-    events: events.list,
-    forecastYears: Number(events.years) || 10,
+    events: plan.list.map((e) => ({ ...e, amountInBase: fx.toBase(e.amount, e.currency, table) })),
+    forecastYears: Number(plan.years) || 10,
   };
 }
 
