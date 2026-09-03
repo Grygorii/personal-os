@@ -767,6 +767,18 @@ export function forecast({
       return buckets.get(key);
     }
     if (e.ratePct == null) return buckets.get('default');
+    // A LUMP WITH A TERM IS A DEPOSIT — "10,000 at 2%, until year 5" is the same shape as a real
+    // certificate, and has to mature the same way: on its own, in its own bucket, so it does not
+    // share a maturity date with some other lump that happens to carry the same rate. Without this
+    // its "until year" printed an "ends" label in the year-by-year table while the money kept
+    // compounding at its stated rate for ever — the app announcing a maturity that never happened.
+    if (e.kind === 'lump' && e.untilYear != null) {
+      const key = `e:${e.id}`;
+      if (!buckets.has(key)) {
+        buckets.set(key, { rate: num(e.ratePct) / 100, capital: 0, monthly: 0, label: e.label || `${e.ratePct}%`, untilYear: e.untilYear });
+      }
+      return buckets.get(key);
+    }
     const key = `r${e.ratePct}`;
     if (!buckets.has(key)) buckets.set(key, { rate: num(e.ratePct) / 100, capital: 0, monthly: 0, label: `${e.ratePct}%` });
     return buckets.get(key);
@@ -790,10 +802,12 @@ export function forecast({
     }
     // A term that runs out. The certificate stops paying its rate and the money becomes ordinary
     // cash — which is the truth, and a great deal less flattering than a 20% deposit compounding
-    // for thirty years.
+    // for thirty years. Applies to a real holding (`held`, from `startBuckets`) and to a lump he
+    // typed himself with a stated term alike — either way, `untilYear` on a bucket means the same
+    // thing: this is a deposit, and deposits mature.
     const maturedThisYear = [];
     for (const [, b] of buckets) {
-      if (!b.held || !b.untilYear || b.untilYear >= year) continue;
+      if (!b.untilYear || b.untilYear >= year) continue;
       buckets.get('default').capital += b.capital;
       if (b.capital > 0 && b.label) maturedThisYear.push(b.label);
       b.capital = 0; b.untilYear = null;
@@ -851,8 +865,11 @@ export function forecast({
           .map((x) => ({ label: `${x.label || 'asset'} sold`, kind: 'sale', auto: x.auto, once: x.sellFor })),
       ],
       // What is actually growing, bucket by bucket — a 2% deposit and the market are not one line.
+      // `held` says whether this is a real holding sitting flat (its coupon is a piece elsewhere,
+      // wherever it is earning) or a rate he stated himself, which DOES compound — the drill-down
+      // must never describe one as though it were the other.
       buckets: [...buckets.entries()].filter(([k, b]) => k !== 'default' && b.capital > 0)
-        .map(([, b]) => ({ label: b.label, capital: b.capital, ratePct: b.rate * 100, monthly: (b.capital * b.rate) / 12 })),
+        .map(([, b]) => ({ label: b.label, capital: b.capital, ratePct: b.rate * 100, monthly: (b.capital * b.rate) / 12, held: !!b.held })),
       everythingElse: def.capital > 0 ? { capital: def.capital, ratePct: y * 100, monthly: (def.capital * y) / 12 } : null,
     };
 

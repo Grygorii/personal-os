@@ -799,7 +799,9 @@ function drawPlan() {
   const per = (e) => e.kind === 'asset'
     ? `worth ${amt(e)}${e.atYear > 1 ? `, from ${calYear(e.atYear)}` : ''}`
     : e.kind === 'lump'
-    ? `${amt(e)} once in ${calYear(e.atYear)}`
+    // A lump with a rate AND an until year is a term deposit — it matures, same as a real
+    // certificate, and has to say so here, not only in the year-by-year table's "ends" label.
+    ? `${amt(e)} once in ${calYear(e.atYear)}${e.untilYear ? `, term to ${calYear(e.untilYear)}` : ''}`
     : `${amt(e)} a month from ${calYear(e.atYear)}${e.untilYear ? ` to ${calYear(e.untilYear)}` : ''}`;
   const what = { contribution: 'you put in', income: 'arrives', spending: 'goes out', lump: 'one-off', asset: 'you own' };
   const sellNote = (e) => e.kind !== 'asset' ? ''
@@ -1373,7 +1375,9 @@ function openYearInfo(year) {
     b.base ? line('What you already save', 'measured, not a guess', b.base) : '',
     ...b.pieces.filter((p) => p.monthly != null)
       .map((p) => line(p.label, p.auto ? 'added on its own — a live holding you never typed a piece for' : PLAN_KIND_WORDS[p.kind] || p.kind, p.monthly)),
-    ...b.buckets.map((x) => line(x.label, `${Math.round(x.ratePct * 10) / 10}% on ${money(x.capital)} held, flat — a certificate does not compound`, x.monthly)),
+    ...b.buckets.map((x) => line(x.label, x.held
+      ? `${Math.round(x.ratePct * 10) / 10}% on ${money(x.capital)} held, flat — a certificate does not compound`
+      : `${money(x.capital)} growing at its own ${Math.round(x.ratePct * 10) / 10}%`, x.monthly)),
     b.everythingElse ? line('Everything else', `assumed ${Math.round(b.everythingElse.ratePct * 10) / 10}% on ${money(b.everythingElse.capital)}`, b.everythingElse.monthly) : '',
   ].filter(Boolean).join('');
   const onceOff = b.pieces.filter((p) => p.once != null)

@@ -1129,6 +1129,43 @@ test('forecast: an income that ends stops counting towards the goal', () => {
   assert.ok(y3 < 900);
 });
 
+// "Something wrong with deposit calculation" — he added a lump at a stated rate with an until
+// year (2,000,000 EGP at 17%, year 5 to year 8) and the year-by-year table printed "Deposit ends"
+// in year 8 while the capital kept compounding at 17% for ever past it. A lump with a rate AND a
+// term is a deposit, and a deposit matures — the same rule `startBuckets` already followed.
+
+test('forecast: a lump with a rate AND a term matures — it does not compound forever past its "ends" label', () => {
+  const f = forecast({
+    monthlySurplus: 0, years: 10, yieldPct: 0,
+    events: [{ id: 'd1', atYear: 2, untilYear: 5, kind: 'lump', amount: 10000, ratePct: 17, label: 'Deposit' }],
+  });
+  // While its term runs, it compounds at its own rate and shows up as its own bucket.
+  assert.ok(f.rows[3].breakdown.buckets.some((b) => b.label === 'Deposit'), 'the deposit is its own bucket while its term runs');
+  // Past the term, the bucket is gone and the capital sits flat — not still growing at 17%. (The
+  // scenario yield is nought here, so "flat" is literal: nothing is left to grow it further.)
+  assert.ok(!f.rows[6].breakdown.buckets.some((b) => b.label === 'Deposit'), 'the bucket is gone once the term is up');
+  assert.equal(f.rows[9].capital, f.rows[6].capital, 'and the capital does not keep compounding at 17% after "Deposit ends"');
+  assert.ok(f.rows[6].capital > 0, 'sanity: the money itself is not lost, only its own rate');
+  // Two lumps at the SAME rate but different terms must not share a maturity date.
+  const two = forecast({
+    monthlySurplus: 0, years: 10, yieldPct: 0,
+    events: [
+      { id: 'd1', atYear: 1, untilYear: 3, kind: 'lump', amount: 10000, ratePct: 17, label: 'Deposit A' },
+      { id: 'd2', atYear: 1, untilYear: 8, kind: 'lump', amount: 10000, ratePct: 17, label: 'Deposit B' },
+    ],
+  });
+  assert.ok(two.rows[4].breakdown.buckets.some((b) => b.label === 'Deposit B'), 'Deposit B is still earning at year 5');
+  assert.ok(!two.rows[4].breakdown.buckets.some((b) => b.label === 'Deposit A'), 'Deposit A already matured, independently of B');
+  // A lump with a rate but NO term still compounds forever — this is deliberate and unchanged.
+  // (The shared, rate-keyed bucket labels itself by rate, not by the piece's own label — also
+  // unchanged; only a bucket with a term is identified by holding, the way a real deposit is.)
+  const forever = forecast({
+    monthlySurplus: 0, years: 10, yieldPct: 0,
+    events: [{ id: 'd3', atYear: 1, kind: 'lump', amount: 10000, ratePct: 2, label: 'no term' }],
+  });
+  assert.ok(forever.rows[9].breakdown.buckets.some((b) => b.label === '2%'), 'without an until year, nothing matures it');
+});
+
 // ---- A flat, and the rent it pays ----
 //
 // "I want to add apartment in worth with rent I am getting but cannot do it."

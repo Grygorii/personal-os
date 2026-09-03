@@ -19,7 +19,7 @@ import { readFileSync } from 'fs';
 import vm from 'vm';
 import { buildState } from '../src/pocket/web.js';
 import { balanceNow, planTemplate } from '../src/pocket/money.js';
-import { cleanAccount, cleanFlow, cleanSub } from '../src/pocket/money.js';
+import { cleanAccount, cleanFlow, cleanSub, cleanEvent } from '../src/pocket/money.js';
 
 const utc = (y, m, d) => Date.UTC(y, m - 1, d);
 const NOW = utc(2026, 9, 15);
@@ -541,6 +541,31 @@ function must(el, panel, needles, label) {
   }
   if (after.flows.find((f) => f.id === 'fx1')?.scheduled) fail('once recorded it is a real flow, not a projection');
   if (w.from > w.to) fail('unreachable');
+}
+
+// ---- "Something wrong with deposit calculation": a lump at a stated rate WITH an until year is
+//      a term deposit, and has to mature like one — not keep compounding for ever past the exact
+//      year the table tells him it "ends" ----
+{
+  const termDeposit = cleanEvent({
+    id: 'td1', atYear: 2, untilYear: 5, kind: 'lump', amount: 2000000, currency: 'EGP', ratePct: 17, label: 'Deposit',
+  });
+  const S = buildState({ base: 'EUR', table: T, accounts, spanFlows, subs, goal, basis, now: NOW,
+    events: { years: 10, useMeasured: false, list: [termDeposit] } });
+  const el = render(S, 'a term deposit typed by hand');
+  if (el) {
+    const plan = el('p-plan').innerHTML;
+    // The pieces list has to say the term is there — the form took "until year", so the line he
+    // reads has to use it, not just the year-by-year table three sections down.
+    if (!plan.includes('term to')) fail('a lump with a stated term must say so in its own line, not only in the "ends" label');
+  }
+  const buckets2 = S.forecast.mid.rows[1].breakdown.buckets;
+  if (!buckets2.some((b) => b.label === 'Deposit' && b.ratePct === 17)) fail('while its term runs, the deposit compounds at its own rate');
+  const afterTerm = S.forecast.mid.rows[7].breakdown.buckets;
+  if (afterTerm.some((b) => b.label === 'Deposit')) fail('past its own "ends" label, the deposit must stop compounding at 17% — this is the bug he found');
+  if (S.forecast.mid.rows[9].capital !== S.forecast.mid.rows[6].capital) {
+    fail('capital must sit flat once a term deposit matures, not keep growing at a rate the table says has ended');
+  }
 }
 
 // ---- No exchange rates: nothing is totalled, and the page says so ----

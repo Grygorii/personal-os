@@ -231,10 +231,10 @@ a price without one: it looks current.
 2. Railway → same project → **New Service** → same repo.
 3. Start command: `npm run start:pocket`.
 4. Env vars above, `DB_NAME=pocket` among them.
-5. Look for `[boot] pocket-24 · db=pocket · base=EUR`.
+5. Look for `[boot] pocket-25 · db=pocket · base=EUR`.
 
 **Which build is actually serving?** `GET /health` (or `/version`) answers without Telegram —
-`{"ok":true,"app":"pocket","version":"pocket-24"}`. The marker lives in `src/pocket/version.js`;
+`{"ok":true,"app":"pocket","version":"pocket-25"}`. The marker lives in `src/pocket/version.js`;
 bump it on every deploy. Kept has `GET /version` for exactly the same reason: "is my change even
 out there yet" is the first question of every deploy, and guessing at it wastes an evening.
 
@@ -780,6 +780,32 @@ template (which writes it as a line he can see and edit) and the automatic credi
 when no piece — from either place — already speaks for that holding). Un-annotated, this is also
 the only honest way *"are the deposits paying the loans"* can be answered at all: income in and
 spending out, from the same holdings, netting to whatever it really nets to — for him, still no.
+
+### A lump with a term is a deposit, and deposits mature
+
+He typed a real one to test the template's idea: 2,000,000 EGP, 17%, from year 5 to year 8 — a
+deposit he plans to make. The year-by-year table said "Deposit ends" in year 8, right on schedule.
+The money did not agree: it kept compounding at 17% every year after, straight through year 10,
+because **nothing in `forecast()` was reading a lump's `until year` at all.** For a recurring
+piece — income, spending, a contribution — `until year` stops the monthly flow, which is the whole
+of what it needs to do. A `lump` has no monthly flow to stop; the app printed the label and moved
+on, and the number kept growing under a heading that had already told him it was over.
+
+**A lump with a rate and a term is the same shape as a real certificate**, and it has to mature the
+same way. It now gets its own bucket — keyed by the piece's own id, not shared with every other
+lump at the same rate, so two deposits at 17% with different terms don't mature on the same day —
+and the maturity rule that already moved a real holding's principal back to plain cash at its
+`untilYear` now applies here too. Past year 8, that money is ordinary cash, following whatever the
+"everything else" assumption is set to, exactly like a matured certificate does everywhere else in
+this app. A lump with a rate and **no** term still compounds forever, deliberately and unchanged —
+"until year" is the only thing that ever meant "this is a deposit, not an investment left running."
+
+Two casualties of the same gap, also fixed: the pieces list showed nothing of the "until year" a
+lump had been given — the only place it appeared was the year-by-year table's "ends" label, three
+sections and a scroll away from the piece itself — so a lump's own line now reads "…once in 2030,
+term to 2033." And the tap-a-year drill-down described **every** bucket as "held flat — a
+certificate does not compound," which was true of a real holding and false of exactly this kind of
+piece; it now says which one it actually is.
 
 ### Real years, not "year 1, year 2"
 
