@@ -283,6 +283,15 @@ function must(el, panel, needles, label) {
     if (!plan.includes('Cairo CD, held flat')) {
       fail('"what you already have" must name a holding even once it has matured inside the forecast horizon');
     }
+    // "Put correct years like 2026, 2027" — reading "year 1, year 2" off the table meant doing the
+    // arithmetic himself every time. Computed from the render's own wall clock (same as the app,
+    // which has no server "now" to draw from either) rather than hard-coded, so this keeps holding
+    // whenever the suite actually runs.
+    const thisYear = new Date().getUTCFullYear();
+    const row1 = plan.match(/data-plan-year="1">\s*<td>([^<]*)/);
+    if (!row1 || !row1[1].startsWith(String(thisYear))) {
+      fail(`the year-by-year table's first row must read "${thisYear}", got "${row1?.[1]}"`);
+    }
     if (!plan.includes('<details')) fail('the year-by-year is behind a fold, not the page');
     if ((plan.match(/class="bar"/g) || []).length) fail('ten bars over numbers that are already labelled is decoration');
     if (!plan.includes('<table class="yrs"')) fail('and the years read as a table');

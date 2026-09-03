@@ -231,10 +231,10 @@ a price without one: it looks current.
 2. Railway → same project → **New Service** → same repo.
 3. Start command: `npm run start:pocket`.
 4. Env vars above, `DB_NAME=pocket` among them.
-5. Look for `[boot] pocket-22 · db=pocket · base=EUR`.
+5. Look for `[boot] pocket-23 · db=pocket · base=EUR`.
 
 **Which build is actually serving?** `GET /health` (or `/version`) answers without Telegram —
-`{"ok":true,"app":"pocket","version":"pocket-22"}`. The marker lives in `src/pocket/version.js`;
+`{"ok":true,"app":"pocket","version":"pocket-23"}`. The marker lives in `src/pocket/version.js`;
 bump it on every deploy. Kept has `GET /version` for exactly the same reason: "is my change even
 out there yet" is the first question of every deploy, and guessing at it wastes an evening.
 
@@ -762,6 +762,17 @@ nothing, and a sentence built from it would have gone silent about capital he pl
 Fixed by reading `planBuckets` instead — what he holds **now**, not what is left of it after the
 forecast has run its course. `pocket-render.mjs` pins this: a fixture where every holding matures
 inside year one, checked at a ten-year horizon, still has to name them.
+
+### Real years, not "year 1, year 2"
+
+Small, and asked for directly: "put correct years like 2026, 2027." Year 1 has always meant *the
+next twelve months, starting now* — reading "year 9" off the table meant doing that arithmetic
+himself every time. The year-by-year table, a piece's "from / until," "sell in," and "you reach it
+in" now all read the calendar year instead. `calYear(n)` counts from the device's own clock, the
+same source the rest of the page already trusts for "today" (an extra payment's date defaults the
+same way) — there is no server "now" in the payload to read it from instead. The plan-piece editor
+still asks for a plain offset ("From year: 3"), because typing a small number is easier than doing
+the subtraction backwards.
 
 ### The goal bar is split by where the money comes from
 

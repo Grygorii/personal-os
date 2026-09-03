@@ -257,6 +257,9 @@ const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 const money = (n, cur) => n == null ? '—'
   : (n < 0 ? '−' : '') + Math.abs(n).toLocaleString(undefined,{maximumFractionDigits:0}) + ' ' + (cur || S.base);
+// Plan year 1 is "the next twelve months, starting now" (docs/pocket.md), so it is the calendar
+// year we are in — "1, 2, 3" made him do the arithmetic himself every time he read the table.
+const calYear = (n) => new Date().getUTCFullYear() + n - 1;
 
 // Which month is on screen. null means "the one he is in", so the app opens on today without
 // having to know today's date before the first answer comes back.
@@ -794,14 +797,14 @@ function drawPlan() {
     ? `${Math.round(e.amount).toLocaleString()} ${esc(e.currency)}${e.amountInBase != null ? ` (${money(e.amountInBase)})` : ' — no rate'}`
     : money(e.amount);
   const per = (e) => e.kind === 'asset'
-    ? `worth ${amt(e)}${e.atYear > 1 ? `, from year ${e.atYear}` : ''}`
+    ? `worth ${amt(e)}${e.atYear > 1 ? `, from ${calYear(e.atYear)}` : ''}`
     : e.kind === 'lump'
-    ? `${amt(e)} once in year ${e.atYear}`
-    : `${amt(e)} a month from year ${e.atYear}${e.untilYear ? ` to ${e.untilYear}` : ''}`;
+    ? `${amt(e)} once in ${calYear(e.atYear)}`
+    : `${amt(e)} a month from ${calYear(e.atYear)}${e.untilYear ? ` to ${calYear(e.untilYear)}` : ''}`;
   const what = { contribution: 'you put in', income: 'arrives', spending: 'goes out', lump: 'one-off', asset: 'you own' };
   const sellNote = (e) => e.kind !== 'asset' ? ''
     : e.sellAtYear
-      ? ` · sell in year ${e.sellAtYear}${e.sellFor != null ? ` for ${e.currency !== S.base ? `${Math.round(e.sellFor).toLocaleString()} ${esc(e.currency)}` : money(e.sellFor)}` : ''}`
+      ? ` · sell in ${calYear(e.sellAtYear)}${e.sellFor != null ? ` for ${e.currency !== S.base ? `${Math.round(e.sellFor).toLocaleString()} ${esc(e.currency)}` : money(e.sellFor)}` : ''}`
       : ' · keeping it';
 
   const pieces = (S.events || []).map((e) => `
@@ -888,7 +891,7 @@ function drawPlan() {
         <button class="add" data-plan-yield="1">${S.planYieldPct > 0 ? 'Change' : 'Set a rate'}</button>
       </div>
       ${goal > 0 ? (mid.goalReachedInYear
-        ? `<div class="sub in" style="margin-top:8px">You reach ${money(goal)} a month in year ${mid.goalReachedInYear}.</div>`
+        ? `<div class="sub in" style="margin-top:8px">You reach ${money(goal)} a month in ${calYear(mid.goalReachedInYear)}.</div>`
         : `<div class="sub" style="margin-top:8px">Not enough to reach ${money(goal)} a month inside ${yrs} years. Adding to what goes in moves this far more than a better yield does.</div>`) : ''}
     </div>
 
@@ -897,7 +900,7 @@ function drawPlan() {
       <table class="yrs">
         <thead><tr><th>Year</th><th>Invested</th><th>Per month</th></tr></thead>
         <tbody>${mid.rows.map((r) => `<tr${goal > 0 && r.passiveMonthly >= goal ? ' class="hit"' : ''} data-plan-year="${r.year}">
-          <td>${r.year}${r.events.length ? ` <span style="color:var(--dim)">· ${esc(r.events.join(', '))}</span>` : ''}${r.ends.length ? ` <span style="color:var(--dim)">· ${esc(r.ends.join(', '))} ends</span>` : ''}${r.sold?.length ? ` <span style="color:var(--dim)">· ${esc(r.sold.join(', '))} sold</span>` : ''}</td>
+          <td>${calYear(r.year)}${r.events.length ? ` <span style="color:var(--dim)">· ${esc(r.events.join(', '))}</span>` : ''}${r.ends.length ? ` <span style="color:var(--dim)">· ${esc(r.ends.join(', '))} ends</span>` : ''}${r.sold?.length ? ` <span style="color:var(--dim)">· ${esc(r.sold.join(', '))} sold</span>` : ''}</td>
           <td class="n">${money(r.capital)}</td>
           <td class="n">${money(r.passiveMonthly)}</td>
         </tr>`).join('')}</tbody>
@@ -1354,7 +1357,7 @@ function openYearInfo(year) {
   const r = (S.forecast?.mid?.rows || []).find((x) => x.year === year);
   if (!r) return;
   editing = { kind: 'yearInfo' };
-  $('etitle').textContent = `Year ${year}, month by month`;
+  $('etitle').textContent = `${calYear(year)}, month by month`;
   $('eerr').hidden = true;
   const b = r.breakdown || { base: 0, pieces: [], buckets: [], everythingElse: null };
   const line = (label, meta, val) => `
