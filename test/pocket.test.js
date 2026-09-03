@@ -1905,7 +1905,7 @@ test('at his rate of nought, nothing grows that he has not said grows', () => {
 // instalment that leaves, the flat and its rent, the subscriptions. Nothing forecast; each piece
 // is a figure the app already holds, and each is his to edit or delete afterwards.
 
-import { planTemplate, planYearOf, subPerYear as _spy } from '../src/pocket/money.js';
+import { planTemplate, planYearOf, holdingFlow, subPerYear as _spy } from '../src/pocket/money.js';
 
 const HIS = () => [
   cleanAccount({ id: 'd1', label: 'Deposit 1', kind: 'deposit', currency: 'EGP', value: 495000, ratePct: 20, payout: 'quarterly', startsAt: utc(2024, 5, 28), endsAt: utc(2027, 5, 28) }),
@@ -2007,6 +2007,26 @@ test('planTemplate: every piece it writes for a holding names that holding', () 
   assert.equal(by('apartment rent').holdingId, 'p1');
   // The one piece that is not about a single holding.
   assert.equal(t.find((e) => e.label === 'subscriptions'), undefined, 'no subs in this fixture');
+});
+
+// A loan he never told the plan about does not stop costing him money for that reason — the same
+// shared function that credits a coupon has to debit an instalment, or "only what he adds" reads
+// as healthier than the household actually is.
+
+test('holdingFlow: income for what arrives, spending for what is owed, nothing for what has ended', () => {
+  const [dep, prop, loan] = HIS();
+  assert.deepEqual(holdingFlow(dep, SEPT26), {
+    kind: 'income', label: 'Deposit 1 interest', currency: 'EGP', amount: dep.value * 0.2 / 12, holdingId: 'd1',
+  });
+  const loanFlow = holdingFlow(loan, SEPT26);
+  assert.equal(loanFlow.kind, 'spending', 'a loan costs him, it does not pay him');
+  assert.equal(loanFlow.label, 'Loan 2 payment');
+  assert.equal(Math.round(loanFlow.amount), 23277);
+  assert.equal(holdingFlow(prop, SEPT26).label, 'apartment rent');
+  const dead = cleanAccount({ id: 'x1', label: 'Old CD', kind: 'deposit', currency: 'EGP', value: 100000, ratePct: 15, payout: 'monthly', startsAt: utc(2020, 1, 1), endsAt: utc(2021, 1, 1) });
+  assert.equal(holdingFlow(dead, SEPT26), null, 'a term that ended pays nothing, automatically or otherwise');
+  const bare = cleanAccount({ id: 'x2', label: 'plain cash', kind: 'cash', currency: 'EUR', value: 500 });
+  assert.equal(holdingFlow(bare, SEPT26), null, 'cash has no schedule to report');
 });
 
 test('forecast: a year is a total nobody has to take on trust', () => {

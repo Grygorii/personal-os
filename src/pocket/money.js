@@ -1876,33 +1876,39 @@ export function planYearOf(at, now = Date.now()) {
   return Math.max(1, Math.ceil(yearsBetween(now, at)));
 }
 
+/** What a holding PAYS, per month, in its own currency — a coupon in, an instalment out. Shared
+ *  by `planTemplate` (which writes it as a piece he can see and edit) and `web.js` (which credits
+ *  it automatically the moment nobody has written a piece for it yet, `holdingId` says so, and
+ *  either way this is the one place the number is computed). `null` when the holding says nothing.
+ *
+ *  Liabilities are not optional here the way a deposit's coupon might feel optional: a loan he
+ *  never told the plan about does not stop costing him money for that reason. Crediting the
+ *  coupon and forgetting the instalment is the same mistake in a new shape — a plan that looks
+ *  healthier than the household it describes. */
+export function holdingFlow(a, now = Date.now()) {
+  const t = depositProgress(a, now);
+  if (!t?.schedule || !(t.perYear > 0) || t.ended) return null;
+  const owed = isLiability(a.kind);
+  const perMonth = t.perYear / 12;
+  // The instalment, not the interest: repaying principal is money leaving his account too, and
+  // this is a cash-flow plan.
+  const amount = owed && t.schedule.every ? (t.schedule.perPayment * (12 / t.schedule.every)) / 12 : perMonth;
+  return {
+    kind: owed ? 'spending' : 'income',
+    label: `${a.label || a.kind} ${owed ? 'payment' : (a.kind === 'property' ? 'rent' : 'interest')}`,
+    currency: a.currency,
+    amount,
+    holdingId: a.id,
+  };
+}
+
 export function planTemplate(accounts = [], subs = [], now = Date.now()) {
   const out = [];
   const add = (e) => out.push(cleanEvent({ ...e, id: newId() }));
 
   for (const a of accounts) {
-    const t = depositProgress(a, now);
-    const endsIn = planYearOf(a.endsAt, now);
-    const owed = isLiability(a.kind);
-
-    // What a holding PAYS, per month, in its own currency.
-    if (t?.schedule && t.perYear > 0 && !t.ended) {
-      const perMonth = t.perYear / 12;
-      if (owed) {
-        // The instalment, not the interest: repaying principal is money leaving his account too,
-        // and this is a cash-flow plan.
-        const inst = t.schedule.every ? (t.schedule.perPayment * (12 / t.schedule.every)) / 12 : perMonth;
-        add({
-          kind: 'spending', label: `${a.label || a.kind} payment`, currency: a.currency,
-          amount: inst, atYear: 1, untilYear: endsIn, holdingId: a.id,
-        });
-      } else {
-        add({
-          kind: 'income', label: `${a.label || a.kind} ${a.kind === 'property' ? 'rent' : 'interest'}`,
-          currency: a.currency, amount: perMonth, atYear: 1, untilYear: endsIn, holdingId: a.id,
-        });
-      }
-    }
+    const flow = holdingFlow(a, now);
+    if (flow) add({ ...flow, atYear: 1, untilYear: planYearOf(a.endsAt, now) });
 
     // The flat itself: something he owns, at what it is worth, holding its value unless he says
     // otherwise. The certificates are already in the plan's opening capital, so they are not

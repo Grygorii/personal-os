@@ -26,7 +26,7 @@ import {
   parseEntry, ACCOUNT_KINDS, PAYOUT_KINDS, isLiability, forecastRange, depositProgress,
   monthWindowOf, recentMonths, monthsSummary, patchFrom, depositsSummary, contractedIncome,
   missingRecurring, cleanFlow, balanceNow, subsSummary, BILLING_PERIODS, cleanSub,
-  scheduledFlows, EVENT_KINDS, parseDate, yearsBetween, matchRecorded, subChargeDates, currencyPicture, cleanEvent, planYields, planTemplate,
+  scheduledFlows, EVENT_KINDS, parseDate, yearsBetween, matchRecorded, subChargeDates, currencyPicture, cleanEvent, planYields, planTemplate, holdingFlow,
 } from './money.js';
 
 const json = (res, code, body) => {
@@ -151,25 +151,27 @@ export function buildState({ base = 'EUR', table, monthKey, accounts = [], spanF
     }))
     .filter((b) => b.capital != null && b.capital > 0);
 
-  // The coupon a certificate is going to pay is not a guess — it is on the paperwork, the same
-  // figure the "earned so far" card already uses. So a live deposit credits it to the plan on its
-  // own, the moment it holds still and pays nothing: "you left the deposits there and it made no
-  // sense" was this — four real certificates sitting in the plan's opening capital at 0%, paying
-  // nothing, because crediting them had been made something he had to remember to type.
+  // A coupon or an instalment is not a guess — it is on the paperwork, the same figure the "earned
+  // so far" and "still owed" cards already use. So a live deposit or a live loan credits it to the
+  // plan on its own, the moment it would otherwise count for nothing: "you left the deposits there
+  // and it made no sense" was four real certificates sitting in the plan's opening capital at 0%,
+  // paying nothing, because crediting them had been made something he had to remember to type.
+  //
+  // A LOAN GETS THE SAME TREATMENT, AND FOR THE SAME REASON. Crediting every coupon and forgetting
+  // every instalment would make "only what he adds" read as healthier than the household actually
+  // is — real debt service that simply never appears because nobody wrote a line for it. This is
+  // also the only way "the deposits are paying the loan" can be answered honestly rather than
+  // assumed: income in and spending out, from the same holdings, in the same total.
   //
   // The one thing that must never happen twice: once he has told the plan about a holding himself
   // — by pressing "Start from what I hold" or adding a piece by hand — `holdingId` says so, and
   // the automatic version stands down for that account.
   const explicitHoldingIds = new Set(plan.list.filter((e) => e.holdingId).map((e) => e.holdingId));
-  const autoCoupons = accounts
-    .filter((a) => a.kind === 'deposit' && !explicitHoldingIds.has(a.id))
-    .map((a) => ({ a, t: depositProgress(a, now) }))
-    .filter(({ t }) => t?.schedule && t.perYear > 0 && !t.ended)
-    .map(({ a, t }) => cleanEvent({
-      id: `auto:${a.id}`, kind: 'income', label: `${a.label || 'deposit'} interest`,
-      currency: a.currency, amount: t.perYear / 12, atYear: 1, untilYear: yearOf(a.endsAt),
-      holdingId: a.id, auto: true,
-    }));
+  const autoFlows = accounts
+    .filter((a) => ['deposit', 'loan', 'card'].includes(a.kind) && !explicitHoldingIds.has(a.id))
+    .map((a) => ({ a, flow: holdingFlow(a, now) }))
+    .filter(({ flow }) => flow)
+    .map(({ a, flow }) => cleanEvent({ ...flow, id: `auto:${a.id}`, atYear: 1, untilYear: yearOf(a.endsAt), auto: true }));
 
   return {
     base,
@@ -396,7 +398,7 @@ export function buildState({ base = 'EUR', table, monthKey, accounts = [], spanF
       startCapital: 0,
       startBuckets: planBuckets,
       monthlySurplus: plan.useMeasured ? cur.surplus : 0,
-      events: [...plan.list, ...autoCoupons]
+      events: [...plan.list, ...autoFlows]
         .map((e) => ({
           ...e,
           amount: fx.toBase(e.amount, e.currency, table),

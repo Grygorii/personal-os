@@ -231,10 +231,10 @@ a price without one: it looks current.
 2. Railway → same project → **New Service** → same repo.
 3. Start command: `npm run start:pocket`.
 4. Env vars above, `DB_NAME=pocket` among them.
-5. Look for `[boot] pocket-23 · db=pocket · base=EUR`.
+5. Look for `[boot] pocket-24 · db=pocket · base=EUR`.
 
 **Which build is actually serving?** `GET /health` (or `/version`) answers without Telegram —
-`{"ok":true,"app":"pocket","version":"pocket-23"}`. The marker lives in `src/pocket/version.js`;
+`{"ok":true,"app":"pocket","version":"pocket-24"}`. The marker lives in `src/pocket/version.js`;
 bump it on every deploy. Kept has `GET /version` for exactly the same reason: "is my change even
 out there yet" is the first question of every deploy, and guessing at it wastes an evening.
 
@@ -762,6 +762,24 @@ nothing, and a sentence built from it would have gone silent about capital he pl
 Fixed by reading `planBuckets` instead — what he holds **now**, not what is left of it after the
 forecast has run its course. `pocket-render.mjs` pins this: a fixture where every holding matures
 inside year one, checked at a ten-year horizon, still has to name them.
+
+### The credit went to the coupons and not the instalments
+
+He built a real plan — rent, savings, a second deposit — and asked "check if I added correct and
+if logic works correct." Nothing was wrong with what he had typed. What was wrong was what the app
+had quietly left out: **none of his four loans had a piece, and only deposits credit themselves
+automatically.** A plan that adds every coupon on its own and adds not one instalment reads as a
+household with certificates and no debt, which is not this household.
+
+The fix that credited a live deposit's coupon (`holdingId`, "the deposits were sitting there
+earning nothing") was only ever half the idea. **A loan he never told the plan about does not stop
+costing him money for that reason** — the same shared logic now debits a live loan's instalment
+automatically too, using his stated payment where he gave one, the same way "earned so far" and
+"still owed" already agree. The two are one function now, `holdingFlow()`, called from both the
+template (which writes it as a line he can see and edit) and the automatic credit (which fires only
+when no piece — from either place — already speaks for that holding). Un-annotated, this is also
+the only honest way *"are the deposits paying the loans"* can be answered at all: income in and
+spending out, from the same holdings, netting to whatever it really nets to — for him, still no.
 
 ### Real years, not "year 1, year 2"
 

@@ -302,6 +302,17 @@ function must(el, panel, needles, label) {
     if (!autoCoupon) fail('a live deposit with no matching piece must credit its coupon automatically');
     if (!(autoCoupon.monthly > 0)) fail('the automatic coupon has to be worth something, not a placeholder zero');
     if (!y1.buckets.some((b) => b.label === 'Cairo CD')) fail('the breakdown must also show the capital it sits in, flat');
+    // A LOAN GETS THE SAME TREATMENT. None of these three loans has a piece — a plan that credits
+    // every coupon and debits none of the instalments would read as far healthier than he is.
+    const autoInstalments = y1.pieces.filter((p) => p.auto && p.kind === 'spending' && /payment/.test(p.label));
+    if (autoInstalments.length < 3) fail(`all three live loans must debit their instalment automatically, got ${autoInstalments.length}`);
+    if (!autoInstalments.every((p) => p.monthly < 0)) fail('an instalment is money leaving — it must never appear as a positive amount');
+    // His stated 58,063.45 EGP is a QUARTERLY payment; the breakdown is in base currency (EUR) and
+    // monthly, same as every other line — 58,063.45 ÷ 3 ÷ 54, not the interest-only estimate.
+    const loan1Auto = autoInstalments.find((p) => p.label === 'Loan 1 payment');
+    if (!loan1Auto || Math.round(-loan1Auto.monthly) !== 358) {
+      fail(`Loan 1's automatic instalment should be ~358 EUR/mo (58,063.45 EGP quarterly ÷ 3 ÷ 54), got ${loan1Auto?.monthly}`);
+    }
 
     must(el, 'p-subs', ['Every subscription, per year', 'What that costs in capital', 'Netflix',
       'free trial', 'Old magazine'], 'this month');
