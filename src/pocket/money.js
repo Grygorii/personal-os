@@ -1821,3 +1821,71 @@ export function currencyPicture(accounts, table, base = 'EUR', { history = [], n
 
   return rows.sort((a2, b2) => Math.abs(b2.exposureInBase || 0) - Math.abs(a2.exposureInBase || 0));
 }
+
+
+// ---- A plan to start from ----
+//
+// "I want to add and create the plan on my own. From you I need a template, so I will see how it
+//  will look through the years."
+//
+// So this reads what he already has and writes the plan he is already living: every coupon that
+// arrives, every instalment that leaves, the flat and its rent, the subscriptions. Nothing here
+// is a forecast — each piece is a figure the app already holds, and each one is his to edit or
+// delete afterwards.
+//
+// It is also the only way "the deposits are paying the loan" can show up at all: as income in and
+// spending out, in the same list, netting to whatever it really nets to.
+
+/** Which plan year a date falls in. Year 1 is the next twelve months. */
+export function planYearOf(at, now = Date.now()) {
+  if (!at || at <= now) return null;
+  return Math.max(1, Math.ceil(yearsBetween(now, at)));
+}
+
+export function planTemplate(accounts = [], subs = [], now = Date.now()) {
+  const out = [];
+  const add = (e) => out.push(cleanEvent({ ...e, id: newId() }));
+
+  for (const a of accounts) {
+    const t = depositProgress(a, now);
+    const endsIn = planYearOf(a.endsAt, now);
+    const owed = isLiability(a.kind);
+
+    // What a holding PAYS, per month, in its own currency.
+    if (t?.schedule && t.perYear > 0 && !t.ended) {
+      const perMonth = t.perYear / 12;
+      if (owed) {
+        // The instalment, not the interest: repaying principal is money leaving his account too,
+        // and this is a cash-flow plan.
+        const inst = t.schedule.every ? (t.schedule.perPayment * (12 / t.schedule.every)) / 12 : perMonth;
+        add({
+          kind: 'spending', label: `${a.label || a.kind} payment`, currency: a.currency,
+          amount: inst, atYear: 1, untilYear: endsIn,
+        });
+      } else {
+        add({
+          kind: 'income', label: `${a.label || a.kind} ${a.kind === 'property' ? 'rent' : 'interest'}`,
+          currency: a.currency, amount: perMonth, atYear: 1, untilYear: endsIn,
+        });
+      }
+    }
+
+    // The flat itself: something he owns, at what it is worth, holding its value unless he says
+    // otherwise. The certificates are already in the plan's opening capital, so they are not
+    // repeated here.
+    if (a.kind === 'property' && a.value > 0) {
+      add({ kind: 'asset', label: a.label || 'property', currency: a.currency, amount: a.value, atYear: 1 });
+    }
+  }
+
+  // Everything he subscribes to, as one line. Twelve separate rows for Netflix and a gym would
+  // bury the plan; the Subs tab is where they live individually.
+  const live = (subs || []).filter((s) => s.amount > 0 && !(s.endsAt && now >= s.endsAt));
+  const byCurrency = {};
+  for (const s of live) byCurrency[s.currency] = (byCurrency[s.currency] || 0) + subPerYear(s) / 12;
+  for (const [currency, perMonth] of Object.entries(byCurrency)) {
+    if (perMonth > 0) add({ kind: 'spending', label: 'subscriptions', currency, amount: perMonth, atYear: 1 });
+  }
+
+  return out;
+}

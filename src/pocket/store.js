@@ -280,6 +280,13 @@ export async function updatePlanEvent(id, patch) {
   return clean;
 }
 
+/** Replace the whole list at once — used by the template, and only ever with his say-so. */
+export async function setPlanEvents(list) {
+  const clean = (Array.isArray(list) ? list : []).slice(0, 200).map(cleanEvent);
+  await col('settings').updateOne({ _id: 'plan' }, { $set: { list: clean } }, { upsert: true });
+  return clean;
+}
+
 export async function addPlanEvent(e) {
   const clean = cleanEvent({ ...e, id: newId() });
   await col('settings').updateOne({ _id: 'plan' }, { $push: { list: clean } }, { upsert: true });

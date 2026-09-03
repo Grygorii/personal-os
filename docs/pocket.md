@@ -231,10 +231,10 @@ a price without one: it looks current.
 2. Railway → same project → **New Service** → same repo.
 3. Start command: `npm run start:pocket`.
 4. Env vars above, `DB_NAME=pocket` among them.
-5. Look for `[boot] pocket-19 · db=pocket · base=EUR`.
+5. Look for `[boot] pocket-20 · db=pocket · base=EUR`.
 
 **Which build is actually serving?** `GET /health` (or `/version`) answers without Telegram —
-`{"ok":true,"app":"pocket","version":"pocket-19"}`. The marker lives in `src/pocket/version.js`;
+`{"ok":true,"app":"pocket","version":"pocket-20"}`. The marker lives in `src/pocket/version.js`;
 bump it on every deploy. Kept has `GET /version` for exactly the same reason: "is my change even
 out there yet" is the first question of every deploy, and guessing at it wastes an evening.
 
@@ -664,6 +664,46 @@ passive income each throws off follows its own rate too.
 
 10,000 at 2% for ten years is 12,190. At the 5% middle case it would be 16,289. That gap, on one
 line, is the whole argument.
+
+**A certificate's principal does not compound in the plan, either — this bit the deposits-into-
+buckets change on its first real use.** He pointed out that his deposits were "paying the loan"
+again: a certificate paying a coupon out was also growing its own principal at that coupon's rate
+inside the ten-year projection, so the same money counted twice — once as the coupon arriving, once
+as the balance it was drawn from silently getting bigger. `depositProgress` already treats a
+certificate as **simple** interest and says so; the plan buckets did not agree with it. Deposit
+buckets now hold their capital flat (`ratePct: 0`) and stop being separate once the term matures, at
+which point that money rejoins ordinary cash. The coupon itself is only ever counted once it is a
+piece in the plan.
+
+### A template, so he can see the shape before he builds it
+
+Told to build his own plan, he asked for the one thing a blank list of pieces cannot give him: "a
+template so I will see how it will look through the years." **Start from what I hold** on the Plan
+tab (`/api/plan {template:true}`, `planTemplate()` in `money.js`) reads his actual holdings and
+subscriptions and writes them out as pieces in his own words — not a guess at his future, a mirror
+of his present:
+
+- **Every live coupon becomes an `income` piece** — `<label> interest` (or `rent` for a flat), in
+  the holding's own currency, running until its term ends. A matured certificate pays nothing and
+  is left out.
+- **Every live loan becomes a `spending` piece** — `<label> payment`, the real instalment (his
+  stated figure if he gave one, the amortising estimate otherwise), running until it is paid off.
+- **A flat becomes two pieces**: an `asset` at what it is worth, held flat unless he later gives it
+  a sale price and year, plus its rent as its own `income` piece — the same split "something you
+  own" already established, just generated instead of typed.
+- **Subscriptions collapse to one `spending` line per currency** rather than one per subscription —
+  twelve rows for streaming services would bury the loans and the rent, and the Subs tab is already
+  where they live individually.
+
+Every piece keeps its own currency (a euro loan's instalment never becomes EGP by accident) and no
+two pieces share an id (`newId()`), so running the template twice never creates duplicates by
+mistake — the button confirms before it replaces what he already has.
+
+Run against his real position (2026-09-03, 58.96 EGP/EUR) it writes 11 pieces and nets to **−410
+EUR/month in year one** once every coupon and every instalment is counted honestly — his deposits
+are not, in fact, covering his loans yet. That is the number the old, invented 5% could never have
+shown him, and it is exactly why he asked for this: a template is a starting point to edit, not an
+answer.
 
 ### The goal bar is split by where the money comes from
 

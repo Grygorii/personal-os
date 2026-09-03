@@ -1895,3 +1895,91 @@ test('at his rate of nought, nothing grows that he has not said grows', () => {
   assert.equal(f.rows[4].passiveMonthly, 0, 'and money that earns nothing produces no passive income');
   assert.match(f.assumes, /no tax/);
 });
+
+// ---- A plan to start from ----
+//
+// "I want to add and create the plan on my own. From you I need a template, so I will see how it
+//  will look through the years."
+//
+// So the template is written from what he already has — every coupon that arrives, every
+// instalment that leaves, the flat and its rent, the subscriptions. Nothing forecast; each piece
+// is a figure the app already holds, and each is his to edit or delete afterwards.
+
+import { planTemplate, planYearOf, subPerYear as _spy } from '../src/pocket/money.js';
+
+const HIS = () => [
+  cleanAccount({ id: 'd1', label: 'Deposit 1', kind: 'deposit', currency: 'EGP', value: 495000, ratePct: 20, payout: 'quarterly', startsAt: utc(2024, 5, 28), endsAt: utc(2027, 5, 28) }),
+  cleanAccount({ id: 'p1', label: 'apartment', kind: 'property', currency: 'EGP', value: 1600000, payout: 'monthly', payment: 18000, startsAt: utc(2025, 4, 1), endsAt: utc(2027, 4, 1) }),
+  cleanAccount({ id: 'l1', label: 'Loan 2', kind: 'loan', currency: 'EGP', value: 513000, ratePct: 28, payout: 'monthly', payment: 23277, startsAt: utc(2024, 10, 26), endsAt: utc(2027, 5, 26) }),
+  cleanAccount({ id: 'c1', label: 'Bank', kind: 'cash', currency: 'EUR', value: 2000 }),
+];
+const SEPT26 = utc(2026, 9, 3);
+
+test('planTemplate: the coupons in, the instalments out, in one list', () => {
+  const t = planTemplate(HIS(), [cleanSub({ id: 's1', label: 'Netflix', amount: 12.99, currency: 'EUR', every: 'monthly', startsAt: utc(2024, 3, 5) })], SEPT26);
+  const by = (label) => t.find((e) => e.label === label);
+
+  // A certificate pays a coupon OUT to him — 99,000 EGP a year, 8,250 a month — in its own
+  // currency, until its term runs out. This is the only way "the deposits are paying the loan"
+  // can appear at all.
+  const coupon = by('Deposit 1 interest');
+  assert.equal(coupon.kind, 'income');
+  assert.equal(Math.round(coupon.amount), 8250);
+  assert.equal(coupon.currency, 'EGP');
+  assert.equal(coupon.untilYear, 1, 'the term ends in May 2027');
+
+  // The instalment, not the interest: repaying principal is money leaving too.
+  const inst = by('Loan 2 payment');
+  assert.equal(inst.kind, 'spending');
+  assert.equal(Math.round(inst.amount), 23277);
+  assert.equal(inst.currency, 'EGP');
+
+  // The flat twice over, because it is two facts: what it is worth, and what it pays.
+  assert.equal(by('apartment rent').kind, 'income');
+  assert.equal(Math.round(by('apartment rent').amount), 18000);
+  assert.equal(by('apartment').kind, 'asset');
+  assert.equal(by('apartment').amount, 1600000);
+
+  // Subscriptions as one line — twelve rows for Netflix and a gym would bury the plan.
+  assert.equal(Math.round(by('subscriptions').amount * 100) / 100, 12.99);
+  assert.equal(by('subscriptions').currency, 'EUR');
+  // Cash pays nothing, so it produces no piece; it is already the plan's opening capital.
+  assert.equal(by('Bank interest'), undefined);
+  // Everything is sanitised and carries an id, so it can be edited the moment it lands.
+  assert.ok(t.every((e) => e.id && e.currency && EVENT_KINDS.includes(e.kind)));
+  assert.equal(new Set(t.map((e) => e.id)).size, t.length, 'and no two pieces share one');
+});
+
+test('planTemplate: nothing that has already finished, and nothing invented', () => {
+  const dead = [
+    cleanAccount({ id: 'x1', label: 'Old CD', kind: 'deposit', currency: 'EGP', value: 100000, ratePct: 15, payout: 'monthly', startsAt: utc(2020, 1, 1), endsAt: utc(2021, 1, 1) }),
+    cleanAccount({ id: 'x2', label: 'plain flat', kind: 'property', currency: 'EGP', value: 900000 }),
+  ];
+  const t = planTemplate(dead, [], SEPT26);
+  assert.equal(t.find((e) => e.label === 'Old CD interest'), undefined, 'a term that ended pays nothing');
+  // A flat with no rent is still an asset he owns — it just produces no income piece.
+  assert.deepEqual(t.map((e) => e.kind), ['asset']);
+  assert.deepEqual(planTemplate([], [], SEPT26), [], 'nothing in, nothing out');
+});
+
+test('planYearOf: year 1 is the next twelve months', () => {
+  assert.equal(planYearOf(utc(2027, 5, 28), SEPT26), 1);
+  assert.equal(planYearOf(utc(2029, 2, 11), SEPT26), 3);
+  assert.equal(planYearOf(utc(2020, 1, 1), SEPT26), null, 'already gone');
+  assert.equal(planYearOf(null, SEPT26), null);
+});
+
+test('a certificate is principal held flat, not principal compounding', () => {
+  // depositProgress uses SIMPLE interest and says so: these certificates pay a coupon out, they
+  // do not compound. Growing the principal at 20% in the plan AND counting the coupon as income
+  // would be the same money twice.
+  const f = forecast({
+    startBuckets: [{ id: 'd1', capital: 8386, ratePct: 0, label: 'Deposit 1' }],
+    monthlySurplus: 0, years: 3, yieldPct: 0,
+    events: [{ id: 'i1', atYear: 1, kind: 'income', amount: 140, label: 'Deposit 1 interest', untilYear: 1 }],
+  });
+  assert.equal(Math.round(f.rows[0].capital), 8386 + 140 * 12, 'the principal sits; the coupon arrives');
+  assert.equal(Math.round(f.rows[2].capital), 8386 + 140 * 12, 'and once the term is up, nothing more comes');
+  assert.ok(f.rows[0].passiveMonthly >= 140);
+  assert.equal(Math.round(f.rows[2].passiveMonthly), 0, 'no coupon, no passive income — which is the truth');
+});

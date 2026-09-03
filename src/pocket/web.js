@@ -26,7 +26,7 @@ import {
   parseEntry, ACCOUNT_KINDS, PAYOUT_KINDS, isLiability, forecastRange, depositProgress,
   monthWindowOf, recentMonths, monthsSummary, patchFrom, depositsSummary, contractedIncome,
   missingRecurring, cleanFlow, balanceNow, subsSummary, BILLING_PERIODS, cleanSub,
-  scheduledFlows, EVENT_KINDS, parseDate, yearsBetween, matchRecorded, subChargeDates, currencyPicture, cleanEvent, planYields,
+  scheduledFlows, EVENT_KINDS, parseDate, yearsBetween, matchRecorded, subChargeDates, currencyPicture, cleanEvent, planYields, planTemplate,
 } from './money.js';
 
 const json = (res, code, body) => {
@@ -141,7 +141,12 @@ export function buildState({ base = 'EUR', table, monthKey, accounts = [], spanF
       capital: fx.toBase(balanceNow(a, now).amount, a.currency, table),
       // A portfolio is market money and follows what he expects the market to do; a deposit pays
       // what it pays; cash pays nothing.
-      ratePct: a.kind === 'portfolio' ? (plan.yieldPct || 0) : (a.kind === 'cash' ? 0 : (a.ratePct ?? 0)),
+      // A CERTIFICATE DOES NOT COMPOUND. It pays a coupon OUT to him — quarterly, monthly — which
+      // is why depositProgress uses simple interest and says so. Growing the principal at 20% here
+      // would count that coupon twice: once inside the deposit and again when it arrives. So the
+      // principal is held flat and the coupon is a piece of the plan, which is also the only way
+      // "the deposits are paying the loan" can appear at all.
+      ratePct: a.kind === 'portfolio' ? (plan.yieldPct || 0) : 0,
       untilYear: a.kind === 'deposit' ? yearOf(a.endsAt) : null,
     }))
     .filter((b) => b.capital != null && b.capital > 0);
@@ -460,6 +465,15 @@ export function startWeb(port = process.env.PORT || 3000) {
 
         if (url.pathname === '/api/plan' && req.method === 'POST') {
           const body = await readBody(req);
+          // "From you I need a template, so I will see how it will look through the years."
+          //
+          // Written from what he already has: every coupon that arrives, every instalment that
+          // leaves, the flat and its rent, the subscriptions. Nothing forecast — each piece is a
+          // figure the app already holds, and every one of them is his to edit or delete after.
+          if (body.template) {
+            await store.setPlanEvents(planTemplate(await store.accounts(), await store.subs()));
+            return json(res, 200, await state(asked()));
+          }
           if (body.remove) await store.removePlanEvent(String(body.remove));
           else if (body.years) await store.setPlanYears(Number(body.years));
           else if (body.useMeasured !== undefined) await store.setPlanBase(body.useMeasured);

@@ -18,7 +18,7 @@
 import { readFileSync } from 'fs';
 import vm from 'vm';
 import { buildState } from '../src/pocket/web.js';
-import { balanceNow } from '../src/pocket/money.js';
+import { balanceNow, planTemplate } from '../src/pocket/money.js';
 import { cleanAccount, cleanFlow, cleanSub } from '../src/pocket/money.js';
 
 const utc = (y, m, d) => Date.UTC(y, m - 1, d);
@@ -437,8 +437,11 @@ function must(el, panel, needles, label) {
   if (S.forecast.runs.length !== 1) fail('and at nought there is no range, because nought is a decision');
   const held = S.planBuckets.find((b) => b.label === 'Cairo CD');
   if (!held) fail('the plan starts from what he actually holds, holding by holding');
-  if (held.ratePct !== 20) fail(`his certificate grows at ITS rate, got ${held.ratePct}`);
-  if (!held.untilYear) fail('and stops when its term runs out — a 3-year deposit does not pay 20% for thirty');
+  // A CERTIFICATE DOES NOT COMPOUND — it pays its coupon OUT, which is why the coupon shows up as
+  // its own income piece once he builds from the template. Growing the principal here too would
+  // count it twice.
+  if (held.ratePct !== 0) fail(`a certificate's principal sits flat in the plan — its coupon is a separate piece, got ${held.ratePct}%`);
+  if (!held.untilYear) fail('and it still stops being separate once its term runs out — a matured certificate rejoins ordinary cash');
   const cash = S.planBuckets.find((b) => b.label === 'Bank');
   if (cash && cash.ratePct !== 0) fail('cash earns nothing');
 
@@ -504,6 +507,51 @@ function must(el, panel, needles, label) {
   const el = render(S, 'no rates');
   if (el) must(el, 'p-month', ['Exchange rates are unreachable'], 'no rates');
   if (S.ratesAvailable !== false) fail('with no rate table nothing may claim to be converted');
+}
+
+// ---- "Start from what I hold": the template he asked for, so he can see how it looks before he
+//      builds anything by hand ----
+{
+  const tmpl = planTemplate(accounts, subs, NOW);
+  // One piece per live coupon, one per live liability's instalment, the flat itself plus its rent,
+  // and subscriptions collapsed to one line per currency — nothing invented, nothing repeated.
+  const byLabel = (l) => tmpl.find((e) => e.label === l);
+  if (!byLabel('Cairo CD interest')) fail('template: a live certificate should hand back its coupon');
+  if (!byLabel('Soon CD interest')) fail('template: every live certificate, not just one');
+  if (byLabel('Old CD interest')) fail('template: a matured certificate pays nothing and must not appear');
+  if (!byLabel('Loan 1 payment') || !byLabel('Loan 2 payment') || !byLabel('loan eur 1 payment')) {
+    fail('template: every live loan needs its instalment as an outgoing piece');
+  }
+  if (byLabel('Loan 1 payment').kind !== 'spending') fail('template: a loan instalment is money leaving, never income');
+  if (byLabel('Cairo CD interest').kind !== 'income') fail('template: a coupon is money arriving');
+  if (!byLabel('Cairo flat rent')) fail('template: the flat\'s rent is its own piece, named as rent, not interest');
+  if (!byLabel('Cairo flat')) fail('template: the flat itself belongs in the plan as what it is worth');
+  if (byLabel('Cairo flat').kind !== 'asset') fail('template: the flat is an asset piece, not income or spending');
+  const subLines = tmpl.filter((e) => e.label === 'subscriptions');
+  if (subLines.length !== 3) fail(`template: subscriptions collapse to one line per currency (EUR, EGP, USD), got ${subLines.length}`);
+  if (new Set(subLines.map((e) => e.currency)).size !== 3) fail('template: each subscription line keeps its own currency');
+  // Every piece carries the currency it is actually in — the rule the whole plan tab exists to
+  // protect. loan eur 1 pays in euro, Loan 1 in pounds; mixing them up is the 18,000-EGP bug again.
+  if (byLabel('loan eur 1 payment').currency !== 'EUR') fail('template: a euro loan\'s instalment stays in euro');
+  if (byLabel('Loan 1 payment').currency !== 'EGP') fail('template: an Egyptian loan\'s instalment stays in EGP');
+  // No two pieces share an id, and every piece the fixtures produce is one he could recognise.
+  if (new Set(tmpl.map((e) => e.id)).size !== tmpl.length) fail('template: two pieces ended up with the same id');
+  // 2 live coupons (Old CD is matured and excluded) + the flat's rent + the flat itself as an
+  // asset + 3 loan instalments + 3 subscription lines, one per currency.
+  if (tmpl.length !== 10) fail(`template: expected 10 pieces from these fixtures, got ${tmpl.length}`);
+
+  // Plugged into the plan, it draws like any other set of pieces — this is the point of it.
+  const S = buildState({ base: 'EUR', table: T, accounts, spanFlows, subs, goal, basis, now: NOW,
+    events: { years: 10, useMeasured: false, list: tmpl } });
+  const el = render(S, 'the template, plugged in');
+  if (el) {
+    must(el, 'p-plan', ['Your plan', 'Cairo CD interest', 'Loan 1 payment', 'Cairo flat rent', 'subscriptions'], 'the template, plugged in');
+  }
+  // A loan instalment outweighs its own certificate's coupon — cash flow that is honestly negative
+  // must read as negative, not be quietly netted away by rounding.
+  if (S.forecast.mid.rows[0].monthlyContribution >= 0) {
+    fail('template: with real instalments outweighing real coupons, year one has to show money going out');
+  }
 }
 
 // ---- Nothing entered at all: the first thing he ever sees ----

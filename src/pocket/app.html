@@ -860,6 +860,13 @@ function drawPlan() {
         <button class="add" data-plan-yield="1">${S.planYieldPct > 0 ? 'Change' : 'Set a rate'}</button>
       </div>
       <button class="btn ghost" id="addevent" style="margin-top:12px">+ Add money, income, or a cost</button>
+      ${/* A plan to start from, written from what he already has. Every piece is editable after,
+            which is the point — he asked for a template, not a verdict. */ ''}
+      <button class="btn ghost" data-plan-template="1" style="margin-top:8px">${(S.events || []).length
+        ? 'Rewrite from what I hold' : 'Start from what I hold'}</button>
+      <div class="note">${(S.events || []).length
+        ? 'Replaces the list above with your coupons, instalments, rent and subscriptions as they stand today. Everything stays editable.'
+        : 'Fills the list with your coupons in, your loan instalments out, the flat and its rent, and your subscriptions — all from figures already in the app. Then change whatever you like.'}</div>
     </div>
 
     <div class="card">
@@ -1402,6 +1409,13 @@ document.body.addEventListener('click', async (e) => {
   const yearsBtn = e.target.closest('[data-plan-years]');
   if (yearsBtn) {
     await work(() => api('/api/plan', { years: Number(yearsBtn.dataset.planYears) }));
+    return;
+  }
+
+  const tmpl = e.target.closest('[data-plan-template]');
+  if (tmpl) {
+    if ((S.events || []).length && !await ask('Replace the pieces you have with a fresh set from your holdings?')) return;
+    if (await work(() => api('/api/plan', { template: true }))) tg?.HapticFeedback?.notificationOccurred?.('success');
     return;
   }
 
