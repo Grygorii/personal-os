@@ -26,7 +26,7 @@ import {
   parseEntry, ACCOUNT_KINDS, PAYOUT_KINDS, isLiability, forecastRange, depositProgress,
   monthWindowOf, recentMonths, monthsSummary, patchFrom, depositsSummary, contractedIncome,
   missingRecurring, cleanFlow, balanceNow, subsSummary, BILLING_PERIODS, cleanSub,
-  scheduledFlows, EVENT_KINDS, parseDate, matchRecorded, subChargeDates, currencyPicture, cleanEvent,
+  scheduledFlows, EVENT_KINDS, parseDate, yearsBetween, matchRecorded, subChargeDates, currencyPicture, cleanEvent, planYields,
 } from './money.js';
 
 const json = (res, code, body) => {
@@ -128,6 +128,23 @@ export function buildState({ base = 'EUR', table, monthKey, accounts = [], spanF
   const ip = interestPicture(accounts, table, base, now);
   const g = goalProgress(cur.passive, goal);
   const invested = netWorth(accounts.filter((a) => ['portfolio', 'deposit'].includes(a.kind)), table, base, now).total;
+
+  // Each holding, at the rate it actually pays. `untilYear` is when a certificate's term runs out,
+  // after which that money is ordinary cash again — a three-year deposit at 20% does not pay 20%
+  // for thirty years, and pretending it does is the flattering version of his finances.
+  const yearOf = (at) => (at ? Math.max(1, Math.ceil(yearsBetween(now, at))) : null);
+  const planBuckets = accounts
+    .filter((a) => ['deposit', 'portfolio', 'cash'].includes(a.kind))
+    .map((a) => ({
+      id: a.id,
+      label: a.label || a.kind,
+      capital: fx.toBase(balanceNow(a, now).amount, a.currency, table),
+      // A portfolio is market money and follows what he expects the market to do; a deposit pays
+      // what it pays; cash pays nothing.
+      ratePct: a.kind === 'portfolio' ? (plan.yieldPct || 0) : (a.kind === 'cash' ? 0 : (a.ratePct ?? 0)),
+      untilYear: a.kind === 'deposit' ? yearOf(a.endsAt) : null,
+    }))
+    .filter((b) => b.capital != null && b.capital > 0);
 
   return {
     base,
@@ -342,9 +359,17 @@ export function buildState({ base = 'EUR', table, monthKey, accounts = [], spanF
     planBase: plan.useMeasured ? Math.max(0, cur.surplus) : 0,
     planUseMeasured: plan.useMeasured !== false,
     planStartCapital: invested,
+    planYieldPct: plan.yieldPct || 0,
+    // What the plan starts from, holding by holding, each at the rate it actually pays. A deposit
+    // grows at its own rate until its term runs out and then stops; a portfolio follows whatever
+    // he expects the market to do; cash does nothing. The old single lump at one invented rate is
+    // what put "5% a year" on his Egyptian certificates.
+    planBuckets: planBuckets.map((b) => ({ ...b })),
     eventKinds: EVENT_KINDS,
     forecast: forecastRange({
-      startCapital: invested,
+      // Not one lump at one rate any more.
+      startCapital: 0,
+      startBuckets: planBuckets,
       monthlySurplus: plan.useMeasured ? cur.surplus : 0,
       events: plan.list
         .map((e) => ({
@@ -357,6 +382,8 @@ export function buildState({ base = 'EUR', table, monthKey, accounts = [], spanF
         .filter((e) => e.amount != null),
       monthlyPassiveNow: 0,
       years: Number(plan.years) || 10,
+      // HIS number, not one this file made up.
+      yieldPct: plan.yieldPct || 0,
       goalMonthly: goal?.monthly || 0,
     }),
     events: plan.list.map((e) => ({
@@ -436,6 +463,7 @@ export function startWeb(port = process.env.PORT || 3000) {
           if (body.remove) await store.removePlanEvent(String(body.remove));
           else if (body.years) await store.setPlanYears(Number(body.years));
           else if (body.useMeasured !== undefined) await store.setPlanBase(body.useMeasured);
+          else if (body.yieldPct !== undefined) await store.setPlanYield(body.yieldPct);
           else if (body.edit) await store.updatePlanEvent(String(body.edit), body.patch || {});
           else await store.addPlanEvent(body);
           return json(res, 200, await state(asked()));

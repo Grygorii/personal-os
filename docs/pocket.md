@@ -231,10 +231,10 @@ a price without one: it looks current.
 2. Railway → same project → **New Service** → same repo.
 3. Start command: `npm run start:pocket`.
 4. Env vars above, `DB_NAME=pocket` among them.
-5. Look for `[boot] pocket-18 · db=pocket · base=EUR`.
+5. Look for `[boot] pocket-19 · db=pocket · base=EUR`.
 
 **Which build is actually serving?** `GET /health` (or `/version`) answers without Telegram —
-`{"ok":true,"app":"pocket","version":"pocket-18"}`. The marker lives in `src/pocket/version.js`;
+`{"ok":true,"app":"pocket","version":"pocket-19"}`. The marker lives in `src/pocket/version.js`;
 bump it on every deploy. Kept has `GET /version` for exactly the same reason: "is my change even
 out there yet" is the first question of every deploy, and guessing at it wastes an evening.
 
@@ -624,6 +624,35 @@ Then the piece he actually wanted: `asset`. A flat is not money in a pot.
   sells. So the goal counts it while the flat is let, and stops when it is gone.
 
 Each asset gets its own bucket, so selling one is exact rather than a share of a pool.
+
+### Where the 5% came from: me
+
+He asked, and that is the honest answer. `forecastRange` hard-coded 3.5 / 5 / 7 and called them
+typical — and then applied them to **his whole position**: to four Egyptian certificates paying
+17.5–22.5%, to a flat that pays rent and not interest, and to cash that pays nothing. He said it
+was not making much sense, and it wasn't.
+
+Three changes, and after them **every rate in the plan is one he stated**:
+
+**The plan starts from what he actually holds, holding by holding.** Not one lump at one rate: each
+deposit grows at its own, a portfolio follows what he expects of markets, cash does nothing. Each
+appears as a row in the plan with its rate on it.
+
+**A term that runs out, runs out.** A three-year certificate at 20% does not pay 20% for thirty
+years. From the year after it matures, that money is ordinary cash and follows whatever he has set
+for the rest — a good deal less flattering, and true.
+
+**The one remaining guess is his, and it defaults to nothing.** "Everything else grows at 0% a
+year" — money that just sits does not grow, which is what a current account does. At nought there
+is no range, because nought is a decision and not a forecast. Above nought the plan shows a point
+and a half either way, because that number *is* a guess and it should not read as a fact.
+
+### And an apartment's value is not its income
+
+His example: bought for 1,000, brings 100 a month; later it is worth 2,000 and **the rent is still
+100**. Being worth more pays him nothing until he sells. The two are separate pieces in the plan
+and neither moves the other — the value only ever reaches his pocket through `sell in year N for
+X`, and the rent is the rent.
 
 ### Money in buckets, one per rate
 

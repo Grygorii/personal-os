@@ -333,7 +333,7 @@ test('the scoped col genuinely lacks what these apps need', async () => {
 // Same arithmetic as the challenge document he was shown; the difference is entirely in the
 // presentation. These pin the parts that keep it honest.
 
-import { forecast, forecastRange, cleanEvent, EVENT_KINDS } from '../src/pocket/money.js';
+import { forecast, forecastRange, cleanEvent, EVENT_KINDS, planYields } from '../src/pocket/money.js';
 
 test('forecast: flat years when nothing is said to change', () => {
   const f = forecast({ startCapital: 1000, monthlySurplus: 1000, years: 10, yieldPct: 5 });
@@ -387,15 +387,25 @@ test('forecast: reports the year a goal is met, or that it is not', () => {
   assert.equal(far.goalReachedInYear, null, 'and it says so rather than picking a year');
 });
 
-test('forecastRange: three yields, and the spread between them is the point', () => {
-  const g = forecastRange({ startCapital: 1000, monthlySurplus: 1000, years: 10 });
-  assert.equal(g.runs.length, 3);
-  assert.equal(g.low.yieldPct, 3.5);
-  assert.equal(g.high.yieldPct, 7);
-  assert.ok(g.high.endCapital > g.low.endCapital);
-  assert.ok(g.spreadAtEnd > 20000, 'over ten years the yield assumption is most of the answer');
-  assert.match(g.assumes, /no tax/);
-  assert.match(g.assumes, /no bad year/);
+test('forecastRange: the yields are HIS, and nought is not a forecast', () => {
+  // This used to hard-code 3.5 / 5 / 7 and call them typical, which is where his "5% a year"
+  // came from — applied to certificates paying twenty and to cash paying nothing.
+  assert.deepEqual(planYields(0), [0], 'nought is a decision, and there is no range around a decision');
+  assert.deepEqual(planYields(5), [3.5, 5, 6.5], 'a point and a half either way around HIS number');
+  assert.deepEqual(planYields(1), [0, 1, 2.5], 'and never below nothing');
+
+  const flat = forecastRange({ startCapital: 1000, monthlySurplus: 1000, years: 10, yieldPct: 0 });
+  assert.equal(flat.runs.length, 1, 'one line, because he said nothing grows');
+  assert.equal(flat.spreadAtEnd, 0);
+  assert.equal(Math.round(flat.mid.endCapital), 1000 + 120000, 'just what he put in');
+
+  const guessed = forecastRange({ startCapital: 1000, monthlySurplus: 1000, years: 10, yieldPct: 5 });
+  assert.equal(guessed.runs.length, 3);
+  assert.equal(guessed.mid.yieldPct, 5);
+  assert.ok(guessed.high.endCapital > guessed.low.endCapital);
+  assert.ok(guessed.spreadAtEnd > 20000, 'over ten years the yield assumption is most of the answer');
+  assert.match(guessed.assumes, /no tax/);
+  assert.match(guessed.assumes, /no bad year/);
 });
 
 test('cleanEvent: years and kinds are bounded, never trusted', () => {
@@ -1806,4 +1816,82 @@ test('the flat and its rent are two pieces, and the rent stops when it is sold',
   // But the money is still working: what the sale bought now yields at the market rate.
   assert.ok(f.rows[7].passiveMonthly > f.rows[5].passiveMonthly);
   assert.deepEqual(EVENT_KINDS, ['contribution', 'lump', 'income', 'spending', 'asset']);
+});
+
+// ---- Every rate is one he stated ----
+//
+// "From where you took 5% a year? I have apartment example — I bought with 1000, it brings me 100
+//  a month. Later hypothetically it costs 2000 already, but the rent the same. If I put that I put
+//  money on deposit for 5%, you could count. But now what you do is not making much sense."
+//
+// He was right on every count. The 5% came from this file: three "typical" yields, hard-coded,
+// applied to his whole position — to Egyptian certificates paying 17.5-22.5%, to a flat that pays
+// rent and not interest, and to cash that pays nothing.
+
+test('the plan grows each holding at the rate that holding actually pays', () => {
+  const f = forecast({
+    startBuckets: [
+      { id: 'd1', capital: 8386, ratePct: 20, label: 'Deposit 1' },
+      { id: 'c1', capital: 2000, ratePct: 0, label: 'Bank' },
+    ],
+    monthlySurplus: 0, years: 3, yieldPct: 0,
+  });
+  // 8,386 at 20% and 2,000 at nothing. Not 10,386 at five per cent.
+  assert.equal(Math.round(f.rows[2].capital), Math.round(8386 * 1.2 ** 3 + 2000));
+  const asOneLump = forecast({ startCapital: 10386, monthlySurplus: 0, years: 3, yieldPct: 5 });
+  assert.notEqual(Math.round(f.rows[2].capital), Math.round(asOneLump.rows[2].capital));
+  // And each is named at its own rate, not pooled.
+  const dep = f.ownRate.find((b) => b.label === 'Deposit 1');
+  assert.equal(dep.ratePct, 20);
+  assert.equal(dep.held, true);
+});
+
+test("a three-year certificate does not pay 20% for thirty years", () => {
+  const f = forecast({
+    startBuckets: [{ id: 'd1', capital: 10000, ratePct: 20, label: 'Cairo CD', untilYear: 3 }],
+    monthlySurplus: 0, years: 6, yieldPct: 0,
+  });
+  assert.equal(Math.round(f.rows[2].capital), Math.round(10000 * 1.2 ** 3), 'it pays its rate for its term');
+  assert.equal(Math.round(f.rows[3].capital), Math.round(10000 * 1.2 ** 3), 'and then it is just cash');
+  assert.equal(Math.round(f.rows[5].capital), Math.round(10000 * 1.2 ** 3), 'which, at his 0%, does nothing');
+  assert.deepEqual(f.rows[3].ends, ['Cairo CD']);
+
+  // With a rate he has set for the rest, the freed cash follows that instead.
+  const reinvested = forecast({
+    startBuckets: [{ id: 'd1', capital: 10000, ratePct: 20, label: 'Cairo CD', untilYear: 3 }],
+    monthlySurplus: 0, years: 6, yieldPct: 4,
+  });
+  assert.ok(reinvested.rows[5].capital > f.rows[5].capital);
+});
+
+test('his apartment: value and rent are independent', () => {
+  // Bought for 1,000, brings 100 a month. Later he thinks it is worth 2,000 — and the rent is
+  // still 100. The value and the income are two different facts and neither moves the other.
+  const f = forecast({
+    startBuckets: [], monthlySurplus: 0, years: 6, yieldPct: 0,
+    events: [
+      { id: 'a1', atYear: 1, kind: 'asset', amount: 1000, label: 'flat' },
+      { id: 'i1', atYear: 1, kind: 'income', amount: 100, label: 'its rent' },
+    ],
+  });
+  const dearer = forecast({
+    startBuckets: [], monthlySurplus: 0, years: 6, yieldPct: 0,
+    events: [
+      { id: 'a1', atYear: 1, kind: 'asset', amount: 1000, label: 'flat', sellAtYear: 4, sellFor: 2000 },
+      { id: 'i1', atYear: 1, kind: 'income', amount: 100, label: 'its rent' },
+    ],
+  });
+  // Before the sale the rent is identical in both — being worth more pays him nothing.
+  assert.equal(f.rows[0].passiveMonthly, dearer.rows[0].passiveMonthly);
+  assert.equal(f.rows[2].passiveMonthly, dearer.rows[2].passiveMonthly);
+  // The capital differs only from the year he actually sells.
+  assert.equal(f.rows[2].capital, dearer.rows[2].capital);
+  assert.ok(dearer.rows[3].capital > f.rows[3].capital);
+});
+
+test('at his rate of nought, nothing grows that he has not said grows', () => {
+  const f = forecast({ startCapital: 0, monthlySurplus: 1000, years: 5, yieldPct: 0 });
+  assert.equal(f.rows[4].capital, 1000 * 12 * 5, 'exactly what he put in — a current account pays nothing');
+  assert.equal(f.rows[4].passiveMonthly, 0, 'and money that earns nothing produces no passive income');
+  assert.match(f.assumes, /no tax/);
 });

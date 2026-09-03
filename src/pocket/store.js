@@ -248,8 +248,18 @@ export async function getPlanEvents() {
     // Measured, until he says otherwise — a plan built on a number he checked beats one built
     // on a number he hoped for.
     useMeasured: doc?.useMeasured !== false,
+    // What he expects money with NO rate of its own to earn. Nought by default, because the app
+    // has no opinion about what a market does and inventing one is how "5% a year" ended up on
+    // his screen attached to certificates paying twenty.
+    yieldPct: Number(doc?.yieldPct) || 0,
     list: (Array.isArray(doc?.list) ? doc.list : []).map(cleanEvent),
   };
+}
+
+export async function setPlanYield(yieldPct) {
+  const y = Math.max(0, Math.min(30, Number(yieldPct) || 0));
+  await col('settings').updateOne({ _id: 'plan' }, { $set: { yieldPct: y } }, { upsert: true });
+  return y;
 }
 
 export async function setPlanBase(useMeasured) {

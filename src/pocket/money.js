@@ -706,6 +706,17 @@ export function cleanEvent(e) {
  */
 export function forecast({
   startCapital = 0,
+  // WHAT HE ACTUALLY HAS, each at the rate it actually pays.
+  //
+  // This used to be one lump grown at one invented rate. He asked where 5% came from, and the
+  // answer was: from me. His four Egyptian certificates pay 17.5-22.5%, his flat pays rent and
+  // not interest, and his cash pays nothing — and the plan grew all of it at five per cent.
+  //
+  //   [{ id, capital, ratePct, label, untilYear }]
+  //
+  // `untilYear` is when a certificate's term runs out; from the year after, that money is
+  // ordinary cash again and follows whatever rate he has set for the rest.
+  startBuckets = [],
   monthlySurplus = 0,
   monthlyPassiveNow = 0,
   years = 10,
@@ -725,6 +736,17 @@ export function forecast({
   // gets its own bucket and compounds at its own rate; everything else sits in the default one
   // and follows the scenario yield.
   const buckets = new Map([['default', { rate: y, capital: Math.max(0, num(startCapital)), monthly: 0, label: null }]]);
+  for (const b of startBuckets) {
+    if (!(num(b.capital) > 0)) continue;
+    buckets.set(`s:${b.id}`, {
+      rate: num(b.ratePct || 0) / 100,
+      capital: num(b.capital),
+      monthly: 0,
+      label: b.label || null,
+      held: true,
+      untilYear: b.untilYear || null,
+    });
+  }
   const bucketFor = (e) => {
     // Each asset gets its OWN bucket, so selling one is exact rather than a share of a pool —
     // and so it can sit at 0% while everything else follows the market.
@@ -756,6 +778,16 @@ export function forecast({
       else if (e.kind === 'spending') { extraSpending += e.amount; buckets.get('default').monthly -= e.amount; }
       else if (e.kind === 'lump') b.capital += e.amount;
       else if (e.kind === 'asset') b.capital += e.amount;
+    }
+    // A term that runs out. The certificate stops paying its rate and the money becomes ordinary
+    // cash — which is the truth, and a great deal less flattering than a 20% deposit compounding
+    // for thirty years.
+    const maturedThisYear = [];
+    for (const [, b] of buckets) {
+      if (!b.held || !b.untilYear || b.untilYear >= year) continue;
+      buckets.get('default').capital += b.capital;
+      if (b.capital > 0 && b.label) maturedThisYear.push(b.label);
+      b.capital = 0; b.untilYear = null;
     }
     // Sold: the asset leaves at the price he expects, and the money becomes cash he can invest,
     // so it moves into the bucket that follows the market. Without a price it goes for whatever
@@ -800,7 +832,7 @@ export function forecast({
       extraSpending,
       goalMet: goalMonthly > 0 ? passive >= goalMonthly : null,
       events: evts.filter((x) => x.atYear === year).map((x) => x.label || x.kind),
-      ends: evts.filter((x) => x.untilYear === year).map((x) => x.label || x.kind),
+      ends: [...evts.filter((x) => x.untilYear === year).map((x) => x.label || x.kind), ...maturedThisYear],
       // Kept apart from `ends`: a line stopping and an asset being sold are different events,
       // and the wording for each belongs in the view, not baked into the data.
       sold: soldThisYear,
@@ -813,7 +845,7 @@ export function forecast({
     yieldPct: num(yieldPct),
     // What sits at a rate of its own, so the page can say "half of this is not market money".
     ownRate: [...buckets.entries()].filter(([k]) => k !== 'default' && buckets.get(k).capital > 0)
-      .map(([, b]) => ({ ratePct: b.rate * 100, capital: b.capital, label: b.label, asset: !!b.asset })),
+      .map(([, b]) => ({ ratePct: b.rate * 100, capital: b.capital, label: b.label, asset: !!b.asset, held: !!b.held })),
     endCapital: rows[rows.length - 1].capital,
     endPassive: rows[rows.length - 1].passiveMonthly,
     goalReachedInYear: hit ? hit.year : null,
@@ -822,9 +854,22 @@ export function forecast({
   };
 }
 
-/** The same ten years at three yields, because the spread between them IS the uncertainty.
- *  Anyone shown one line will believe it; three lines cannot be mistaken for a forecast. */
-export function forecastRange(opts = {}, yields = [3.5, 5, 7]) {
+/** The plan run at more than one yield, where a yield is a guess.
+ *
+ *  This used to hard-code 3.5 / 5 / 7 and call it "typical", which is where his 5% came from —
+ *  and it was applied to certificates paying 20% and to cash paying nothing. The rate is HIS now:
+ *  every holding grows at the rate it actually pays, and the one number left over is what he
+ *  expects the REST to earn, which he sets and which defaults to nothing.
+ *
+ *  At nought there is no range to draw, because nought is a decision and not a forecast. Above
+ *  it, a point and a half either way, so his own guess is not read as a fact. */
+export function planYields(yieldPct) {
+  const r = Math.max(0, num(yieldPct));
+  if (r === 0) return [0];
+  return [Math.max(0, r - 1.5), r, r + 1.5];
+}
+
+export function forecastRange(opts = {}, yields = planYields(opts.yieldPct ?? 0)) {
   const runs = yields.map((yieldPct) => forecast({ ...opts, yieldPct }));
   return {
     runs,

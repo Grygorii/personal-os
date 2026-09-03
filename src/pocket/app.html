@@ -826,14 +826,18 @@ function drawPlan() {
         <span class="${goesIn >= 0 ? 'in' : 'out'}" style="font-weight:700;font-variant-numeric:tabular-nums">${money(goesIn)}<span style="color:var(--dim);font-weight:400"> a month</span></span>
       </div>
 
-      ${S.planStartCapital > 0 ? `<div class="row">
+      ${/* Each holding at the rate it actually pays. This was one lump grown at one invented
+            rate — which is where his "5% a year" came from, attached to certificates paying
+            twenty and to cash paying nothing. */ ''}
+      ${(S.planBuckets || []).map((b) => `<div class="row">
         <span class="dot in"></span>
         <div class="rmain">
-          <div class="rlabel">What you already have invested</div>
-          <div class="rmeta">your deposits and portfolio, today — the plan grows this too</div>
+          <div class="rlabel">${esc(b.label)}</div>
+          <div class="rmeta">you already have this${b.ratePct ? ` · grows at its own ${b.ratePct}%` : ' · earns nothing on its own'}${
+            b.untilYear ? ` until year ${b.untilYear}, then it is just cash` : ''}</div>
         </div>
-        <div class="ramt in">${money(S.planStartCapital)}</div>
-      </div>` : ''}
+        <div class="ramt in">${money(b.capital)}</div>
+      </div>`).join('')}
       <div class="row">
         <span class="dot ${S.planUseMeasured ? 'in' : 'out'}"></span>
         <div class="rmain">
@@ -845,6 +849,16 @@ function drawPlan() {
       ${pieces || '<div class="empty" style="padding:16px">Nothing listed yet. Add what you put in, what arrives, and what it costs.</div>'}
       ${(S.planUnconverted || []).length ? `<div class="warn" style="margin:10px 0 0">No exchange rate for
         ${esc(S.planUnconverted.join(', '))} — left out of everything below rather than counted as ${esc(S.base)}.</div>` : ''}
+      <div class="row">
+        <span class="dot ${S.planYieldPct > 0 ? 'in' : 'out'}"></span>
+        <div class="rmain">
+          <div class="rlabel">Everything else grows at ${S.planYieldPct}% a year</div>
+          <div class="rmeta">${S.planYieldPct > 0
+            ? 'your guess about the market — the only number here the app did not get from you'
+            : 'money with no rate of its own does not grow. Set a rate if you expect one.'}</div>
+        </div>
+        <button class="add" data-plan-yield="1">${S.planYieldPct > 0 ? 'Change' : 'Set a rate'}</button>
+      </div>
       <button class="btn ghost" id="addevent" style="margin-top:12px">+ Add money, income, or a cost</button>
     </div>
 
@@ -856,9 +870,12 @@ function drawPlan() {
         </div>
       </div>
       <div class="big in">${money(mid.endPassive)}<span style="font-size:15px;color:var(--dim);font-weight:400">/mo without working</span></div>
-      <div class="sub">${money(mid.endCapital)} invested after ${yrs} years · ${money(low.endCapital)} to ${money(high.endCapital)} depending on yield</div>
+      <div class="sub">${money(mid.endCapital)} after ${yrs} years${f.runs.length > 1
+        ? ` · ${money(low.endCapital)} to ${money(high.endCapital)} if your ${S.planYieldPct}% is a point and a half out either way`
+        : ' · no range, because every rate here is one you stated'}</div>
       ${mid.ownRate.length ? `<div class="note">${mid.ownRate.map((b) => b.asset
         ? `${money(b.capital)} of that is ${esc(b.label)}, ${b.ratePct ? `growing at ${b.ratePct}%` : 'held at what it is worth'} — not money in the market`
+        : b.held ? `${money(b.capital)} of that is ${esc(b.label)} at its own ${b.ratePct}%`
         : `${money(b.capital)} of that is at your own ${b.ratePct}%`).join('. ')}.</div>` : ''}
       ${goal > 0 ? (mid.goalReachedInYear
         ? `<div class="sub in" style="margin-top:8px">You reach ${money(goal)} a month in year ${mid.goalReachedInYear}.</div>`
@@ -875,7 +892,7 @@ function drawPlan() {
           <td class="n">${money(r.passiveMonthly)}</td>
         </tr>`).join('')}</tbody>
       </table>
-      <div class="note">The middle case, 5% a year. Assumes ${esc(f.assumes)}.</div>
+      <div class="note">${f.runs.length > 1 ? `The middle case, your ${S.planYieldPct}% on money with no rate of its own.` : 'Every rate here is one you stated.'} Assumes ${esc(f.assumes)}.</div>
     </details>`;
 
   $('addevent').onclick = () => openPlanEvent();
@@ -1188,6 +1205,15 @@ $('efields').onclick = (e) => {
 
 $('esave').onclick = async () => {
   if (!editing) return;
+  if (editing.kind === 'planYield') {
+    const v = $('efields').querySelector('[data-k="yieldPct"]').value.trim();
+    $('esave').disabled = true;
+    try { S = await api('/api/plan', { yieldPct: v === '' ? 0 : Number(v) }); draw(); closeEdit(); }
+    catch (err) { $('eerr').textContent = err.message; $('eerr').hidden = false; }
+    finally { $('esave').disabled = false; }
+    return;
+  }
+
   if (editing.kind === 'fxBasis') {
     const v = {};
     $('efields').querySelectorAll('[data-k]').forEach((el) => { v[el.dataset.k] = el.value.trim(); });
@@ -1376,6 +1402,24 @@ document.body.addEventListener('click', async (e) => {
   const yearsBtn = e.target.closest('[data-plan-years]');
   if (yearsBtn) {
     await work(() => api('/api/plan', { years: Number(yearsBtn.dataset.planYears) }));
+    return;
+  }
+
+  // The one rate in the plan that is a guess rather than a fact.
+  if (e.target.closest('[data-plan-yield]')) {
+    editing = { kind: 'planYield' };
+    $('etitle').textContent = 'What does the rest earn?';
+    $('eerr').hidden = true;
+    $('efields').innerHTML = `
+      ${field('% a year', input('yieldPct', S.planYieldPct || '', 'inputmode="decimal" placeholder="0"'))}
+      <div class="note" style="margin-top:0">This is for money with <b>no rate of its own</b> — what you
+      put in each month, and a certificate's cash once its term has run out. Your deposits already grow
+      at the rates you gave them, your flat holds its value, and rent is rent.
+      <br><br><b>Nought is a fine answer</b> and it is the default: it means money that just sits does
+      not grow, which is true of a current account. Anything above nought is a guess about markets, so
+      the plan then shows a point and a half either way around it — the app has no opinion of its own,
+      and the 5% you saw was one it should never have had.</div>`;
+    $('esheet').hidden = false;
     return;
   }
 

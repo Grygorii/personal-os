@@ -261,6 +261,8 @@ function must(el, panel, needles, label) {
     must(el, 'p-plan', ['Your plan', 'What it comes to', 'Year by year',
       'from salary', 'rent from apartment 1', 'grows at 2%', 'What you actually saved this month',
       'at your own 2%', 'second rental', 'data-plan-years',
+      // Where every rate came from, and the one that is a guess.
+      'you already have this', 'Everything else grows at 0% a year', 'every rate here is one you stated',
       // What he typed, beside what it comes to. The converted figure alone hides the currency.
       '18,000 EGP'], 'this month');
     const plan = el('p-plan').innerHTML;
@@ -424,14 +426,24 @@ function must(el, panel, needles, label) {
     fail(`18,000 EGP must project as 333 EUR: ${Math.round(mid.endCapital)} vs ${Math.round(inEur.forecast.mid.endCapital)}`);
   }
 
-  if (!mid.ownRate.length) fail('the 2% deposit must grow at 2%, not at the market yield');
-  if (Math.round(mid.ownRate[0].ratePct) !== 2) fail('and be reported at the rate it was given');
-  // 10,000 at 2% for ten years is ~12,190. At the 5% middle case it would be ~16,289 — the gap
-  // is the whole reason a plan cannot compound every kind of money at one rate.
-  if (Math.round(mid.ownRate[0].capital) !== 12190) fail(`10,000 at 2% for ten years is 12,190, got ${Math.round(mid.ownRate[0].capital)}`);
+  // The 2% lump grows at 2%, and is reported as its own thing rather than pooled with the market.
+  const twoPct = mid.ownRate.find((b) => Math.round(b.ratePct) === 2 && !b.held);
+  if (!twoPct) fail('the 2% deposit must grow at 2%, not at the market yield');
+  if (Math.round(twoPct.capital) !== 12190) fail(`10,000 at 2% for ten years is 12,190, got ${Math.round(twoPct.capital)}`);
+
+  // EVERY rate in the plan is one he stated. The old version hard-coded 3.5/5/7 and applied them
+  // to certificates paying 20% and to cash paying nothing.
+  if (S.planYieldPct !== 0) fail('money with no rate of its own does not grow unless he says so');
+  if (S.forecast.runs.length !== 1) fail('and at nought there is no range, because nought is a decision');
+  const held = S.planBuckets.find((b) => b.label === 'Cairo CD');
+  if (!held) fail('the plan starts from what he actually holds, holding by holding');
+  if (held.ratePct !== 20) fail(`his certificate grows at ITS rate, got ${held.ratePct}`);
+  if (!held.untilYear) fail('and stops when its term runs out — a 3-year deposit does not pay 20% for thirty');
+  const cash = S.planBuckets.find((b) => b.label === 'Bank');
+  if (cash && cash.ratePct !== 0) fail('cash earns nothing');
 
   // A cost that ends stops costing. Without untilYear every line runs for ever.
-  const ends = mid.rows.find((r) => r.ends.length);
+  const ends = mid.rows.find((r) => r.ends.includes('car insurance'));
   if (!ends || ends.year !== 4) fail('the car insurance ends in year 4 and the plan should say so');
   if (mid.rows[4].monthlyContribution <= mid.rows[3].monthlyContribution) {
     fail('once a cost ends, more is going in');
