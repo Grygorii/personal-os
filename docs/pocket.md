@@ -231,10 +231,10 @@ a price without one: it looks current.
 2. Railway → same project → **New Service** → same repo.
 3. Start command: `npm run start:pocket`.
 4. Env vars above, `DB_NAME=pocket` among them.
-5. Look for `[boot] pocket-15 · db=pocket · base=EUR`.
+5. Look for `[boot] pocket-16 · db=pocket · base=EUR`.
 
 **Which build is actually serving?** `GET /health` (or `/version`) answers without Telegram —
-`{"ok":true,"app":"pocket","version":"pocket-15"}`. The marker lives in `src/pocket/version.js`;
+`{"ok":true,"app":"pocket","version":"pocket-16"}`. The marker lives in `src/pocket/version.js`;
 bump it on every deploy. Kept has `GET /version` for exactly the same reason: "is my change even
 out there yet" is the first question of every deploy, and guessing at it wastes an evening.
 
@@ -572,6 +572,22 @@ The pieces are listed *before* the result, and the total that goes in each month
 sum. The measured surplus is the first row in that list rather than a hidden ingredient — with a
 button to ignore it, because "start from what I actually saved" and "only count what I have
 listed" are both honest and which he means is a decision, not a default to guess at.
+
+### A workbench, not a slideshow
+
+The first rebuild put the pieces above the projection and then spent most of the page on ten
+year-blocks, each with a bar, a capital figure, a range and a monthly figure. He called it "just
+for showing", and he was right: **a bar under a number that is already printed is decoration**, and
+ten of them were sitting on top of the only part he can change.
+
+So the tab is his plan first — the pieces, with the monthly total in the heading — then *what it
+comes to* as one card, then the years as a plain table behind a fold for when he wants to read
+them.
+
+**And the horizon is now his.** `setPlanYears` had been on the server the whole time with nothing
+in the page to call it, so the plan was stuck at ten years. 5 / 10 / 20 / 30 sit beside the result.
+That is not cosmetic: at ten years his plan reads "not enough to reach €2,000 a month", and at
+twenty it reads **"you reach it in year 11"**. He was one year short of seeing it.
 
 ### Money in buckets, one per rate
 

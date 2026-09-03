@@ -254,9 +254,18 @@ function must(el, panel, needles, label) {
     for (const name of S.goal.sources.map((x) => x.category)) {
       if (!goalHtml.includes(`>${name}<`)) fail(`the legend must name "${name}", not just colour it`);
     }
-    must(el, 'p-plan', ['Year by year', 'second rental', 'Where it comes from', 'What goes in',
+    // The pieces he builds come FIRST and the projection is one card under them; the year-by-year
+    // is a plain table behind a fold, not ten bar blocks.
+    must(el, 'p-plan', ['Your plan', 'What it comes to', 'Year by year',
       'from salary', 'rent from apartment 1', 'grows at 2%', 'What you actually saved this month',
-      'at your own 2%'], 'this month');
+      'at your own 2%', 'second rental', 'data-plan-years'], 'this month');
+    const plan = el('p-plan').innerHTML;
+    if (plan.indexOf('Your plan') > plan.indexOf('What it comes to')) {
+      fail('what he builds belongs above what it comes to');
+    }
+    if (!plan.includes('<details')) fail('the year-by-year is behind a fold, not the page');
+    if ((plan.match(/class="bar"/g) || []).length) fail('ten bars over numbers that are already labelled is decoration');
+    if (!plan.includes('<table class="yrs"')) fail('and the years read as a table');
     must(el, 'p-subs', ['Every subscription, per year', 'What that costs in capital', 'Netflix',
       'free trial', 'Old magazine'], 'this month');
     must(el, 'p-fx', ['EGP', 'to 1 EUR', 'You put in', 'It is worth', 'The rate has',

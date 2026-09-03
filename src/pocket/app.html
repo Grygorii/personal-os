@@ -176,6 +176,18 @@
     font:600 14px/1 inherit;padding:12px 4px;cursor:pointer}
   .seg button.on{border-color:var(--accent);color:var(--ink)}
   .sheetbox h3{font-size:15px;margin:0 0 12px;font-weight:600}
+  /* A plain table beats ten blocks each carrying a bar, a total, a range and a monthly figure —
+     the bar added nothing, because every point was already labelled. */
+  .yrs{width:100%;border-collapse:collapse;margin-top:10px;font-size:13px}
+  .yrs th{text-align:left;color:var(--dim);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.03em;padding:0 0 6px}
+  .yrs th.n,.yrs td.n{text-align:right;font-variant-numeric:tabular-nums}
+  .yrs thead th:not(:first-child){text-align:right}
+  .yrs td{padding:7px 0;border-top:1px solid var(--line)}
+  .yrs tr.hit td{color:var(--in)}
+  details>summary{list-style:none}
+  details>summary::-webkit-details-marker{display:none}
+  details>summary::before{content:'▸ ';display:inline-block;transition:none}
+  details[open]>summary::before{content:'▾ '}
   .scroller{max-height:70vh;overflow-y:auto}
 
   /* While a request is in flight. Without this a tapped month looks like a tap that did
@@ -764,16 +776,16 @@ function drawPlan() {
   const f = S.forecast;
   if (!f) { $('p-plan').innerHTML = '<div class="card"><div class="empty">Nothing to project yet.</div></div>'; return; }
   const mid = f.mid, low = f.low, high = f.high;
-  const peak = high.rows[high.rows.length - 1].capital || 1;
   const goal = S.goal?.target || 0;
   const yrs = mid.rows.length;
 
-  /* WHERE THE MONEY COMES FROM, listed before what it becomes.
-     The old tab handed him a number built from things he could not see: this month's measured
-     surplus, silently, plus four prompt() boxes. He said it was not clear, and he was right —
-     a projection you cannot take apart is not a plan, it is a claim. So the pieces come first,
-     each in his own words, each editable, and the total is visibly their sum. */
-  const money0 = (n) => money(n).replace(/\s*EUR$/, '');
+  /* THE PIECES FIRST, THE PROJECTION AFTER, AND SMALL.
+     The old tab spent most of its height on ten year-blocks, each with a bar, a capital figure, a
+     range and a monthly figure — a number three times over and a bar that added nothing, because
+     every point was already labelled. He called it "just for showing" and he was right: it was
+     decoration sitting on top of the only part he can actually change.
+     So this is a workbench now. What he builds is the page; what it comes to is one card under
+     it; and the year-by-year is a plain table behind a fold, for when he wants to read it. */
   const per = (e) => e.kind === 'lump'
     ? `${money(e.amount)} once in year ${e.atYear}`
     : `${money(e.amount)} a month from year ${e.atYear}${e.untilYear ? ` to ${e.untilYear}` : ''}`;
@@ -794,62 +806,54 @@ function drawPlan() {
   const listedMonthly = (S.events || [])
     .filter((e) => e.kind !== 'lump')
     .reduce((n, e) => n + (e.kind === 'spending' ? -e.amount : e.amount), 0);
+  const goesIn = base + listedMonthly;
 
   $('p-plan').innerHTML = `
     <div class="card">
-      <h2>What goes in</h2>
-      <div class="big ${base + listedMonthly >= 0 ? 'in' : 'out'}">${money(base + listedMonthly)}<span style="font-size:15px;color:var(--dim);font-weight:400"> a month</span></div>
-      <div class="sub">${base > 0 ? `${money(base)} measured + ` : ''}${money(listedMonthly)} from what you listed below</div>
-    </div>
+      <div style="display:flex;justify-content:space-between;align-items:baseline">
+        <h2 style="margin-bottom:0">Your plan</h2>
+        <span class="${goesIn >= 0 ? 'in' : 'out'}" style="font-weight:700;font-variant-numeric:tabular-nums">${money(goesIn)}<span style="color:var(--dim);font-weight:400"> a month</span></span>
+      </div>
 
-    <div class="card">
-      <h2>Where it comes from</h2>
       <div class="row">
         <span class="dot ${S.planUseMeasured ? 'in' : 'out'}"></span>
         <div class="rmain">
           <div class="rlabel">What you actually saved this month</div>
-          <div class="rmeta">${S.planUseMeasured ? `${money(base)} a month, measured — not a guess` : 'switched off — only what you list below counts'}</div>
+          <div class="rmeta">${S.planUseMeasured ? `${money(base)}, measured — not a guess` : 'switched off — only what you list counts'}</div>
         </div>
         <button class="add" data-plan-base="${S.planUseMeasured ? 'off' : 'on'}">${S.planUseMeasured ? 'Ignore it' : 'Use it'}</button>
       </div>
-      ${pieces}
+      ${pieces || '<div class="empty" style="padding:16px">Nothing listed yet. Add what you put in, what arrives, and what it costs.</div>'}
       <button class="btn ghost" id="addevent" style="margin-top:12px">+ Add money, income, or a cost</button>
-      <div class="note">Everything here is yours to set. Anything with its own rate — a deposit at
-      2%, a bond — grows at that rate; everything else grows at the market range below, because
-      those are not the same money.</div>
     </div>
 
     <div class="card">
-      <h2>What it becomes in ${yrs} years</h2>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <h2 style="margin-bottom:0">What it comes to</h2>
+        <div class="seg" style="width:auto;gap:4px">
+          ${[5, 10, 20, 30].map((y) => `<button type="button" data-plan-years="${y}" class="${y === yrs ? 'on' : ''}" style="padding:7px 10px;font-size:12px">${y}y</button>`).join('')}
+        </div>
+      </div>
       <div class="big in">${money(mid.endPassive)}<span style="font-size:15px;color:var(--dim);font-weight:400">/mo without working</span></div>
-      <div class="sub">${money(mid.endCapital)} invested · could be ${money(low.endCapital)} or ${money(high.endCapital)}</div>
-      ${mid.ownRate.length ? `<div class="note">${mid.ownRate.map((b) => `${money(b.capital)} of that is at your own ${b.ratePct}%, not the market's`).join('. ')}.</div>` : ''}
-      ${mid.goalReachedInYear ? `<div class="sub in" style="margin-top:6px">You reach ${money(goal)} a month in year ${mid.goalReachedInYear}.</div>`
-        : (goal > 0 ? `<div class="sub" style="margin-top:6px">Not enough to reach ${money(goal)} a month inside ${yrs} years. Adding to what goes in moves this far more than a better yield does.</div>` : '')}
+      <div class="sub">${money(mid.endCapital)} invested after ${yrs} years · ${money(low.endCapital)} to ${money(high.endCapital)} depending on yield</div>
+      ${mid.ownRate.length ? `<div class="note">${mid.ownRate.map((b) => `${money(b.capital)} of that is at your own ${b.ratePct}%`).join(', ')}.</div>` : ''}
+      ${goal > 0 ? (mid.goalReachedInYear
+        ? `<div class="sub in" style="margin-top:8px">You reach ${money(goal)} a month in year ${mid.goalReachedInYear}.</div>`
+        : `<div class="sub" style="margin-top:8px">Not enough to reach ${money(goal)} a month inside ${yrs} years. Adding to what goes in moves this far more than a better yield does.</div>`) : ''}
     </div>
 
-    <div class="card">
-      <h2>Year by year</h2>
-      ${mid.rows.map((r, i) => {
-        const lo = low.rows[i].capital, hi = high.rows[i].capital;
-        const met = goal > 0 && r.passiveMonthly >= goal;
-        return `
-        <div style="margin-bottom:13px">
-          <div style="display:flex;justify-content:space-between;align-items:baseline;font-size:13px">
-            <span style="color:var(--dim)">Year ${r.year}${r.events.length ? ' · ' + esc(r.events.join(', ')) : ''}${r.ends.length ? ' · ' + esc(r.ends.join(', ')) + ' ends' : ''}</span>
-            <span style="font-variant-numeric:tabular-nums;font-weight:600">${money(r.capital)}${met ? ' <span class="pill">goal</span>' : ''}</span>
-          </div>
-          <div class="bar" style="margin-top:5px"><i style="width:${Math.max(2, (r.capital / peak) * 100)}%"></i></div>
-          <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--dim);margin-top:4px">
-            <span>${money(lo)} – ${money(hi)} depending on yield</span>
-            <span>${money(r.passiveMonthly)}/mo</span>
-          </div>
-        </div>`;
-      }).join('')}
-      <div class="note">The bar is the middle case, 5% a year. The range beside it is 3.5% to 7% —
-      over a decade that assumption is most of the answer, which is why it is a spread and not a
-      number. Assumes ${esc(f.assumes)}.</div>
-    </div>`;
+    <details class="card" id="yby">
+      <summary style="cursor:pointer;color:var(--dim);font-size:13px;font-weight:600;letter-spacing:.03em;text-transform:uppercase">Year by year</summary>
+      <table class="yrs">
+        <thead><tr><th>Year</th><th>Invested</th><th>Per month</th></tr></thead>
+        <tbody>${mid.rows.map((r) => `<tr${goal > 0 && r.passiveMonthly >= goal ? ' class="hit"' : ''}>
+          <td>${r.year}${r.events.length ? ` <span style="color:var(--dim)">· ${esc(r.events.join(', '))}</span>` : ''}${r.ends.length ? ` <span style="color:var(--dim)">· ${esc(r.ends.join(', '))} ends</span>` : ''}</td>
+          <td class="n">${money(r.capital)}</td>
+          <td class="n">${money(r.passiveMonthly)}</td>
+        </tr>`).join('')}</tbody>
+      </table>
+      <div class="note">The middle case, 5% a year. Assumes ${esc(f.assumes)}.</div>
+    </details>`;
 
   $('addevent').onclick = () => openPlanEvent();
 }
@@ -1327,6 +1331,14 @@ document.body.addEventListener('click', async (e) => {
   }
   // Whether the plan starts from what he measured, or only from what he has listed. Both are
   // honest; which he means is his call, and it has to be visible rather than assumed.
+  // How far ahead to look. The server could always do this; the page never offered it, so the
+  // plan was stuck at ten years whatever he wanted to see.
+  const yearsBtn = e.target.closest('[data-plan-years]');
+  if (yearsBtn) {
+    await work(() => api('/api/plan', { years: Number(yearsBtn.dataset.planYears) }));
+    return;
+  }
+
   const planBase = e.target.closest('[data-plan-base]');
   if (planBase) {
     await work(() => api('/api/plan', { useMeasured: planBase.dataset.planBase === 'on' }));
