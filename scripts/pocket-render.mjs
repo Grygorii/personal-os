@@ -259,7 +259,7 @@ function must(el, panel, needles, label) {
     // The pieces he builds come FIRST and the projection is one card under them; the year-by-year
     // is a plain table behind a fold, not ten bar blocks.
     must(el, 'p-plan', ['Your plan', 'What it comes to', 'Year by year',
-      'from salary', 'rent from apartment 1', 'grows at 2%', 'What you actually saved this month',
+      'from salary', 'rent from apartment 1', 'pays 2% out, as its own coupon', 'What you actually saved this month',
       'second rental', 'data-plan-years',
       // Where every rate came from, and the one that is a guess — now a result in "What it comes
       // to", not a row he has to scroll past to reach his own pieces.
@@ -468,10 +468,14 @@ function must(el, panel, needles, label) {
     fail(`18,000 EGP must project as 333 EUR: ${Math.round(mid.endCapital)} vs ${Math.round(inEur.forecast.mid.endCapital)}`);
   }
 
-  // The 2% lump grows at 2%, and is reported as its own thing rather than pooled with the market.
-  const twoPct = mid.ownRate.find((b) => Math.round(b.ratePct) === 2 && !b.held);
-  if (!twoPct) fail('the 2% deposit must grow at 2%, not at the market yield');
-  if (Math.round(twoPct.capital) !== 12190) fail(`10,000 at 2% for ten years is 12,190, got ${Math.round(twoPct.capital)}`);
+  // The 2% lump PAYS 2% — it does not compound, the same correction he made about "Deposit": "if
+  // I didn't put it on deposit it will be sitting on my account." Its own bucket sits flat at what
+  // he put in, reported as its own thing rather than pooled with the market, and its coupon is a
+  // separate line (checked below, in the drill-down).
+  const twoPct = mid.ownRate.find((b) => b.label === 'deposit at 2%');
+  if (!twoPct) fail('the 2% deposit must be reported as its own holding, not pooled with the market');
+  if (twoPct.capital !== 10000) fail(`a deposit's principal does not compound — expected 10,000 flat, got ${twoPct.capital}`);
+  if (twoPct.ratePct !== 2) fail(`the rate he stated must still be shown, even though the bucket itself sits at 0%, got ${twoPct.ratePct}`);
 
   // EVERY rate in the plan is one he stated. The old version hard-coded 3.5/5/7 and applied them
   // to certificates paying 20% and to cash paying nothing.
@@ -559,10 +563,18 @@ function must(el, panel, needles, label) {
     // reads has to use it, not just the year-by-year table three sections down.
     if (!plan.includes('term to')) fail('a lump with a stated term must say so in its own line, not only in the "ends" label');
   }
-  const buckets2 = S.forecast.mid.rows[1].breakdown.buckets;
-  if (!buckets2.some((b) => b.label === 'Deposit' && b.ratePct === 17)) fail('while its term runs, the deposit compounds at its own rate');
+  // While its term runs: the principal sits flat at what he typed (2,000,000 EGP), the rate he
+  // stated still shows (17%, so it did not silently vanish), and the coupon it pays is its own
+  // line — "if I didn't put it on deposit it will be sitting on my account" is this piece, priced.
+  const dep1 = S.forecast.mid.rows[1].breakdown.buckets.find((b) => b.label === 'Deposit');
+  if (!dep1) fail('the deposit should be its own bucket while its term runs');
+  if (Math.round(dep1.capital) !== Math.round(2000000 / 54)) fail(`the principal must sit flat at what he typed, got ${dep1.capital}`);
+  if (dep1.ratePct !== 17) fail(`the stated rate must still be shown even though the bucket itself does not compound, got ${dep1.ratePct}`);
+  if (!S.forecast.mid.rows[1].breakdown.pieces.some((p) => p.label === 'Deposit interest' && p.monthly > 0)) {
+    fail('the coupon must be its own line, arriving as cash — not folded back into the principal');
+  }
   const afterTerm = S.forecast.mid.rows[7].breakdown.buckets;
-  if (afterTerm.some((b) => b.label === 'Deposit')) fail('past its own "ends" label, the deposit must stop compounding at 17% — this is the bug he found');
+  if (afterTerm.some((b) => b.label === 'Deposit')) fail('past its own "ends" label, the deposit must stop paying 17% — this is the bug he found');
   if (S.forecast.mid.rows[9].capital !== S.forecast.mid.rows[6].capital) {
     fail('capital must sit flat once a term deposit matures, not keep growing at a rate the table says has ended');
   }

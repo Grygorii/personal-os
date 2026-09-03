@@ -231,10 +231,10 @@ a price without one: it looks current.
 2. Railway → same project → **New Service** → same repo.
 3. Start command: `npm run start:pocket`.
 4. Env vars above, `DB_NAME=pocket` among them.
-5. Look for `[boot] pocket-25 · db=pocket · base=EUR`.
+5. Look for `[boot] pocket-26 · db=pocket · base=EUR`.
 
 **Which build is actually serving?** `GET /health` (or `/version`) answers without Telegram —
-`{"ok":true,"app":"pocket","version":"pocket-25"}`. The marker lives in `src/pocket/version.js`;
+`{"ok":true,"app":"pocket","version":"pocket-26"}`. The marker lives in `src/pocket/version.js`;
 bump it on every deploy. Kept has `GET /version` for exactly the same reason: "is my change even
 out there yet" is the first question of every deploy, and guessing at it wastes an evening.
 
@@ -781,31 +781,48 @@ when no piece — from either place — already speaks for that holding). Un-ann
 the only honest way *"are the deposits paying the loans"* can be answered at all: income in and
 spending out, from the same holdings, netting to whatever it really nets to — for him, still no.
 
-### A lump with a term is a deposit, and deposits mature
+### A lump with a rate is a deposit, and a deposit pays its rate out
 
 He typed a real one to test the template's idea: 2,000,000 EGP, 17%, from year 5 to year 8 — a
-deposit he plans to make. The year-by-year table said "Deposit ends" in year 8, right on schedule.
-The money did not agree: it kept compounding at 17% every year after, straight through year 10,
-because **nothing in `forecast()` was reading a lump's `until year` at all.** For a recurring
-piece — income, spending, a contribution — `until year` stops the monthly flow, which is the whole
-of what it needs to do. A `lump` has no monthly flow to stop; the app printed the label and moved
-on, and the number kept growing under a heading that had already told him it was over.
+deposit he plans to make. Two things about it were wrong, found a day apart, and both traced to the
+same root cause: **a hand-typed lump with a rate had never been taught to behave like the real
+deposits already living in this app.**
 
-**A lump with a rate and a term is the same shape as a real certificate**, and it has to mature the
-same way. It now gets its own bucket — keyed by the piece's own id, not shared with every other
-lump at the same rate, so two deposits at 17% with different terms don't mature on the same day —
-and the maturity rule that already moved a real holding's principal back to plain cash at its
-`untilYear` now applies here too. Past year 8, that money is ordinary cash, following whatever the
-"everything else" assumption is set to, exactly like a matured certificate does everywhere else in
-this app. A lump with a rate and **no** term still compounds forever, deliberately and unchanged —
-"until year" is the only thing that ever meant "this is a deposit, not an investment left running."
+**First, the term.** The year-by-year table said "Deposit ends" in year 8, right on schedule. The
+money did not agree — it kept compounding at 17% every year after, straight through year 10,
+because nothing in `forecast()` was reading a lump's `until year` at all. For a recurring piece —
+income, spending, a contribution — `until year` stops the monthly flow, which is the whole of what
+it needs to do. A `lump` has no monthly flow to stop, so the app printed the label and moved on,
+and the number kept growing under a heading that had already told him it was over.
 
-Two casualties of the same gap, also fixed: the pieces list showed nothing of the "until year" a
-lump had been given — the only place it appeared was the year-by-year table's "ends" label, three
-sections and a scroll away from the piece itself — so a lump's own line now reads "…once in 2030,
-term to 2033." And the tap-a-year drill-down described **every** bucket as "held flat — a
-certificate does not compound," which was true of a real holding and false of exactly this kind of
-piece; it now says which one it actually is.
+**Then the deeper one, once the term fix made it visible.** *"I see you compound the deposit, it is
+wrong — % received accumulate, but if I didn't put it on deposit it will be sitting on my
+account."* He was right about that too, and it is the same rule `depositProgress` already applies
+to every real certificate: **a deposit's rate does not compound its own balance.** It pays a coupon
+out — the household's cash, sitting wherever he leaves it, not reinvested unless he says so — and
+this app already knew that for a real account. A hand-typed lump had no account behind it to
+consult, so its own bucket just compounded at whatever rate he gave it, the same mistake the
+"deposits are paying the loan" fix had already corrected for real holdings, made again here for a
+piece he typed by hand.
+
+**A lump with a rate is now always its own bucket, held flat, paired with an automatic coupon** —
+`forecast()` splits it the moment it sees one: the principal stays exactly what he typed, for as
+long as he holds it, and the rate becomes a second, generated piece — an `income` line, the coupon,
+landing as ordinary cash and following whatever "everything else" is set to (nought, by default).
+A term still ends it the same way a real certificate ends: past `until year`, the bucket **and its
+coupon** are both gone, the principal rejoins plain cash, and nothing keeps paying 17% past a label
+that already said it was over. A lump with a rate and no term never matures, but its principal still
+never compounds — the coupon just keeps arriving, for as long as he holds it. Two 17% deposits with
+different terms mature independently; nothing is ever shared between two different pieces just
+because they happen to name the same rate.
+
+Two casualties of the same gap, also fixed: the pieces list showed nothing of a lump's term or of
+what its rate actually did — a deposit's own line now reads *"…once in 2030, term to 2033 · pays 17%
+out, as its own coupon"* rather than the old, wrong *"grows at 17%."* And the tap-a-year drill-down
+described **every** bucket as "held flat — a certificate does not compound," which was true of a
+real holding and, at the time, false of a rate-bearing lump; now that a lump is held the same way,
+it is finally the same true sentence for both, and the rate he stated (not the bucket's own,
+now-flat 0%) is still the one shown.
 
 ### Real years, not "year 1, year 2"
 

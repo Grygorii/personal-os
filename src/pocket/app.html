@@ -814,7 +814,11 @@ function drawPlan() {
       <span class="dot ${e.kind === 'spending' ? 'out' : 'in'}"></span>
       <div class="rmain">
         <div class="rlabel">${esc(e.label || e.kind)}</div>
-        <div class="rmeta">${esc(what[e.kind] || e.kind)} · ${per(e)}${sellNote(e)}${e.ratePct != null ? ` · grows at ${e.ratePct}%` : (e.kind === 'asset' ? ' · holds its value' : '')}</div>
+        ${/* A lump with a rate is a deposit — it PAYS that rate out as a separate coupon, it does
+              not grow on it. Saying "grows at 17%" here would be the exact thing he caught. */ ''}
+        <div class="rmeta">${esc(what[e.kind] || e.kind)} · ${per(e)}${sellNote(e)}${e.ratePct != null
+          ? (e.kind === 'lump' ? ` · pays ${e.ratePct}% out, as its own coupon` : ` · grows at ${e.ratePct}%`)
+          : (e.kind === 'asset' ? ' · holds its value' : '')}</div>
       </div>
       <button class="edit" data-plan-edit="${esc(e.id)}" aria-label="Edit">✎</button>
       <button class="del" data-plan-del="${esc(e.id)}" aria-label="Remove">×</button>
@@ -1332,8 +1336,11 @@ function openPlanEvent(existing) {
       ${field('For about', input('sellFor', e.sellFor ?? '', 'inputmode="decimal" placeholder="what you think it fetches"'))}
     </div>
     <div class="note" style="margin-top:0">Year 1 is the next twelve months, so <b>from year 1</b>
-    means starting now. Leave the rate empty and it grows with the market range; put <b>2</b> there
-    for a deposit paying 2% and it grows at 2% instead.
+    means starting now. Leave the rate empty and it follows the market assumption below.
+    <b>A one-off with a rate is a deposit</b> — put <b>2</b> there for 10,000 once at 2% and it pays
+    that 2% out each year as its own coupon, the same as a real certificate; the 10,000 itself does
+    not grow. <b>Something you put in or that arrives, with a rate, does compound</b> — money you
+    keep adding and keep reinvesting.
     <br><br><b>Say which currency.</b> Cairo rent of 18,000 is 18,000 EGP — about
     ${money(18000 / 59)} — and read as ${esc(S.base)} it would put two and a half million on the
     ten-year line. It is converted at today's rate wherever it is shown.

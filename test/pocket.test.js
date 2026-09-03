@@ -1056,26 +1056,28 @@ test('cleanEvent: a piece can carry its own rate and its own end', () => {
   assert.equal(cleanEvent({ atYear: 1, untilYear: 4 }).untilYear, 4);
 });
 
-test('forecast: money with its own rate grows at its own rate', () => {
+test('forecast: money with its own rate pays that rate out — a lump is a deposit, not a fund', () => {
   const opts = {
     startCapital: 0, monthlySurplus: 0, years: 10, yieldPct: 5,
-    events: [{ atYear: 1, kind: 'lump', amount: 10000, ratePct: 2, label: 'deposit at 2%' }],
+    events: [{ id: 'e3', atYear: 1, kind: 'lump', amount: 10000, ratePct: 2, label: 'deposit at 2%' }],
   };
   const f = forecast(opts);
-  // 10,000 × 1.02^10 = 12,190. At the 5% the rest of the plan uses it would be 16,289 — and
-  // that gap over one line is why a plan cannot compound every kind of money at one figure.
-  assert.equal(Math.round(f.ownRate[0].capital), 12190);
-  assert.equal(f.ownRate[0].ratePct, 2);
-  assert.equal(Math.round(f.endCapital), 12190);
+  // He caught this directly: "if I didn't put it on deposit it will be sitting on my account." A
+  // deposit's rate does not compound its own balance — the principal sits at 10,000, flat, and
+  // the 2% becomes a coupon that lands as ordinary cash and follows whatever HE has set for money
+  // with no rate of its own (here, the market's 5%, which is why the total ends up above what 2%
+  // compounding alone would ever produce).
+  assert.equal(Math.round(f.ownRate[0].capital), 10000, 'the principal itself never grows');
+  assert.equal(f.ownRate[0].ratePct, 2, 'but the rate he stated is still the honest answer to "what is this at"');
+  assert.equal(Math.round(f.endCapital), 12516);
 
-  const market = forecast({ ...opts, events: [{ atYear: 1, kind: 'lump', amount: 10000, label: 'lump' }] });
+  const market = forecast({ ...opts, events: [{ id: 'm1', atYear: 1, kind: 'lump', amount: 10000, label: 'lump' }] });
   assert.equal(Math.round(market.endCapital), Math.round(10000 * 1.05 ** 10));
   assert.equal(market.ownRate.length, 0, 'no stated rate, no separate bucket');
-  assert.ok(market.endCapital > f.endCapital, '5% beats 2%, and the plan has to show which is which');
 
-  // The passive income each produces follows its own rate too, or a plan half in deposits
-  // reports itself as though all of it were in the market.
-  assert.ok(Math.abs(f.endPassive - (f.endCapital * 0.02) / 12) < 0.01);
+  // The coupon is passive income the moment it arrives, not something waiting on the principal
+  // to compound — this is the whole point of paying it out rather than reinvesting it.
+  assert.ok(f.rows[0].passiveMonthly >= (10000 * 0.02) / 12 - 0.01);
 });
 
 test('forecast: his actual sentence, priced', () => {
@@ -1088,17 +1090,18 @@ test('forecast: his actual sentence, priced', () => {
       { atYear: 3, kind: 'income', amount: 600, label: 'second apartment' },
     ],
   });
-  // Year 1: 950 a month in, plus the 10,000 deposit.
-  assert.equal(f.rows[0].monthlyContribution, 950);
-  assert.equal(Math.round(f.rows[0].contributedThisYear), 11400);
-  // Year 3: the second apartment lands and 1,550 a month goes in.
-  assert.equal(f.rows[2].monthlyContribution, 1550);
+  // Year 1: 950 a month from salary and rent, PLUS the deposit's own coupon (16.67, paid out —
+  // not reinvested into the deposit, so it shows here alongside everything else that arrived).
+  assert.equal(Math.round(f.rows[0].monthlyContribution * 100) / 100, 966.67);
+  assert.equal(Math.round(f.rows[0].contributedThisYear), 11600);
+  // Year 3: the second apartment lands and the same total, now 1,600 a month higher, goes in.
+  assert.equal(Math.round(f.rows[2].monthlyContribution * 100) / 100, 1566.67);
   assert.deepEqual(f.rows[2].events, ['second apartment']);
   // Rent counts towards the goal the moment it arrives — that is what makes it income and not
   // just a contribution.
   assert.ok(f.rows[0].passiveMonthly > 450);
   assert.ok(f.rows[2].passiveMonthly > 1050);
-  assert.equal(Math.round(f.endCapital), 224332);
+  assert.equal(Math.round(f.endCapital), 224657);
 });
 
 test('forecast: a line that ends, ends', () => {
@@ -1134,18 +1137,24 @@ test('forecast: an income that ends stops counting towards the goal', () => {
 // in year 8 while the capital kept compounding at 17% for ever past it. A lump with a rate AND a
 // term is a deposit, and a deposit matures — the same rule `startBuckets` already followed.
 
-test('forecast: a lump with a rate AND a term matures — it does not compound forever past its "ends" label', () => {
+test('forecast: a lump with a rate pays it out and, with a term, matures — never compounds forever past "ends"', () => {
   const f = forecast({
     monthlySurplus: 0, years: 10, yieldPct: 0,
     events: [{ id: 'd1', atYear: 2, untilYear: 5, kind: 'lump', amount: 10000, ratePct: 17, label: 'Deposit' }],
   });
-  // While its term runs, it compounds at its own rate and shows up as its own bucket.
-  assert.ok(f.rows[3].breakdown.buckets.some((b) => b.label === 'Deposit'), 'the deposit is its own bucket while its term runs');
-  // Past the term, the bucket is gone and the capital sits flat — not still growing at 17%. (The
-  // scenario yield is nought here, so "flat" is literal: nothing is left to grow it further.)
+  // While its term runs, the PRINCIPAL sits in its own bucket, flat — never 17% compounding — and
+  // the rate becomes a separate coupon, paid out as ordinary cash.
+  const bucket3 = f.rows[3].breakdown.buckets.find((b) => b.label === 'Deposit');
+  assert.ok(bucket3, 'the deposit is its own bucket while its term runs');
+  assert.equal(bucket3.capital, 10000, 'the principal itself never grows');
+  assert.equal(bucket3.ratePct, 17, 'but the rate he stated is still shown — it did not disappear');
+  assert.ok(f.rows[3].breakdown.pieces.some((p) => p.label === 'Deposit interest' && p.monthly > 0), 'the coupon is its own line, arriving as cash');
+  // Past the term, the bucket AND its coupon are gone — the deposit has matured, exactly when its
+  // "ends" label said it would, not compounding at 17% for years after.
   assert.ok(!f.rows[6].breakdown.buckets.some((b) => b.label === 'Deposit'), 'the bucket is gone once the term is up');
-  assert.equal(f.rows[9].capital, f.rows[6].capital, 'and the capital does not keep compounding at 17% after "Deposit ends"');
-  assert.ok(f.rows[6].capital > 0, 'sanity: the money itself is not lost, only its own rate');
+  assert.ok(!f.rows[6].breakdown.pieces.some((p) => p.label === 'Deposit interest'), 'and so is its coupon');
+  assert.equal(f.rows[9].capital, f.rows[6].capital, 'capital sits flat once matured — nothing left to grow it at a nought scenario yield');
+  assert.equal(f.rows[6].capital, 16800, '10,000 principal + 17% simple interest for 4 years while it ran (2 to 5)');
   // Two lumps at the SAME rate but different terms must not share a maturity date.
   const two = forecast({
     monthlySurplus: 0, years: 10, yieldPct: 0,
@@ -1156,14 +1165,16 @@ test('forecast: a lump with a rate AND a term matures — it does not compound f
   });
   assert.ok(two.rows[4].breakdown.buckets.some((b) => b.label === 'Deposit B'), 'Deposit B is still earning at year 5');
   assert.ok(!two.rows[4].breakdown.buckets.some((b) => b.label === 'Deposit A'), 'Deposit A already matured, independently of B');
-  // A lump with a rate but NO term still compounds forever — this is deliberate and unchanged.
-  // (The shared, rate-keyed bucket labels itself by rate, not by the piece's own label — also
-  // unchanged; only a bucket with a term is identified by holding, the way a real deposit is.)
+  // A lump with a rate but NO term never matures — its coupon just keeps arriving, for ever. The
+  // principal still never compounds: this is not "put it back on deposit", it is "leave it be".
   const forever = forecast({
     monthlySurplus: 0, years: 10, yieldPct: 0,
     events: [{ id: 'd3', atYear: 1, kind: 'lump', amount: 10000, ratePct: 2, label: 'no term' }],
   });
-  assert.ok(forever.rows[9].breakdown.buckets.some((b) => b.label === '2%'), 'without an until year, nothing matures it');
+  const foreverBucket = forever.rows[9].breakdown.buckets.find((b) => b.label === 'no term');
+  assert.ok(foreverBucket, 'without an until year, nothing matures it');
+  assert.equal(foreverBucket.capital, 10000, 'and the principal still does not compound');
+  assert.equal(forever.endCapital, 12000, '10,000 + 2% simple interest for 10 years, not 1.02^10');
 });
 
 // ---- A flat, and the rent it pays ----

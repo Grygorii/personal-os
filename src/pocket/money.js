@@ -735,7 +735,25 @@ export function forecast({
 } = {}) {
   const n = Math.max(1, Math.min(60, Math.round(num(years)) || 10));
   const y = num(yieldPct) / 100;
-  const evts = (Array.isArray(events) ? events : []).map(cleanEvent);
+
+  // A LUMP WITH A RATE IS A DEPOSIT, AND A DEPOSIT PAYS ITS RATE OUT.
+  //
+  // He typed one — "Deposit", a lump at 17% — and caught the app compounding it: the balance and
+  // the interest both climbing year over year, as though every coupon were being put straight back
+  // in. "If I didn't put it on deposit it will be sitting on my account" is the whole correction —
+  // the same rule `depositProgress` already applies to every real account (simple interest, paid
+  // out, principal untouched), just missing here because a hand-typed lump has no account behind
+  // it to consult. So a lump's own rate never compounds its own bucket: it becomes a paired,
+  // automatic coupon instead — landing as ordinary cash he can then do whatever he likes with,
+  // running for exactly as long as the deposit itself does. `bucketFor` holds the principal flat.
+  const evts = (Array.isArray(events) ? events : []).map(cleanEvent).flatMap((e) => (
+    e.kind === 'lump' && e.ratePct > 0
+      ? [e, {
+          ...e, id: `${e.id}:coupon`, kind: 'income', ratePct: null,
+          label: `${e.label || 'deposit'} interest`, amount: (e.amount * e.ratePct) / 100 / 12,
+        }]
+      : [e]
+  ));
 
   // MONEY IN BUCKETS, ONE PER RATE.
   //
@@ -767,15 +785,22 @@ export function forecast({
       return buckets.get(key);
     }
     if (e.ratePct == null) return buckets.get('default');
-    // A LUMP WITH A TERM IS A DEPOSIT — "10,000 at 2%, until year 5" is the same shape as a real
-    // certificate, and has to mature the same way: on its own, in its own bucket, so it does not
-    // share a maturity date with some other lump that happens to carry the same rate. Without this
-    // its "until year" printed an "ends" label in the year-by-year table while the money kept
-    // compounding at its stated rate for ever — the app announcing a maturity that never happened.
-    if (e.kind === 'lump' && e.untilYear != null) {
+    // A LUMP IS A DEPOSIT, ALWAYS ITS OWN BUCKET — never shared with another piece that happens to
+    // carry the same rate, so two different deposits (even at an identical rate) are named
+    // individually and, when one of them has a term, mature independently of the other. Its rate
+    // sits at 0: the interest is a paired coupon (above), so the principal itself never compounds —
+    // "10,000 at 2%, until year 5" is the same shape as a real certificate, and matures the same
+    // way, on the year it says it does, not for ever past it.
+    if (e.kind === 'lump') {
       const key = `e:${e.id}`;
       if (!buckets.has(key)) {
-        buckets.set(key, { rate: num(e.ratePct) / 100, capital: 0, monthly: 0, label: e.label || `${e.ratePct}%`, untilYear: e.untilYear });
+        buckets.set(key, {
+          rate: 0, capital: 0, monthly: 0, label: e.label || `${e.ratePct}%`, untilYear: e.untilYear || null,
+          // Held the same way a real account is: nothing grows the principal itself. `statedRatePct`
+          // is what he actually typed, kept only so the drill-down can still say "17%" rather than
+          // "0%" — the rate did not disappear, it just stopped compounding.
+          held: true, statedRatePct: e.ratePct,
+        });
       }
       return buckets.get(key);
     }
@@ -865,11 +890,17 @@ export function forecast({
           .map((x) => ({ label: `${x.label || 'asset'} sold`, kind: 'sale', auto: x.auto, once: x.sellFor })),
       ],
       // What is actually growing, bucket by bucket — a 2% deposit and the market are not one line.
-      // `held` says whether this is a real holding sitting flat (its coupon is a piece elsewhere,
-      // wherever it is earning) or a rate he stated himself, which DOES compound — the drill-down
-      // must never describe one as though it were the other.
+      // `held` says whether this sits flat because it is a deposit — a real holding, or a lump he
+      // typed with a rate — its coupon a piece elsewhere, wherever it is earning; unheld money
+      // (a contribution or income he gave a rate) DOES compound in its own bucket, and the two must
+      // never be described as though they were the other. `statedRatePct` covers the one case where
+      // the bucket's own rate (0, so it does not compound) is not the rate he actually stated.
       buckets: [...buckets.entries()].filter(([k, b]) => k !== 'default' && b.capital > 0)
-        .map(([, b]) => ({ label: b.label, capital: b.capital, ratePct: b.rate * 100, monthly: (b.capital * b.rate) / 12, held: !!b.held })),
+        .map(([, b]) => ({
+          label: b.label, capital: b.capital,
+          ratePct: b.statedRatePct != null ? b.statedRatePct : b.rate * 100,
+          monthly: (b.capital * b.rate) / 12, held: !!b.held,
+        })),
       everythingElse: def.capital > 0 ? { capital: def.capital, ratePct: y * 100, monthly: (def.capital * y) / 12 } : null,
     };
 
@@ -895,8 +926,13 @@ export function forecast({
     rows,
     yieldPct: num(yieldPct),
     // What sits at a rate of its own, so the page can say "half of this is not market money".
+    // `statedRatePct` covers a deposit (real, or a lump he gave a rate): its bucket sits at 0 so it
+    // does not compound, but the rate he stated is still the honest answer to "what is this at".
     ownRate: [...buckets.entries()].filter(([k]) => k !== 'default' && buckets.get(k).capital > 0)
-      .map(([, b]) => ({ ratePct: b.rate * 100, capital: b.capital, label: b.label, asset: !!b.asset, held: !!b.held })),
+      .map(([, b]) => ({
+        ratePct: b.statedRatePct != null ? b.statedRatePct : b.rate * 100,
+        capital: b.capital, label: b.label, asset: !!b.asset, held: !!b.held,
+      })),
     endCapital: rows[rows.length - 1].capital,
     endPassive: rows[rows.length - 1].passiveMonthly,
     goalReachedInYear: hit ? hit.year : null,
