@@ -231,10 +231,10 @@ a price without one: it looks current.
 2. Railway → same project → **New Service** → same repo.
 3. Start command: `npm run start:pocket`.
 4. Env vars above, `DB_NAME=pocket` among them.
-5. Look for `[boot] pocket-17 · db=pocket · base=EUR`.
+5. Look for `[boot] pocket-18 · db=pocket · base=EUR`.
 
 **Which build is actually serving?** `GET /health` (or `/version`) answers without Telegram —
-`{"ok":true,"app":"pocket","version":"pocket-17"}`. The marker lives in `src/pocket/version.js`;
+`{"ok":true,"app":"pocket","version":"pocket-18"}`. The marker lives in `src/pocket/version.js`;
 bump it on every deploy. Kept has `GET /version` for exactly the same reason: "is my change even
 out there yet" is the first question of every deploy, and guessing at it wastes an evening.
 
@@ -605,6 +605,25 @@ million on his screen.
 
 Anything stored before pieces had a currency reads as the base, because that is what it was typed
 as. €2,771,911 became €46,048.
+
+### Something you own
+
+He asked why year one read €39,162 when he had listed €304 a month. It was right, and it was
+unexplained: the plan starts from what he **already has invested** — his deposits and portfolio —
+and the tab listed only what he *adds*. That figure is now a row in the plan like any other.
+
+Then the piece he actually wanted: `asset`. A flat is not money in a pot.
+
+- It **joins the capital and does not grow.** A building quietly compounding at the market yield is
+  a fantasy, and over ten years that difference is most of the answer — €27,000 held is €27,000;
+  as a market lump it would read €39,000. He can give it a rate if he believes in one.
+- **If he expects to sell, he names a price and a year.** *"I think it fetches €40,000 in year
+  six"* is a belief he can defend; *"it grows 6% a year for ever"* is not. On that year the flat
+  leaves and the proceeds become cash that does follow the market.
+- **The rent is a separate piece** — `this money arrives`, with `until year` set to the year he
+  sells. So the goal counts it while the flat is let, and stops when it is gone.
+
+Each asset gets its own bucket, so selling one is exact rather than a share of a pool.
 
 ### Money in buckets, one per rate
 

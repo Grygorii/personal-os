@@ -791,17 +791,23 @@ function drawPlan() {
   const amt = (e) => (e.currency && e.currency !== S.base)
     ? `${Math.round(e.amount).toLocaleString()} ${esc(e.currency)}${e.amountInBase != null ? ` (${money(e.amountInBase)})` : ' — no rate'}`
     : money(e.amount);
-  const per = (e) => e.kind === 'lump'
+  const per = (e) => e.kind === 'asset'
+    ? `worth ${amt(e)}${e.atYear > 1 ? `, from year ${e.atYear}` : ''}`
+    : e.kind === 'lump'
     ? `${amt(e)} once in year ${e.atYear}`
     : `${amt(e)} a month from year ${e.atYear}${e.untilYear ? ` to ${e.untilYear}` : ''}`;
-  const what = { contribution: 'you put in', income: 'arrives', spending: 'goes out', lump: 'one-off' };
+  const what = { contribution: 'you put in', income: 'arrives', spending: 'goes out', lump: 'one-off', asset: 'you own' };
+  const sellNote = (e) => e.kind !== 'asset' ? ''
+    : e.sellAtYear
+      ? ` · sell in year ${e.sellAtYear}${e.sellFor != null ? ` for ${e.currency !== S.base ? `${Math.round(e.sellFor).toLocaleString()} ${esc(e.currency)}` : money(e.sellFor)}` : ''}`
+      : ' · keeping it';
 
   const pieces = (S.events || []).map((e) => `
     <div class="row">
       <span class="dot ${e.kind === 'spending' ? 'out' : 'in'}"></span>
       <div class="rmain">
         <div class="rlabel">${esc(e.label || e.kind)}</div>
-        <div class="rmeta">${esc(what[e.kind] || e.kind)} · ${per(e)}${e.ratePct != null ? ` · grows at ${e.ratePct}%` : ''}</div>
+        <div class="rmeta">${esc(what[e.kind] || e.kind)} · ${per(e)}${sellNote(e)}${e.ratePct != null ? ` · grows at ${e.ratePct}%` : (e.kind === 'asset' ? ' · holds its value' : '')}</div>
       </div>
       <button class="edit" data-plan-edit="${esc(e.id)}" aria-label="Edit">✎</button>
       <button class="del" data-plan-del="${esc(e.id)}" aria-label="Remove">×</button>
@@ -809,7 +815,7 @@ function drawPlan() {
 
   const base = S.planBase || 0;
   const listedMonthly = (S.events || [])
-    .filter((e) => e.kind !== 'lump' && e.amountInBase != null)
+    .filter((e) => !['lump', 'asset'].includes(e.kind) && e.amountInBase != null)
     .reduce((n, e) => n + (e.kind === 'spending' ? -e.amountInBase : e.amountInBase), 0);
   const goesIn = base + listedMonthly;
 
@@ -820,6 +826,14 @@ function drawPlan() {
         <span class="${goesIn >= 0 ? 'in' : 'out'}" style="font-weight:700;font-variant-numeric:tabular-nums">${money(goesIn)}<span style="color:var(--dim);font-weight:400"> a month</span></span>
       </div>
 
+      ${S.planStartCapital > 0 ? `<div class="row">
+        <span class="dot in"></span>
+        <div class="rmain">
+          <div class="rlabel">What you already have invested</div>
+          <div class="rmeta">your deposits and portfolio, today — the plan grows this too</div>
+        </div>
+        <div class="ramt in">${money(S.planStartCapital)}</div>
+      </div>` : ''}
       <div class="row">
         <span class="dot ${S.planUseMeasured ? 'in' : 'out'}"></span>
         <div class="rmain">
@@ -843,7 +857,9 @@ function drawPlan() {
       </div>
       <div class="big in">${money(mid.endPassive)}<span style="font-size:15px;color:var(--dim);font-weight:400">/mo without working</span></div>
       <div class="sub">${money(mid.endCapital)} invested after ${yrs} years · ${money(low.endCapital)} to ${money(high.endCapital)} depending on yield</div>
-      ${mid.ownRate.length ? `<div class="note">${mid.ownRate.map((b) => `${money(b.capital)} of that is at your own ${b.ratePct}%`).join(', ')}.</div>` : ''}
+      ${mid.ownRate.length ? `<div class="note">${mid.ownRate.map((b) => b.asset
+        ? `${money(b.capital)} of that is ${esc(b.label)}, ${b.ratePct ? `growing at ${b.ratePct}%` : 'held at what it is worth'} — not money in the market`
+        : `${money(b.capital)} of that is at your own ${b.ratePct}%`).join('. ')}.</div>` : ''}
       ${goal > 0 ? (mid.goalReachedInYear
         ? `<div class="sub in" style="margin-top:8px">You reach ${money(goal)} a month in year ${mid.goalReachedInYear}.</div>`
         : `<div class="sub" style="margin-top:8px">Not enough to reach ${money(goal)} a month inside ${yrs} years. Adding to what goes in moves this far more than a better yield does.</div>`) : ''}
@@ -854,7 +870,7 @@ function drawPlan() {
       <table class="yrs">
         <thead><tr><th>Year</th><th>Invested</th><th>Per month</th></tr></thead>
         <tbody>${mid.rows.map((r) => `<tr${goal > 0 && r.passiveMonthly >= goal ? ' class="hit"' : ''}>
-          <td>${r.year}${r.events.length ? ` <span style="color:var(--dim)">· ${esc(r.events.join(', '))}</span>` : ''}${r.ends.length ? ` <span style="color:var(--dim)">· ${esc(r.ends.join(', '))} ends</span>` : ''}</td>
+          <td>${r.year}${r.events.length ? ` <span style="color:var(--dim)">· ${esc(r.events.join(', '))}</span>` : ''}${r.ends.length ? ` <span style="color:var(--dim)">· ${esc(r.ends.join(', '))} ends</span>` : ''}${r.sold?.length ? ` <span style="color:var(--dim)">· ${esc(r.sold.join(', '))} sold</span>` : ''}</td>
           <td class="n">${money(r.capital)}</td>
           <td class="n">${money(r.passiveMonthly)}</td>
         </tr>`).join('')}</tbody>
@@ -1208,6 +1224,8 @@ $('esave').onclick = async () => {
     const piece = {
       label: v.label, kind: v.kind, currency: v.currency,
       amount: Number(v.amount), atYear: Number(v.atYear),
+      sellAtYear: v.sellAtYear === '' ? null : Number(v.sellAtYear),
+      sellFor: v.sellFor === '' ? null : Number(v.sellFor),
       // Empty means "whatever the market does" and "forever" — both are real answers, so both
       // are stored as null rather than as a zero that would quietly mean something else.
       ratePct: v.ratePct === '' ? null : Number(v.ratePct),
@@ -1256,6 +1274,7 @@ function openPlanEvent(existing) {
       { v: 'contribution', t: 'I put this in every month' },
       { v: 'income', t: 'this money arrives every month' },
       { v: 'lump', t: 'I add this once' },
+      { v: 'asset', t: 'something I own — a flat, a car' },
       { v: 'spending', t: 'this costs me every month' },
     ], e.kind))}
     <div class="two">
@@ -1267,12 +1286,22 @@ function openPlanEvent(existing) {
       ${field('From year', input('atYear', e.atYear, 'inputmode="numeric"'))}
       ${field('Until year', input('untilYear', e.untilYear ?? '', 'inputmode="numeric" placeholder="forever"'))}
     </div>
+    <div class="two">
+      ${field('If you sell it, in year', input('sellAtYear', e.sellAtYear ?? '', 'inputmode="numeric" placeholder="keeping it"'))}
+      ${field('For about', input('sellFor', e.sellFor ?? '', 'inputmode="decimal" placeholder="what you think it fetches"'))}
+    </div>
     <div class="note" style="margin-top:0">Year 1 is the next twelve months, so <b>from year 1</b>
     means starting now. Leave the rate empty and it grows with the market range; put <b>2</b> there
     for a deposit paying 2% and it grows at 2% instead.
     <br><br><b>Say which currency.</b> Cairo rent of 18,000 is 18,000 EGP — about
     ${money(18000 / 59)} — and read as ${esc(S.base)} it would put two and a half million on the
     ten-year line. It is converted at today's rate wherever it is shown.
+    <br><br><b>“Something I own”</b> is the flat, at what you paid for it or what it is worth. It joins
+    the total and — unless you give it a rate — <b>it does not grow</b>: a building quietly compounding
+    at the market yield is a fantasy, and over ten years that difference is most of the answer. If you
+    expect to sell, say when and for how much; that is a belief you can defend, and "it grows 6% a year
+    for ever" is not. Its rent goes in separately as <b>“this money arrives”</b>, with <b>until year</b>
+    set to the year you sell.
     <br><br><b>“I put this in”</b> is money you move from your pocket into the pot.
     <b>“This money arrives”</b> is rent or a dividend — it goes into the pot too, and it counts
     towards your ${money(S.goal?.target || 2000)} a month goal, which is the only difference.</div>`;

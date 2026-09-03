@@ -333,7 +333,7 @@ test('the scoped col genuinely lacks what these apps need', async () => {
 // Same arithmetic as the challenge document he was shown; the difference is entirely in the
 // presentation. These pin the parts that keep it honest.
 
-import { forecast, forecastRange, cleanEvent } from '../src/pocket/money.js';
+import { forecast, forecastRange, cleanEvent, EVENT_KINDS } from '../src/pocket/money.js';
 
 test('forecast: flat years when nothing is said to change', () => {
   const f = forecast({ startCapital: 1000, monthlySurplus: 1000, years: 10, yieldPct: 5 });
@@ -1745,4 +1745,65 @@ test('a plan piece in a currency with no rate is dropped and named, never passed
   const f = forecast({ startCapital: 0, monthlySurplus: 0, years: 5, yieldPct: 5, events: usable });
   const only = forecast({ startCapital: 0, monthlySurplus: 0, years: 5, yieldPct: 5, events: [{ ...kept }] });
   assert.equal(f.endCapital, only.endCapital);
+});
+
+// ---- Something you own ----
+//
+// "I want to see the price of the apartment I bought it with, and add the expected price I could
+//  sell it with, and rent as passive income."
+//
+// A flat is not money in a pot. It joins the capital, and — unless he says otherwise — IT DOES NOT
+// GROW: a building quietly compounding at the market yield is a fantasy, and over ten years that
+// difference is most of the answer. If he expects to sell, he names a price and a year, which is a
+// belief he can defend in a way "6% a year for ever" is not.
+
+const FLAT_PLAN = (extra = {}) => ({
+  id: 'a1', atYear: 1, kind: 'asset', amount: 27000, label: 'Cairo flat', ...extra,
+});
+const PLAN = (events, years = 8) => forecast({ startCapital: 0, monthlySurplus: 0, years, yieldPct: 5, events });
+
+test('an asset joins the capital and does not grow on its own', () => {
+  const f = PLAN([FLAT_PLAN()]);
+  assert.equal(Math.round(f.rows[0].capital), 27000, 'year one is what it is worth, not 5% more');
+  assert.equal(Math.round(f.rows[7].capital), 27000, 'and it is still that in year eight');
+  // The size of the mistake it avoids: the same 27,000 as a market lump.
+  const asLump = PLAN([{ ...FLAT_PLAN(), kind: 'lump' }]);
+  assert.ok(asLump.rows[7].capital > 39000, `a flat compounding at the market yield reaches ${Math.round(asLump.rows[7].capital)}`);
+
+  // He can still say it appreciates, if that is what he believes.
+  const rising = PLAN([FLAT_PLAN({ ratePct: 3 })]);
+  assert.equal(Math.round(rising.rows[7].capital), Math.round(27000 * 1.03 ** 8));
+  assert.equal(rising.ownRate[0].label, 'Cairo flat', 'and it is named, not lumped in with the market');
+  assert.equal(rising.ownRate[0].asset, true);
+});
+
+test('selling it turns it into money that can be invested', () => {
+  const f = PLAN([FLAT_PLAN({ sellAtYear: 6, sellFor: 40000 })]);
+  assert.equal(Math.round(f.rows[4].capital), 27000, 'still a flat in year five');
+  assert.equal(Math.round(f.rows[5].capital), 40000 * 1.05, 'sold in year six, and the money starts earning');
+  assert.deepEqual(f.rows[5].sold, ['Cairo flat']);
+  assert.equal(Math.round(f.rows[7].capital), Math.round(40000 * 1.05 ** 3));
+
+  // With no price it goes for what it is carried at — no gain invented.
+  const noPrice = PLAN([FLAT_PLAN({ sellAtYear: 6 })]);
+  assert.equal(Math.round(noPrice.rows[5].capital), Math.round(27000 * 1.05));
+  // And never before he says he owns it.
+  assert.equal(cleanEvent({ atYear: 5, kind: 'asset', sellAtYear: 2 }).sellAtYear, 5, 'you cannot sell it the year before you have it');
+  assert.equal(cleanEvent({ kind: 'asset', sellFor: '' }).sellFor, null);
+  assert.equal(cleanEvent({ kind: 'asset' }).sellAtYear, null, 'keeping it is the default');
+});
+
+test('the flat and its rent are two pieces, and the rent stops when it is sold', () => {
+  // Which is the whole shape he described: the price he paid, the price he might get, and the
+  // rent as passive income in between.
+  const f = PLAN([
+    FLAT_PLAN({ sellAtYear: 6, sellFor: 40000 }),
+    { id: 'i1', atYear: 1, kind: 'income', amount: 304, untilYear: 5, label: 'rent from it' },
+  ]);
+  assert.ok(f.rows[0].passiveMonthly > 304, 'while it is let, the rent counts towards the goal');
+  assert.deepEqual(f.rows[4].ends, ['rent from it']);
+  assert.ok(f.rows[5].passiveMonthly < f.rows[4].passiveMonthly, 'once sold there is no more rent');
+  // But the money is still working: what the sale bought now yields at the market rate.
+  assert.ok(f.rows[7].passiveMonthly > f.rows[5].passiveMonthly);
+  assert.deepEqual(EVENT_KINDS, ['contribution', 'lump', 'income', 'spending', 'asset']);
 });

@@ -657,7 +657,13 @@ export function debtVsInvesting(accounts, { expectedYieldPct = 5, rateThen, rate
 // `contribution` is money he puts in. `income` is money that arrives — it also counts towards
 // the passive-income goal, which is the only difference between the two. `spending` is a cost
 // that eats into what he can save. `lump` lands once.
-export const EVENT_KINDS = ['contribution', 'lump', 'income', 'spending'];
+//   "the flat, bought for 27,000, that I might sell for 40,000 in year 6"  → asset
+//
+// An `asset` is a thing he OWNS, not money in a pot: it joins the capital and, unless he says
+// otherwise, IT DOES NOT GROW. A flat quietly compounding at the market yield is a fantasy, and
+// the difference over ten years is most of the answer. If he expects to sell it, he says for how
+// much and when, and that is a far more honest input than any growth rate.
+export const EVENT_KINDS = ['contribution', 'lump', 'income', 'spending', 'asset'];
 
 export function cleanEvent(e) {
   const atYear = Math.max(1, Math.min(60, Math.round(num(e?.atYear)) || 1));
@@ -683,6 +689,11 @@ export function cleanEvent(e) {
     // not describing — usually by tens of thousands over ten years. Null means "whatever the
     // market does", and it follows the scenario yield like everything else.
     ratePct: e?.ratePct == null || e.ratePct === '' ? null : num(e.ratePct),
+    // For an asset: when he expects to sell it, and for how much. Naming a price is honest in a
+    // way a growth rate is not — "I think it will fetch 40,000 in year six" is a belief he can
+    // defend, and "it grows 6% a year for ever" is one nobody can.
+    sellAtYear: e?.sellAtYear == null || !num(e.sellAtYear) ? null : Math.max(atYear, Math.min(60, Math.round(num(e.sellAtYear)))),
+    sellFor: e?.sellFor == null || e.sellFor === '' ? null : Math.max(0, num(e.sellFor)),
     label: txt(e?.label, 80),
   };
 }
@@ -715,6 +726,15 @@ export function forecast({
   // and follows the scenario yield.
   const buckets = new Map([['default', { rate: y, capital: Math.max(0, num(startCapital)), monthly: 0, label: null }]]);
   const bucketFor = (e) => {
+    // Each asset gets its OWN bucket, so selling one is exact rather than a share of a pool —
+    // and so it can sit at 0% while everything else follows the market.
+    if (e.kind === 'asset') {
+      const key = `a:${e.id}`;
+      if (!buckets.has(key)) {
+        buckets.set(key, { rate: num(e.ratePct || 0) / 100, capital: 0, monthly: 0, label: e.label || 'asset', asset: true });
+      }
+      return buckets.get(key);
+    }
     if (e.ratePct == null) return buckets.get('default');
     const key = `r${e.ratePct}`;
     if (!buckets.has(key)) buckets.set(key, { rate: num(e.ratePct) / 100, capital: 0, monthly: 0, label: `${e.ratePct}%` });
@@ -735,6 +755,18 @@ export function forecast({
       else if (e.kind === 'income') { extraIncome += e.amount; b.monthly += e.amount; }
       else if (e.kind === 'spending') { extraSpending += e.amount; buckets.get('default').monthly -= e.amount; }
       else if (e.kind === 'lump') b.capital += e.amount;
+      else if (e.kind === 'asset') b.capital += e.amount;
+    }
+    // Sold: the asset leaves at the price he expects, and the money becomes cash he can invest,
+    // so it moves into the bucket that follows the market. Without a price it goes for whatever
+    // it is carried at — no gain invented.
+    const soldThisYear = [];
+    for (const e of evts.filter((x) => x.kind === 'asset' && x.sellAtYear === year)) {
+      const b = bucketFor(e);
+      const proceeds = e.sellFor != null ? e.sellFor : b.capital;
+      buckets.get('default').capital += proceeds;
+      b.capital = 0; b.monthly = 0;
+      soldThisYear.push(e.label || 'asset');
     }
     for (const e of evts.filter((x) => x.untilYear != null && x.untilYear === year - 1)) {
       const b = bucketFor(e);
@@ -769,6 +801,9 @@ export function forecast({
       goalMet: goalMonthly > 0 ? passive >= goalMonthly : null,
       events: evts.filter((x) => x.atYear === year).map((x) => x.label || x.kind),
       ends: evts.filter((x) => x.untilYear === year).map((x) => x.label || x.kind),
+      // Kept apart from `ends`: a line stopping and an asset being sold are different events,
+      // and the wording for each belongs in the view, not baked into the data.
+      sold: soldThisYear,
     });
   }
 
@@ -777,8 +812,8 @@ export function forecast({
     rows,
     yieldPct: num(yieldPct),
     // What sits at a rate of its own, so the page can say "half of this is not market money".
-    ownRate: [...buckets.entries()].filter(([k]) => k !== 'default')
-      .map(([, b]) => ({ ratePct: b.rate * 100, capital: b.capital })),
+    ownRate: [...buckets.entries()].filter(([k]) => k !== 'default' && buckets.get(k).capital > 0)
+      .map(([, b]) => ({ ratePct: b.rate * 100, capital: b.capital, label: b.label, asset: !!b.asset })),
     endCapital: rows[rows.length - 1].capital,
     endPassive: rows[rows.length - 1].passiveMonthly,
     goalReachedInYear: hit ? hit.year : null,

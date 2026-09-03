@@ -347,7 +347,11 @@ export function buildState({ base = 'EUR', table, monthKey, accounts = [], spanF
       startCapital: invested,
       monthlySurplus: plan.useMeasured ? cur.surplus : 0,
       events: plan.list
-        .map((e) => ({ ...e, amount: fx.toBase(e.amount, e.currency, table) }))
+        .map((e) => ({
+          ...e,
+          amount: fx.toBase(e.amount, e.currency, table),
+          sellFor: e.sellFor == null ? null : fx.toBase(e.sellFor, e.currency, table),
+        }))
         // No rate, no amount. Excluded and named above, never passed through as though the
         // number were euro — which is exactly the failure that put 2.77 million on his screen.
         .filter((e) => e.amount != null),
@@ -355,7 +359,11 @@ export function buildState({ base = 'EUR', table, monthKey, accounts = [], spanF
       years: Number(plan.years) || 10,
       goalMonthly: goal?.monthly || 0,
     }),
-    events: plan.list.map((e) => ({ ...e, amountInBase: fx.toBase(e.amount, e.currency, table) })),
+    events: plan.list.map((e) => ({
+      ...e,
+      amountInBase: fx.toBase(e.amount, e.currency, table),
+      sellForInBase: e.sellFor == null ? null : fx.toBase(e.sellFor, e.currency, table),
+    })),
     forecastYears: Number(plan.years) || 10,
   };
 }
