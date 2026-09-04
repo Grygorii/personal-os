@@ -671,15 +671,48 @@ export function debtVsInvesting(accounts, { expectedYieldPct = 5, rateThen, rate
 // much and when, and that is a far more honest input than any growth rate.
 export const EVENT_KINDS = ['contribution', 'lump', 'income', 'spending', 'asset'];
 
-export function cleanEvent(e) {
-  const atYear = Math.max(1, Math.min(60, Math.round(num(e?.atYear)) || 1));
+/** A day, from whatever he typed or whatever was stored: a timestamp, an ISO date, or the dotted
+ *  day-first form he actually writes. Never a guess — anything unreadable is null. */
+const dayOf = (v) => {
+  if (v == null || v === '') return null;
+  if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+  if (v instanceof Date) return Number.isFinite(v.getTime()) ? v.getTime() : null;
+  return parseDate(v);
+};
+
+/** "Let's make data should be complete day month year."
+ *
+ *  A plan piece used to carry a YEAR NUMBER and nothing else, so "from year 1" was as precise as
+ *  it got — he typed 28.05.2027 into that box and the form rejected it. Pieces carry real dates
+ *  now. The year index has not gone anywhere: it is DERIVED from the date, so every part of this
+ *  file that reasons in plan years (buckets maturing, a term ending, the year-by-year table) is
+ *  unchanged, and a piece stored before dates existed still works exactly as it did.
+ *
+ *  The year is the CALENDAR year, matching what the table prints: a date in 2027 read on a day in
+ *  2026 is year 2, because the table's second row says 2027. */
+export function cleanEvent(e, now = Date.now()) {
+  const thisYear = new Date(now).getUTCFullYear();
+  const yearOfDay = (ts) => Math.max(1, Math.min(60, new Date(ts).getUTCFullYear() - thisYear + 1));
+  const atDate = dayOf(e?.atDate);
+  const atYear = atDate != null ? yearOfDay(atDate)
+    : Math.max(1, Math.min(60, Math.round(num(e?.atYear)) || 1));
+  const untilDate = dayOf(e?.untilDate);
+  const sellAtDate = dayOf(e?.sellAtDate);
   return {
     id: txt(e?.id, 32) || newId(),
-    // Which year of the plan it takes effect. Year 1 is the next twelve months.
+    // Which year of the plan it takes effect — the calendar year the table prints. Year 1 is the
+    // one already under way, and it counts only the months of it that are actually left.
     atYear,
+    // The day itself, when he gave one. `atYear` above is read off this; this is what the form
+    // shows back to him, and what makes a piece starting on the 28th of May count seven months of
+    // that year rather than twelve.
+    atDate,
+    untilDate,
+    sellAtDate,
     // And when it stops, if it does. "Rent until year 10" — a lease that ends, a loan that gets
     // paid off, a child who leaves. Without this every plan runs every line for ever.
-    untilYear: e?.untilYear == null || !num(e.untilYear) ? null : Math.max(atYear, Math.min(60, Math.round(num(e.untilYear)))),
+    untilYear: untilDate != null ? Math.max(atYear, yearOfDay(untilDate))
+      : e?.untilYear == null || !num(e.untilYear) ? null : Math.max(atYear, Math.min(60, Math.round(num(e.untilYear)))),
     kind: EVENT_KINDS.includes(e?.kind) ? e.kind : 'contribution',
     // A monthly figure for contribution/income/spending; a one-off total for a lump.
     amount: num(e?.amount),
@@ -698,7 +731,8 @@ export function cleanEvent(e) {
     // For an asset: when he expects to sell it, and for how much. Naming a price is honest in a
     // way a growth rate is not — "I think it will fetch 40,000 in year six" is a belief he can
     // defend, and "it grows 6% a year for ever" is one nobody can.
-    sellAtYear: e?.sellAtYear == null || !num(e.sellAtYear) ? null : Math.max(atYear, Math.min(60, Math.round(num(e.sellAtYear)))),
+    sellAtYear: sellAtDate != null ? Math.max(atYear, yearOfDay(sellAtDate))
+      : e?.sellAtYear == null || !num(e.sellAtYear) ? null : Math.max(atYear, Math.min(60, Math.round(num(e.sellAtYear)))),
     sellFor: e?.sellFor == null || e.sellFor === '' ? null : Math.max(0, num(e.sellFor)),
     label: txt(e?.label, 80),
     // Which holding this piece came from, when it came from one — so a deposit he has already
@@ -753,6 +787,44 @@ export function forecast({
   // Nov, Dec). Clamped to at least 1 so a forecast run on 31 December still has a year one.
   const year1Months = now != null ? Math.max(1, 12 - new Date(now).getUTCMonth()) : 12;
 
+  // ---- Where a DATE sits on the year-by-year grid ----
+  //
+  // "Let's make data should be complete day month year." A piece that starts on 28.05.2027 runs
+  // for seven months of 2027, not twelve, and a plan that credits it twelve is wrong by five
+  // months of money in its first year — the same mistake as the full-year-one bug, one level down.
+  //
+  // Everything is measured in months since the start of year one, so a date and a plan year are
+  // one comparable number. With no clock there are no dates to place either, and every piece
+  // falls back to whole years exactly as it did before.
+  const nowMonth = now != null ? new Date(now).getUTCMonth() : 0;
+  const thisYear = now != null ? new Date(now).getUTCFullYear() : 0;
+  const monthOfDay = (ts) => {
+    const d = new Date(ts);
+    return (d.getUTCFullYear() - thisYear) * 12 + d.getUTCMonth();
+  };
+  const yearStarts = (yr) => (yr - 1) * 12 + (yr === 1 ? nowMonth : 0);
+  const yearEnds = (yr) => (yr - 1) * 12 + 11;
+  // How many months of a given plan year this piece is actually running. A date already behind
+  // us is clamped to now: a piece dated last March does not get credited months that have been
+  // and gone.
+  const monthsRunning = (e, yr) => {
+    const from = now != null && e.atDate != null
+      ? Math.max(monthOfDay(e.atDate), yearStarts(1)) : yearStarts(e.atYear);
+    const to = now != null && e.untilDate != null ? monthOfDay(e.untilDate)
+      : e.untilYear != null ? yearEnds(e.untilYear) : Infinity;
+    return Math.max(0, Math.min(yearEnds(yr), to) - Math.max(yearStarts(yr), from) + 1);
+  };
+  // Is it still running on the last day of that year? The per-month figures a year reports —
+  // what arrives, what it costs — are read AT the end of the year, so a lease that stopped in
+  // June must not be in December's rate. The capital it contributed while it ran is untouched.
+  const liveAtYearEnd = (e, yr) => now == null
+    || ((e.atDate == null || monthOfDay(e.atDate) <= yearEnds(yr))
+      && (e.untilDate == null || monthOfDay(e.untilDate) >= yearEnds(yr)));
+  const RECURRING = ['contribution', 'income', 'spending'];
+  // Which pieces the year-by-year machinery already counts for this year, before dates narrow it.
+  const countedIn = (e, yr) => RECURRING.includes(e.kind) && e.atYear <= yr
+    && (e.untilYear == null || e.untilYear >= yr);
+
   // A LUMP WITH A RATE IS A DEPOSIT, AND A DEPOSIT PAYS ITS RATE OUT.
   //
   // He typed one — "Deposit", a lump at 17% — and caught the app compounding it: the balance and
@@ -763,7 +835,7 @@ export function forecast({
   // it to consult. So a lump's own rate never compounds its own bucket: it becomes a paired,
   // automatic coupon instead — landing as ordinary cash he can then do whatever he likes with,
   // running for exactly as long as the deposit itself does. `bucketFor` holds the principal flat.
-  const evts = (Array.isArray(events) ? events : []).map(cleanEvent).flatMap((e) => (
+  const evts = (Array.isArray(events) ? events : []).map((e) => cleanEvent(e, now ?? Date.now())).flatMap((e) => (
     e.kind === 'lump' && e.ratePct > 0
       ? [e, {
           ...e, id: `${e.id}:coupon`, kind: 'income', ratePct: null,
@@ -880,10 +952,32 @@ export function forecast({
     // months he has left, not the months the year has in total.
     const monthsThisYear = year === 1 ? year1Months : 12;
     const def = buckets.get('default');
-    const monthly = [...buckets.values()].reduce((t, b) => t + b.monthly, 0) + baseMonthly;
+    // THE MONTHS THE DATES SAY NEVER HAPPENED. The year machinery has already put every piece
+    // starting this year into its bucket's monthly figure, at full whack. A piece that only
+    // starts on the 28th of May, or stops in June, did not run all of those months — so its
+    // bucket is credited that many months less, per piece, rather than the whole year.
+    const shortfall = new Map();
+    for (const e of evts) {
+      if (!countedIn(e, year)) continue;
+      const missed = monthsThisYear - monthsRunning(e, year);
+      if (missed <= 0) continue;
+      const b = e.kind === 'spending' ? def : bucketFor(e);
+      // A month of spending that never happened is a month of money he KEPT, so it moves the
+      // other way.
+      shortfall.set(b, (shortfall.get(b) || 0) + (e.kind === 'spending' ? -e.amount : e.amount) * missed);
+    }
+    // What each piece is worth per month AT THE END of this year, which is not the same as what
+    // it was worth during it: a lease that ran out in June is not part of December's rate.
+    const stopped = evts.filter((e) => countedIn(e, year) && !liveAtYearEnd(e, year))
+      .reduce((t, e) => t + (e.kind === 'spending' ? -e.amount : e.amount), 0);
+    const stoppedIncome = evts.filter((e) => e.kind === 'income' && countedIn(e, year) && !liveAtYearEnd(e, year))
+      .reduce((t, e) => t + e.amount, 0);
+    const monthly = [...buckets.values()].reduce((t, b) => t + b.monthly, 0) + baseMonthly - stopped;
     let contributedThisYear = 0;
     for (const b of buckets.values()) {
-      const add = Math.max(0, (b === def ? b.monthly + baseMonthly : b.monthly)) * monthsThisYear;
+      // Never below nothing: a bucket whose pieces net out negative contributes zero, it does not
+      // drain capital — the same floor this line has always had, applied after the shortfall too.
+      const add = Math.max(0, Math.max(0, (b === def ? b.monthly + baseMonthly : b.monthly)) * monthsThisYear - (shortfall.get(b) || 0));
       contributedThisYear += add;
       b.capital = b.capital * (1 + b.rate * monthsThisYear / 12) + add;
     }
@@ -891,7 +985,7 @@ export function forecast({
     // Each bucket yields at ITS rate, so a plan half in 2% deposits does not report itself as
     // though all of it were in the market.
     const fromCapital = [...buckets.values()].reduce((t, b) => t + (b.capital * b.rate) / 12, 0);
-    const passive = fromCapital + extraIncome + monthlyPassiveNow;
+    const passive = fromCapital + (extraIncome - stoppedIncome) + monthlyPassiveNow;
 
     // WHAT THIS YEAR IS MADE OF. A total nobody can take apart is not a plan, it is a claim — the
     // sentence that built this whole tab in the first place, and it applies to a single year's
@@ -903,7 +997,13 @@ export function forecast({
       pieces: [
         ...evts.filter((x) => ['contribution', 'income', 'spending'].includes(x.kind)
           && x.atYear <= year && (x.untilYear == null || x.untilYear >= year))
-          .map((x) => ({ label: x.label || x.kind, kind: x.kind, auto: x.auto, monthly: x.kind === 'spending' ? -x.amount : x.amount })),
+          .map((x) => ({
+            label: x.label || x.kind, kind: x.kind, auto: x.auto,
+            monthly: x.kind === 'spending' ? -x.amount : x.amount,
+            // How many months of THIS year it actually runs, so a piece starting in May says so
+            // rather than letting its monthly figure imply the whole year.
+            months: monthsRunning(x, year), ofMonths: monthsThisYear,
+          })),
         ...evts.filter((x) => x.kind === 'lump' && x.atYear === year)
           .map((x) => ({ label: x.label || 'lump', kind: 'lump', auto: x.auto, once: x.amount })),
         ...evts.filter((x) => x.kind === 'asset' && x.atYear === year)
@@ -2112,10 +2212,16 @@ export function moneyAdvice(accounts = [], subs = [], table, base = 'EUR', now =
 // It is also the only way "the deposits are paying the loan" can show up at all: as income in and
 // spending out, in the same list, netting to whatever it really nets to.
 
-/** Which plan year a date falls in. Year 1 is the next twelve months. */
+/** Which plan year a date falls in — the CALENDAR year, the one the table actually prints.
+ *
+ *  This used to count rolling twelve-month blocks from today, and that quietly disagreed with
+ *  every label on the screen: his Cairo certificate ends on 28.05.2027, which is eight months
+ *  out, so the rolling answer was "year 1" — and year 1's row is headed **2026**. The table said
+ *  a deposit maturing in May 2027 ended in 2026. A date in 2027 is year 2 because the second row
+ *  says 2027, and that is the only reading that can never contradict the page. */
 export function planYearOf(at, now = Date.now()) {
   if (!at || at <= now) return null;
-  return Math.max(1, Math.ceil(yearsBetween(now, at)));
+  return Math.max(1, Math.min(60, new Date(at).getUTCFullYear() - new Date(now).getUTCFullYear() + 1));
 }
 
 /** What a holding PAYS, per month, in its own currency — a coupon in, an instalment out. Shared

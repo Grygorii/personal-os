@@ -309,6 +309,16 @@ const calYear = (n) => new Date().getUTCFullYear() + n - 1;
 // How many months are actually left in the calendar year the table calls "year 1" — the same
 // clock `forecast()` itself now reads, so the row and its own arithmetic never disagree.
 const monthsLeftThisYear = () => Math.max(1, 12 - new Date().getUTCMonth());
+/** The day a bare plan-year number means, for a piece stored before pieces had dates. Year 1
+ *  starts TODAY (which is what year 1 has always meant, and keeps its months unchanged when he
+ *  saves); any later year starts on its 1 January. An END year runs to its 31 December, because
+ *  "until year 3" has always meant through the end of that year, not its first morning. */
+const dayOfPlanYear = (n, end = false) => {
+  if (!n) return null;
+  const year = calYear(n);
+  if (end) return Date.UTC(year, 11, 31);
+  return n === 1 ? Date.now() : Date.UTC(year, 0, 1);
+};
 
 // Which month is on screen. null means "the one he is in", so the app opens on today without
 // having to know today's date before the first answer comes back.
@@ -979,17 +989,21 @@ function drawPlan() {
   const amt = (e) => (e.currency && e.currency !== S.base)
     ? `${Math.round(e.amount).toLocaleString()} ${esc(e.currency)}${e.amountInBase != null ? ` (${money(e.amountInBase)})` : ' — no rate'}`
     : money(e.amount);
+  // The DAY, when he gave one, and the year when the piece predates dates. He asked for complete
+  // days, and printing "from 2027" under a piece he dated the 28th of May would be throwing away
+  // the very thing he had just typed in.
+  const when = (date, year) => (date ? dd(date) : calYear(year));
   const per = (e) => e.kind === 'asset'
-    ? `worth ${amt(e)}${e.atYear > 1 ? `, from ${calYear(e.atYear)}` : ''}`
+    ? `worth ${amt(e)}${e.atYear > 1 || e.atDate ? `, from ${when(e.atDate, e.atYear)}` : ''}`
     : e.kind === 'lump'
     // A lump with a rate AND an until year is a term deposit — it matures, same as a real
     // certificate, and has to say so here, not only in the year-by-year table's "ends" label.
-    ? `${amt(e)} once in ${calYear(e.atYear)}${e.untilYear ? `, term to ${calYear(e.untilYear)}` : ''}`
-    : `${amt(e)} a month from ${calYear(e.atYear)}${e.untilYear ? ` to ${calYear(e.untilYear)}` : ''}`;
+    ? `${amt(e)} once on ${when(e.atDate, e.atYear)}${e.untilYear ? `, term to ${when(e.untilDate, e.untilYear)}` : ''}`
+    : `${amt(e)} a month from ${when(e.atDate, e.atYear)}${e.untilYear ? ` to ${when(e.untilDate, e.untilYear)}` : ''}`;
   const what = { contribution: 'you put in', income: 'arrives', spending: 'goes out', lump: 'one-off', asset: 'you own' };
   const sellNote = (e) => e.kind !== 'asset' ? ''
     : e.sellAtYear
-      ? ` · sell in ${calYear(e.sellAtYear)}${e.sellFor != null ? ` for ${e.currency !== S.base ? `${Math.round(e.sellFor).toLocaleString()} ${esc(e.currency)}` : money(e.sellFor)}` : ''}`
+      ? ` · sell ${when(e.sellAtDate, e.sellAtYear)}${e.sellFor != null ? ` for ${e.currency !== S.base ? `${Math.round(e.sellFor).toLocaleString()} ${esc(e.currency)}` : money(e.sellFor)}` : ''}`
       : ' · keeping it';
 
   const pieces = (S.events || []).map((e) => `
@@ -1534,18 +1548,25 @@ $('esave').onclick = async () => {
   if (editing.kind === 'planEvent') {
     const v = {};
     $('efields').querySelectorAll('[data-k]').forEach((el) => { v[el.dataset.k] = el.value.trim(); });
-    if (!v.label || !Number(v.amount) || !Number(v.atYear)) {
-      $('eerr').textContent = 'It needs a name, an amount and a year.'; $('eerr').hidden = false; return;
+    if (!v.label || !Number(v.amount) || !v.atDate) {
+      $('eerr').textContent = 'It needs a name, an amount and a day it starts.'; $('eerr').hidden = false; return;
     }
     const piece = {
       label: v.label, kind: v.kind, currency: v.currency,
-      amount: Number(v.amount), atYear: Number(v.atYear),
-      sellAtYear: v.sellAtYear === '' ? null : Number(v.sellAtYear),
+      // Complete days, not year numbers. The server reads the plan year off the date, so the
+      // year-by-year table and the piece can never say two different things about when it starts.
+      amount: Number(v.amount), atDate: v.atDate,
+      sellAtDate: v.sellAtDate === '' ? null : v.sellAtDate,
       sellFor: v.sellFor === '' ? null : Number(v.sellFor),
       // Empty means "whatever the market does" and "forever" — both are real answers, so both
       // are stored as null rather than as a zero that would quietly mean something else.
       ratePct: v.ratePct === '' ? null : Number(v.ratePct),
-      untilYear: v.untilYear === '' ? null : Number(v.untilYear),
+      untilDate: v.untilDate === '' ? null : v.untilDate,
+      // Clearing a date has to clear the year it was read from as well. An edit MERGES over what
+      // is stored, so sending only "no end date" would leave last week's `untilYear: 5` sitting
+      // underneath it and the piece would go on stopping in a year he just deleted.
+      untilYear: v.untilDate === '' ? null : undefined,
+      sellAtYear: v.sellAtDate === '' ? null : undefined,
     };
     $('esave').disabled = true;
     try {
@@ -1598,16 +1619,23 @@ function openPlanEvent(existing) {
       ${field('Currency', select('currency', currencyOptions(e.currency || S.base), e.currency || S.base))}
     </div>
     ${field('Its own rate %', input('ratePct', e.ratePct ?? '', 'inputmode="decimal" placeholder="market — leave empty"'))}
+    ${/* "Let's make data should be complete day month year." He typed 28.05.2027 into a box that
+          only ever wanted "2" and the form told him it needed a year. Real dates now — the same
+          date control the Worth tab already uses, so there is one way to enter a day in this app.
+          A piece with no date of its own is shown the day its old year number means, so opening
+          an old piece and saving it changes nothing about what it does. */ ''}
     <div class="two">
-      ${field('From year', input('atYear', e.atYear, 'inputmode="numeric"'))}
-      ${field('Until year', input('untilYear', e.untilYear ?? '', 'inputmode="numeric" placeholder="forever"'))}
+      ${field('Starts', input('atDate', isoOf(e.atDate ?? dayOfPlanYear(e.atYear)), 'type="date"'))}
+      ${field('Ends', input('untilDate', isoOf(e.untilDate ?? dayOfPlanYear(e.untilYear, true)), 'type="date"'))}
     </div>
     <div class="two">
-      ${field('If you sell it, in year', input('sellAtYear', e.sellAtYear ?? '', 'inputmode="numeric" placeholder="keeping it"'))}
+      ${field('If you sell it, on', input('sellAtDate', isoOf(e.sellAtDate ?? dayOfPlanYear(e.sellAtYear, true)), 'type="date"'))}
       ${field('For about', input('sellFor', e.sellFor ?? '', 'inputmode="decimal" placeholder="what you think it fetches"'))}
     </div>
-    <div class="note" style="margin-top:0">Year 1 is the next twelve months, so <b>from year 1</b>
-    means starting now. Leave the rate empty and it follows the market assumption below.
+    <div class="note" style="margin-top:0"><b>Days, not years.</b> A piece that starts on
+    28.05.2027 counts seven months of that year, not twelve, and the year-by-year table adds up
+    only the months it actually runs. Leave <b>ends</b> empty and it runs for ever.
+    Leave the rate empty and it follows the market assumption below.
     <b>A one-off with a rate is a deposit</b> — put <b>2</b> there for 10,000 once at 2% and it pays
     that 2% out each year as its own coupon, the same as a real certificate; the 10,000 itself does
     not grow. <b>Something you put in or that arrives, with a rate, does compound</b> — money you
@@ -1619,8 +1647,8 @@ function openPlanEvent(existing) {
     the total and — unless you give it a rate — <b>it does not grow</b>: a building quietly compounding
     at the market yield is a fantasy, and over ten years that difference is most of the answer. If you
     expect to sell, say when and for how much; that is a belief you can defend, and "it grows 6% a year
-    for ever" is not. Its rent goes in separately as <b>“this money arrives”</b>, with <b>until year</b>
-    set to the year you sell.
+    for ever" is not. Its rent goes in separately as <b>“this money arrives”</b>, with <b>ends</b>
+    set to the day you sell.
     <br><br><b>“I put this in”</b> is money you move from your pocket into the pot.
     <b>“This money arrives”</b> is rent or a dividend — it goes into the pot too, and it counts
     towards your ${money(S.goal?.target || 2000)} a month goal, which is the only difference.</div>`;
@@ -1665,7 +1693,13 @@ function openYearInfo(year) {
   const monthly = [
     b.base ? line('What you already save', 'measured, not a guess', b.base) : '',
     ...b.pieces.filter((p) => p.monthly != null)
-      .map((p) => line(p.label, p.auto ? 'added on its own — a live holding you never typed a piece for' : PLAN_KIND_WORDS[p.kind] || p.kind, p.monthly)),
+      .map((p) => line(p.label, [
+        p.auto ? 'added on its own — a live holding you never typed a piece for' : PLAN_KIND_WORDS[p.kind] || p.kind,
+        // A piece that starts in May runs seven months of that year, and the monthly figure beside
+        // it would otherwise read as though it ran all twelve.
+        p.months != null && p.ofMonths != null && p.months < p.ofMonths
+          ? `${p.months} month${p.months === 1 ? '' : 's'} of this year, not ${p.ofMonths}` : '',
+      ].filter(Boolean).join(' · '), p.monthly)),
     ...b.buckets.filter((x) => Math.abs(x.monthly) > 0.5).map((x) => line(x.label, bucketMeta(x), x.monthly)),
     (b.everythingElse && Math.abs(b.everythingElse.monthly) > 0.5)
       ? line('Everything else', `assumed ${Math.round(b.everythingElse.ratePct * 10) / 10}% on ${money(b.everythingElse.capital)}`, b.everythingElse.monthly) : '',

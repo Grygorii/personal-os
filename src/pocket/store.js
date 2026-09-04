@@ -268,7 +268,10 @@ export async function getPlanEvents() {
     // has no opinion about what a market does and inventing one is how "5% a year" ended up on
     // his screen attached to certificates paying twenty.
     yieldPct: Number(doc?.yieldPct) || 0,
-    list: (Array.isArray(doc?.list) ? doc.list : []).map(cleanEvent),
+    // `(e) => cleanEvent(e)`, never a bare `.map(cleanEvent)`: cleanEvent takes a clock as its
+    // second argument now, and map would hand it the array INDEX — every piece after the first
+    // read against a different "today".
+    list: (Array.isArray(doc?.list) ? doc.list : []).map((e) => cleanEvent(e)),
   };
 }
 
@@ -298,7 +301,7 @@ export async function updatePlanEvent(id, patch) {
 
 /** Replace the whole list at once — used by the template, and only ever with his say-so. */
 export async function setPlanEvents(list) {
-  const clean = (Array.isArray(list) ? list : []).slice(0, 200).map(cleanEvent);
+  const clean = (Array.isArray(list) ? list : []).slice(0, 200).map((e) => cleanEvent(e));
   await col('settings').updateOne({ _id: 'plan' }, { $set: { list: clean } }, { upsert: true });
   return clean;
 }

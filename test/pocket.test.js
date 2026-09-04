@@ -1979,7 +1979,10 @@ test('planTemplate: the coupons in, the instalments out, in one list', () => {
   assert.equal(coupon.kind, 'income');
   assert.equal(Math.round(coupon.amount), 8250);
   assert.equal(coupon.currency, 'EGP');
-  assert.equal(coupon.untilYear, 1, 'the term ends in May 2027');
+  // Year 2, because the table's second row is headed 2027 and that is when this term ends. It
+  // used to answer 1 — rolling twelve months from today — and year 1's row says 2026, so the
+  // page told him a certificate maturing in May 2027 ended in 2026.
+  assert.equal(coupon.untilYear, 2, 'the term ends in May 2027, and 2027 is year two');
 
   // The instalment, not the interest: repaying principal is money leaving too.
   const inst = by('Loan 2 payment');
@@ -2015,9 +2018,12 @@ test('planTemplate: nothing that has already finished, and nothing invented', ()
   assert.deepEqual(planTemplate([], [], SEPT26), [], 'nothing in, nothing out');
 });
 
-test('planYearOf: year 1 is the next twelve months', () => {
-  assert.equal(planYearOf(utc(2027, 5, 28), SEPT26), 1);
-  assert.equal(planYearOf(utc(2029, 2, 11), SEPT26), 3);
+test('planYearOf: the year the table actually prints, not a rolling twelve months', () => {
+  // SEPT26 is September 2026, so year 1 is headed 2026, year 2 is 2027, year 4 is 2029. A date
+  // has to land in the row that carries its own year, or the page contradicts itself.
+  assert.equal(planYearOf(utc(2026, 11, 30), SEPT26), 1, 'still this year, so still year one');
+  assert.equal(planYearOf(utc(2027, 5, 28), SEPT26), 2, 'May 2027 belongs in the row headed 2027');
+  assert.equal(planYearOf(utc(2029, 2, 11), SEPT26), 4);
   assert.equal(planYearOf(utc(2020, 1, 1), SEPT26), null, 'already gone');
   assert.equal(planYearOf(null, SEPT26), null);
 });
@@ -2283,4 +2289,56 @@ test('forecast: year one is only the months actually left, once a clock is given
   // January: the whole year is still ahead, same as no clock at all.
   const jan = forecast({ startCapital: 0, monthlySurplus: 1000, years: 1, yieldPct: 0, now: utc(2026, 1, 15) });
   assert.equal(jan.rows[0].capital, 12000);
+});
+
+// "No, let's make data should be complete day month year." He typed 28.05.2027 into a box that
+// wanted the number 2, and the form told him it needed a year. Pieces carry real days now, and a
+// day has to MEAN something: a piece starting on the 28th of May runs seven months of that year.
+test('cleanEvent: a complete day, and the plan year read off it', () => {
+  const e = cleanEvent({ atDate: '28.05.2027', kind: 'contribution', amount: 1000 }, SEPT26);
+  assert.equal(e.atDate, utc(2027, 5, 28), 'the day he typed, day-first, the way he writes it');
+  assert.equal(e.atYear, 2, 'and 2027 is the row headed 2027');
+  assert.equal(cleanEvent({ atDate: '2027-05-28' }, SEPT26).atDate, utc(2027, 5, 28), 'ISO too — that is what a date input sends');
+  assert.equal(cleanEvent({ atDate: 'nonsense' }, SEPT26).atDate, null, 'unreadable is null, never a guess at today');
+  // A piece stored before dates existed still works, untouched.
+  const old = cleanEvent({ atYear: 3, untilYear: 5 }, SEPT26);
+  assert.equal(old.atYear, 3);
+  assert.equal(old.atDate, null);
+  assert.equal(old.untilYear, 5);
+  // An end date cannot land before the start.
+  assert.equal(cleanEvent({ atDate: '01.01.2029', untilDate: '01.01.2027' }, SEPT26).untilYear, 4);
+  assert.equal(cleanEvent({ kind: 'asset', atDate: '01.01.2027', sellAtDate: '30.06.2030' }, SEPT26).sellAtYear, 5);
+});
+
+test('forecast: a piece counts the months it actually runs, not the years it touches', () => {
+  const opts = { startCapital: 0, monthlySurplus: 0, years: 3, yieldPct: 0, now: SEPT26 };
+  // Starting on 28 May 2027: eight payments that year — 28 May through 28 December — then a full
+  // 2028. The month he starts in counts, because a payment actually lands in it.
+  const may = forecast({ ...opts, events: [{ id: 'c1', kind: 'contribution', amount: 1000, atDate: utc(2027, 5, 28) }] });
+  assert.equal(may.rows[0].capital, 0, 'nothing in 2026 — it has not started');
+  assert.equal(may.rows[1].capital, 8000, 'eight months of 2027, not twelve');
+  assert.equal(may.rows[2].capital, 20000, 'and then a whole year on top');
+
+  // The same piece with only a year number behaves exactly as it always did: the whole year.
+  const whole = forecast({ ...opts, events: [{ id: 'c1', kind: 'contribution', amount: 1000, atYear: 2 }] });
+  assert.equal(whole.rows[1].capital, 12000);
+
+  // Stopping mid-year is the same rule from the other end: six months of 2027, and the piece is
+  // NOT in that December's per-month figure, because by then it has stopped.
+  const ends = forecast({
+    ...opts,
+    events: [{ id: 'i1', kind: 'income', amount: 500, atDate: utc(2027, 1, 1), untilDate: utc(2027, 6, 30) }],
+  });
+  assert.equal(ends.rows[1].capital, 3000, 'six months of 500, not twelve');
+  assert.equal(ends.rows[1].passiveMonthly, 0, 'a lease that ran out in June is not in December’s rate');
+  assert.equal(ends.rows[0].capital, 0);
+
+  // A date already behind him is clamped to now rather than credited months that have gone.
+  const past = forecast({ ...opts, events: [{ id: 'c2', kind: 'contribution', amount: 1000, atDate: utc(2026, 1, 5) }] });
+  assert.equal(past.rows[0].capital, 4000, 'the four months of 2026 that are left, not the eight already spent');
+
+  // And the drill-down can say so, rather than showing a monthly figure that implies a full year.
+  const piece = may.rows[1].breakdown.pieces.find((p) => p.kind === 'contribution');
+  assert.equal(piece.months, 8);
+  assert.equal(piece.ofMonths, 12);
 });

@@ -86,6 +86,9 @@ const events = {
     { id: 'e3', atYear: 1, kind: 'lump', amount: 10000, ratePct: 2, label: 'deposit at 2%' },
     { id: 'e4', atYear: 3, kind: 'income', amount: 600, label: 'second rental' },
     { id: 'e5', atYear: 1, kind: 'spending', amount: 120, untilYear: 4, label: 'car insurance' },
+    // "Let's make data should be complete day month year." A piece dated to the day, which is
+    // what the form sends now — it must survive the round trip and print as a day, not a year.
+    { id: 'e6', atDate: utc(2027, 5, 28), kind: 'contribution', amount: 200, label: 'school fund' },
   ],
 };
 
@@ -372,7 +375,19 @@ function must(el, panel, needles, label) {
       // What he typed, beside what it comes to. The converted figure alone hides the currency.
       '18,000 EGP',
       // A year is a total nobody has to take on trust — tapping it says what made it up.
-      'data-plan-year="1"', 'Tap a year to see what it is made of.'], 'this month');
+      'data-plan-year="1"', 'Tap a year to see what it is made of.',
+      // "Complete day month year": a dated piece prints its day, never flattened back to a year.
+      'school fund'], 'this month');
+    // The piece dated 28.05.2027 must show that day, and must land in the row headed 2027 — a
+    // rolling "twelve months from today" would have filed it under 2026.
+    const dated = S.events.find((e) => e.id === 'e6');
+    if (dated.atYear !== 2) fail(`a piece dated May 2027 belongs in plan year 2, got ${dated.atYear}`);
+    // Printed with the app's own date format (`dd`), the one every other date on the page wears —
+    // the day has to be in there, not flattened to "from 2027".
+    const schoolLine = el('p-plan').innerHTML.slice(el('p-plan').innerHTML.indexOf('school fund'));
+    if (!/28/.test(schoolLine.slice(0, 300)) || !/2027/.test(schoolLine.slice(0, 300))) {
+      fail('a piece he dated to the day must print that day on the Plan tab, not just its year');
+    }
     const plan = el('p-plan').innerHTML;
     if (plan.indexOf('Your plan') > plan.indexOf('What it comes to')) {
       fail('what he builds belongs above what it comes to');

@@ -26,7 +26,7 @@ import {
   parseEntry, ACCOUNT_KINDS, PAYOUT_KINDS, isLiability, forecastRange, depositProgress,
   monthWindowOf, recentMonths, monthsSummary, patchFrom, depositsSummary, contractedIncome,
   missingRecurring, cleanFlow, balanceNow, subsSummary, BILLING_PERIODS, cleanSub,
-  scheduledFlows, EVENT_KINDS, parseDate, yearsBetween, matchRecorded, subChargeDates, currencyPicture, cleanEvent, planYields, planTemplate, holdingFlow,
+  scheduledFlows, EVENT_KINDS, parseDate, yearsBetween, matchRecorded, subChargeDates, currencyPicture, cleanEvent, planYields, planTemplate, planYearOf, holdingFlow,
   capitalReachedYear, moneyAdvice, worthSnapshot,
 } from './money.js';
 
@@ -104,7 +104,9 @@ export function buildState({ base = 'EUR', table, monthKey, accounts = [], spanF
   // Sanitised here rather than trusted from the caller: a plan piece stored before pieces had a
   // currency has none, and treating that as "unconvertible" would drop it from the plan instead
   // of reading it as the base — which is what it was typed as.
-  const plan = { ...events, list: (events.list || []).map(cleanEvent) };
+  // Against THIS request's clock, not a bare `.map(cleanEvent)` — map would pass the array index
+  // as the second argument, and a piece's year is read off its date against that clock.
+  const plan = { ...events, list: (events.list || []).map((e) => cleanEvent(e, now)) };
 
   const n = netWorth(accounts, table, base, now);
 
@@ -133,7 +135,9 @@ export function buildState({ base = 'EUR', table, monthKey, accounts = [], spanF
   // Each holding, at the rate it actually pays. `untilYear` is when a certificate's term runs out,
   // after which that money is ordinary cash again — a three-year deposit at 20% does not pay 20%
   // for thirty years, and pretending it does is the flattering version of his finances.
-  const yearOf = (at) => (at ? Math.max(1, Math.ceil(yearsBetween(now, at))) : null);
+  // planYearOf, not a second copy of the arithmetic: this had its own rolling "twelve months from
+  // today" version, which put a certificate maturing in May 2027 in the row headed 2026.
+  const yearOf = (at) => planYearOf(at, now);
   const planBuckets = accounts
     .filter((a) => ['deposit', 'portfolio', 'cash'].includes(a.kind))
     .map((a) => ({
