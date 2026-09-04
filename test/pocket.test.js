@@ -646,6 +646,11 @@ test('patchFrom: an account, including clearing a rate back to nothing', () => {
   assert.equal(patchFrom('account', { ratePct: '4,5' }).ratePct, 4.5);
   assert.equal(patchFrom('account', { kind: 'gold' }).kind, undefined, 'an unknown kind is ignored, not filed as cash');
   assert.equal(patchFrom('account', { payout: 'weekly' }).payout, null);
+  // "It is there, or it is spent." A boolean he can untick, so `false` must travel exactly like
+  // `true` — read from whether the key was sent at all, never from its truthiness.
+  assert.equal(patchFrom('account', { couponSpent: true }).couponSpent, true);
+  assert.equal(patchFrom('account', { couponSpent: false }).couponSpent, false);
+  assert.equal(patchFrom('account', {}).couponSpent, undefined, 'not sent at all means not being changed');
 });
 
 test('an edit merges over what is stored — it never applies the whitelist to a fragment', () => {
@@ -2077,6 +2082,30 @@ test('holdingFlow: income for what arrives, spending for what is owed, nothing f
   assert.equal(holdingFlow(bare, SEPT26), null, 'cash has no schedule to report');
 });
 
+// "Maybe I was using it for something else — like I am doing right now, paying a loan out of
+// it — so the % needs a checkbox: is it there, or is it spent." A deposit he has marked
+// `couponSpent` pays no coupon into the plan at all — the loan it is servicing still costs what
+// it costs, whether or not the app ever wrote a piece for the coupon paying it.
+test('holdingFlow / contractedIncome: a coupon marked spent is not credited a second time', () => {
+  const [dep, , loan] = HIS();
+  const spent = cleanAccount({ ...dep, couponSpent: true });
+  assert.equal(holdingFlow(spent, SEPT26), null, 'a spent coupon is not a piece to add to the plan');
+  // The account it is servicing is untouched: what he owes does not become optional because a
+  // deposit happens to be paying it.
+  assert.ok(holdingFlow(loan, SEPT26), 'a liability keeps costing him regardless of what pays it');
+
+  const { streams } = contractedIncome(HIS(), SEPT26);
+  assert.ok(streams.some((s) => s.label === 'Deposit 1'), 'fixture sanity: normally it is contracted income');
+  const { streams: withSpent } = contractedIncome([spent, ...HIS().slice(1)], SEPT26);
+  assert.ok(!withSpent.some((s) => s.label === 'Deposit 1'), 'marked spent, it drops out of "already contracted" on the Goal tab');
+
+  // The principal itself is untouched — cleanAccount does not zero the value or the rate, only
+  // the flag changes, so Worth and worthSnapshot never see this at all.
+  assert.equal(spent.value, dep.value);
+  assert.equal(spent.ratePct, dep.ratePct);
+  assert.equal(cleanAccount({}).couponSpent, false, 'the default is "it saves", never assumed spent');
+});
+
 test('forecast: a year is a total nobody has to take on trust', () => {
   const f = forecast({
     startBuckets: [{ id: 'd1', capital: 8386, ratePct: 0, label: 'Deposit 1', untilYear: 2 }],
@@ -2225,4 +2254,33 @@ test('worthSnapshot: what he has right now, split the same way liquidCapital spl
   assert.deepEqual(worthSnapshot(withLoan, T, 'EUR', SEPT26), { liquid: 0, locked: 0, owned: 0, holdings: { liquid: [], locked: [], owned: [] }, total: 0 });
   // No rate table, nothing confidently totalled.
   assert.equal(worthSnapshot(HIS(), null, 'EUR', SEPT26).total, 0);
+});
+
+// "It looks like I will have 12k saved in the end of 2026, but it is now September 2026 and I
+// didn't even start to save this 1K." Year 1 is labelled with the calendar year already under
+// way (calYear), so it must not be credited a full twelve months of saving it has not had yet.
+test('forecast: year one is only the months actually left, once a clock is given', () => {
+  // September: four months of the calendar year remain (Sep, Oct, Nov, Dec).
+  const noClock = forecast({ startCapital: 0, monthlySurplus: 1000, years: 2, yieldPct: 0 });
+  assert.equal(noClock.rows[0].capital, 12000, 'with no `now`, every caller before this fix keeps its old, full-year answer');
+
+  const clocked = forecast({ startCapital: 0, monthlySurplus: 1000, years: 2, yieldPct: 0, now: SEPT26 });
+  assert.equal(clocked.rows[0].capital, 4000, 'four months left in the year, not twelve');
+  assert.equal(clocked.rows[0].contributedThisYear, 4000);
+  // Year two is a full, ordinary calendar year again — the partial year is year one only.
+  assert.equal(clocked.rows[1].capital, 16000, '4,000 carried in, plus a full 12,000 in year two');
+
+  // Growth is prorated the same way a partial year's contributions are — four months of an
+  // annual rate, not the whole year's worth landing on money that was only there for a third of
+  // it.
+  const grown = forecast({ startCapital: 12000, monthlySurplus: 0, years: 1, yieldPct: 12, now: SEPT26 });
+  assert.ok(Math.abs(grown.rows[0].capital - 12480) < 1, '12,000 at 12% for four months of the year, not the full twelve');
+
+  // December: one month left, never zero or negative.
+  const dec = forecast({ startCapital: 0, monthlySurplus: 1000, years: 1, yieldPct: 0, now: utc(2026, 12, 15) });
+  assert.equal(dec.rows[0].capital, 1000, 'one month left, not none');
+
+  // January: the whole year is still ahead, same as no clock at all.
+  const jan = forecast({ startCapital: 0, monthlySurplus: 1000, years: 1, yieldPct: 0, now: utc(2026, 1, 15) });
+  assert.equal(jan.rows[0].capital, 12000);
 });

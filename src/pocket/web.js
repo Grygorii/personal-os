@@ -196,6 +196,9 @@ export function buildState({ base = 'EUR', table, monthKey, accounts = [], spanF
     // HIS number, not one this file made up.
     yieldPct: plan.yieldPct || 0,
     goalMonthly: goal?.monthly || 0,
+    // "It is now September 2026 and I didn't even start to save this 1K" — year one is the
+    // calendar year already under way, not a fresh twelve months starting today.
+    now,
   });
 
   return {

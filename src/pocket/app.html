@@ -94,9 +94,23 @@
     --src-2:#3987e5;   /* interest  */
     --src-3:#d95926;   /* dividend  */
     --src-4:#8b8f99;   /* anything else */
+    /* "Let's add different colors." A second, deliberately DIFFERENT categorical trio — the Goal
+       tab's own passive-income bar sits right above the "right now" ring and already means
+       green/blue/orange as rent/interest/dividend; reusing those hues one card down for
+       liquid/locked/owned would have the same three colours saying two different things on one
+       screen. Slots 4 and 5 of the validated reference palette (yellow, magenta, violet) —
+       worst adjacent CVD ΔE 13.2 dark / 16.3 light, normal-vision 19.3 dark / 19.6 light. Not
+       eyeballed; two of the three sit under 3:1 on the light surface, same relief rule as
+       --src: every segment is named with its amount, never colour alone. */
+    --worth-1:#c98500; /* liquid */
+    --worth-2:#d55181; /* locked */
+    --worth-3:#9085e9; /* owned  */
   }
   @media (prefers-color-scheme: light){
-    :root{ --src-1:#1baf7a; --src-2:#2a78d6; --src-3:#eb6834; --src-4:#6b6f79; }
+    :root{
+      --src-1:#1baf7a; --src-2:#2a78d6; --src-3:#eb6834; --src-4:#6b6f79;
+      --worth-1:#eda100; --worth-2:#e87ba4; --worth-3:#4a3aa7;
+    }
   }
   /* A 2px gap of track between fills, so two segments never read as one long bar. */
   .meter{display:flex;gap:2px;height:10px;border-radius:5px;background:var(--line);overflow:hidden;margin-top:8px}
@@ -144,6 +158,18 @@
   .alloc-col:active .alloc-stack{outline:2px solid var(--ink);outline-offset:1px}
   .alloc-yr{font-size:10px;color:var(--dim);writing-mode:vertical-rl;transform:rotate(180deg);
     height:26px;white-space:nowrap}
+
+  /* ---- Right now: a ring, not a stack ---- A DELIBERATELY different shape from the allocation
+     columns on Plan — a ring has no time axis, because this card has no years in it at all. */
+  .ring-wrap{display:flex;align-items:center;gap:18px;margin-top:10px}
+  .ring{width:112px;height:112px;border-radius:50%;flex:none;position:relative}
+  /* ::before, not ::after — generated content paints as though it were the LAST child, so an
+     ::after hole would land on top of the real .ring-mid text underneath it and hide it. */
+  .ring::before{content:'';position:absolute;inset:19px;border-radius:50%;background:var(--card)}
+  .ring-mid{position:absolute;inset:19px;display:flex;flex-direction:column;align-items:center;
+    justify-content:center;text-align:center;line-height:1.2}
+  .ring-mid b{font-size:15px;font-variant-numeric:tabular-nums}
+  .ring-mid span{font-size:10px;color:var(--dim)}
 
   .warn{background:var(--out-bg);border-left:3px solid var(--out);border-radius:0 10px 10px 0;padding:11px 13px;margin-bottom:12px;font-size:13px;line-height:1.5}
   .note{color:var(--dim);font-size:12px;line-height:1.5;margin-top:10px}
@@ -274,9 +300,15 @@ const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 const money = (n, cur) => n == null ? '—'
   : (n < 0 ? '−' : '') + Math.abs(n).toLocaleString(undefined,{maximumFractionDigits:0}) + ' ' + (cur || S.base);
-// Plan year 1 is "the next twelve months, starting now" (docs/pocket.md), so it is the calendar
-// year we are in — "1, 2, 3" made him do the arithmetic himself every time he read the table.
+// Plan year 1 is the calendar year already under way — "1, 2, 3" made him do the arithmetic
+// himself every time he read the table. It used to also be credited a full twelve months of
+// saving no matter the date, which is what let a September table read "12k saved by the end of
+// 2026" before a single one of those months had happened; `forecast()` now knows the actual
+// date too (docs/pocket.md, "Real years, and now real months").
 const calYear = (n) => new Date().getUTCFullYear() + n - 1;
+// How many months are actually left in the calendar year the table calls "year 1" — the same
+// clock `forecast()` itself now reads, so the row and its own arithmetic never disagree.
+const monthsLeftThisYear = () => Math.max(1, 12 - new Date().getUTCMonth());
 
 // Which month is on screen. null means "the one he is in", so the app opens on today without
 // having to know today's date before the first answer comes back.
@@ -515,6 +547,13 @@ function drawWorth() {
       <div class="rmeta" style="margin-top:3px">That is <b>${t.yieldPct.toFixed(1)}% a year</b> on what it is worth${
         t.yieldPct < 4 ? ' — low for something this size. Worth asking what else that money could do.' : ''}</div>` : '';
 
+    /* "It is there, or it is spent." Silent flags are the one thing this app is not allowed to
+       set — if a coupon is being left out of the Goal, the Worth tab is where he set that, and
+       the Worth tab is where it has to say so back. */
+    const spentNote = a.kind === 'deposit' && a.couponSpent ? `
+      <div class="rmeta" style="margin-top:3px;color:var(--dim)">Marked as already spent — this
+      coupon is left out of the passive-income goal. The deposit itself still counts as what you own.</div>` : '';
+
     const term = t && t.hasTerm ? `
       <div style="margin-top:9px">
         <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--dim)">
@@ -525,10 +564,11 @@ function drawWorth() {
         <div class="bar" style="margin-top:5px"><i style="width:${t.pctThrough}%" ${owes ? 'class="owed"' : ''}></i></div>
         ${progress}
         ${sched}
+        ${spentNote}
         ${yieldLine}
         ${truth}
         ${extras}
-      </div>` : (t ? `<div class="rmeta" style="margin-top:6px">${money(t.perYearInBase)} a year${t.hasTerm === false && t.start ? ' · running since ' + dd(t.start) : ''}</div>${sched}${yieldLine}${extras}` : '');
+      </div>` : (t ? `<div class="rmeta" style="margin-top:6px">${money(t.perYearInBase)} a year${t.hasTerm === false && t.start ? ' · running since ' + dd(t.start) : ''}</div>${sched}${spentNote}${yieldLine}${extras}` : '');
 
     return `
     <div style="padding:11px 0;border-top:1px solid var(--line)">
@@ -799,16 +839,35 @@ function drawGoal() {
   const snap = S.snapshot;
   const snapCard = (snap && snap.total > 0) ? (() => {
     const cats = SNAP.filter((c) => snap[c.key] > 0);
+    // A RING, not the meter bar the passive-income card above already uses — a shape with no
+    // time axis, because there are no years in this card at all, and its own colours (--worth-1
+    // to 3) so it never repeats what green/blue/orange already mean one card up. Colour is tied
+    // to the CATEGORY, never to how many of the three are present or what order they come in: a
+    // slot index is fixed by position in SNAP, not by rank in this household's own numbers.
+    const GAP = 3, MIN = 10;
+    const usable = 360 - GAP * cats.length;
+    let acc = 0;
+    const arcs = [];
+    SNAP.forEach((c, slot) => {
+      const val = snap[c.key];
+      if (!(val > 0)) return;
+      const sweep = Math.max(MIN, (val / snap.total) * usable);
+      arcs.push(`var(--worth-${slot + 1}) ${acc}deg ${acc + sweep}deg`);
+      acc += sweep + GAP;
+    });
+    arcs.push(`var(--card) ${acc}deg 360deg`);
     return `<div class="card">
       <h2>What you hold right now</h2>
-      <div class="big in">${money(snap.total, S.base)}</div>
-      <div class="sub">across everything you have today — no forecast in this number</div>
-      <div class="meter">${cats.map((c, j) => `<i style="width:${Math.max(3, (snap[c.key] / snap.total) * 100)}%;background:var(--src-${j + 1})"></i>`).join('')}</div>
-      <div class="legend">${cats.map((c, j) => `<div>
-        <span class="swatch" style="background-color:var(--src-${j + 1})"></span>
-        <span class="lname">${esc(c.label)}</span>
-        <span class="lamt">${money(snap[c.key], S.base)}</span>
-      </div>`).join('')}</div>
+      <div class="ring-wrap">
+        <div class="ring" style="background:conic-gradient(${arcs.join(', ')})">
+          <div class="ring-mid"><b>${money(snap.total, S.base)}</b><span>right now</span></div>
+        </div>
+        <div class="legend" style="margin-top:0;flex:1">${cats.map((c) => `<div>
+          <span class="swatch" style="background-color:var(--worth-${SNAP.indexOf(c) + 1})"></span>
+          <span class="lname">${esc(c.label)}</span>
+          <span class="lamt">${money(snap[c.key], S.base)}</span>
+        </div>`).join('')}</div>
+      </div>
       ${cats.map((c) => `<div class="row">
         <div class="rmain"><div class="rlabel">${esc(c.label)}</div>
           <div class="rmeta">${esc(snap.holdings[c.key].map((h) => h.label).join(', '))}</div></div>
@@ -1081,7 +1140,7 @@ function drawPlan() {
       <table class="yrs">
         <thead><tr><th>Year</th><th>Invested</th><th>Per month</th></tr></thead>
         <tbody>${mid.rows.map((r) => `<tr${goal > 0 && r.passiveMonthly >= goal ? ' class="hit"' : ''} data-plan-year="${r.year}">
-          <td>${calYear(r.year)}${r.events.length ? ` <span style="color:var(--dim)">· ${esc(r.events.join(', '))}</span>` : ''}${r.ends.length ? ` <span style="color:var(--dim)">· ${esc(r.ends.join(', '))} ends</span>` : ''}${r.sold?.length ? ` <span style="color:var(--dim)">· ${esc(r.sold.join(', '))} sold</span>` : ''}</td>
+          <td>${calYear(r.year)}${r.year === 1 && monthsLeftThisYear() < 12 ? ` <span style="color:var(--dim)">· ${monthsLeftThisYear()} month${monthsLeftThisYear() === 1 ? '' : 's'} left, not twelve</span>` : ''}${r.events.length ? ` <span style="color:var(--dim)">· ${esc(r.events.join(', '))}</span>` : ''}${r.ends.length ? ` <span style="color:var(--dim)">· ${esc(r.ends.join(', '))} ends</span>` : ''}${r.sold?.length ? ` <span style="color:var(--dim)">· ${esc(r.sold.join(', '))} sold</span>` : ''}</td>
           <td class="n">${money(r.capital)}</td>
           <td class="n">${money(r.passiveMonthly)}</td>
         </tr>`).join('')}</tbody>
@@ -1299,6 +1358,9 @@ function accountFields(a) {
     </div>
     ${a.currency !== S.base ? field(`Rate when you got it — ${esc(a.currency)} to 1 ${esc(S.base)}`,
       input('rateThen', a.rateThen ?? '', 'inputmode="decimal" placeholder="e.g. 54"')) : ''}
+    ${a.kind === 'deposit' ? field('The coupon from this one already goes to something else',
+      seg('couponSpent', [{ v: 'no', t: 'No, it saves' }, { v: 'yes', t: 'Yes, it’s spent' }],
+        a.couponSpent ? 'yes' : 'no', 'bool')) : ''}
     <div class="note" style="margin-top:0">Dates and how often it pays are what turn a rate into money
     on a date — leave them empty if you don't know them. The payment beats every calculation here:
     a loan repays principal as well as interest, and only your statement knows the exact figure.
@@ -1306,7 +1368,10 @@ function accountFields(a) {
     arrives, and the app works the yield out for you — and drops the rent into each month as passive
     income towards your goal.
     <br><br>The <b>rate when you got it</b> is what unlocks the Rates tab for this holding: what
-    the currency has done to it since, and what its return really is in ${esc(S.base)}.</div>`;
+    the currency has done to it since, and what its return really is in ${esc(S.base)}.
+    ${a.kind === 'deposit' ? `<br><br>If this one's coupon is already going straight to something
+    else — a loan instalment, say — mark it <b>spent</b> and it drops out of the passive-income
+    goal and the plan's auto-added pieces. The deposit itself keeps counting as what you own.` : ''}</div>`;
 }
 
 function subFields(r) {
@@ -1592,12 +1657,18 @@ function openYearInfo(year) {
     : x.held
       ? `${Math.round(x.ratePct * 10) / 10}% on ${money(x.capital)} held, flat — a certificate does not compound`
       : `${money(x.capital)} growing at its own ${Math.round(x.ratePct * 10) / 10}%`;
+  // "Some lines with 0 in the end, data provided in a weird way." A held bucket's own monthly
+  // figure is ALWAYS zero, by construction — its coupon already lands as its own piece above, so
+  // the bucket itself never adds anything to "what adds up to this year's total." Printing it here
+  // anyway read as broken, not as zero. It is not lost: the same holding is named again below, in
+  // "What the capital is made of," which is the section this list was never meant to duplicate.
   const monthly = [
     b.base ? line('What you already save', 'measured, not a guess', b.base) : '',
     ...b.pieces.filter((p) => p.monthly != null)
       .map((p) => line(p.label, p.auto ? 'added on its own — a live holding you never typed a piece for' : PLAN_KIND_WORDS[p.kind] || p.kind, p.monthly)),
-    ...b.buckets.map((x) => line(x.label, bucketMeta(x), x.monthly)),
-    b.everythingElse ? line('Everything else', `assumed ${Math.round(b.everythingElse.ratePct * 10) / 10}% on ${money(b.everythingElse.capital)}`, b.everythingElse.monthly) : '',
+    ...b.buckets.filter((x) => Math.abs(x.monthly) > 0.5).map((x) => line(x.label, bucketMeta(x), x.monthly)),
+    (b.everythingElse && Math.abs(b.everythingElse.monthly) > 0.5)
+      ? line('Everything else', `assumed ${Math.round(b.everythingElse.ratePct * 10) / 10}% on ${money(b.everythingElse.capital)}`, b.everythingElse.monthly) : '',
   ].filter(Boolean).join('');
   const onceOff = b.pieces.filter((p) => p.once != null)
     .map((p) => line(p.label, p.auto ? 'added on its own, this year' : 'this year', p.once)).join('');

@@ -349,6 +349,18 @@ function must(el, panel, needles, label) {
       }
     }
     if (goalHtml.includes('How it is allocated')) fail('the year-by-year allocation chart must not live on the Goal tab any more — it moved to Plan');
+    // "In goal tab also good to have diagram." An actual ring, in colours the passive-income bar
+    // right above it does not already use — reusing green/blue/orange for liquid/locked/owned
+    // would have the same three colours mean two different things one card apart.
+    if (!goalHtml.includes('class="ring"')) fail('the Goal tab needs its own diagram, a ring, not just a list of numbers');
+    if (!goalHtml.includes('conic-gradient(')) fail('the ring must actually be drawn, not just a container');
+    for (const w of ['var(--worth-1)', 'var(--worth-2)', 'var(--worth-3)'].slice(0, Object.keys(S.snapshot.holdings).filter((k) => S.snapshot[k] > 0).length)) {
+      if (!goalHtml.includes(w)) fail(`the ring must use its own colour slot ${w}, distinct from the Goal bar's --src colours`);
+    }
+    const ringCardHtml = goalHtml.slice(goalHtml.indexOf('What you hold right now'), goalHtml.indexOf('Where the next euro could go'));
+    if (ringCardHtml.includes('var(--src-')) {
+      fail('the "right now" ring must not reuse --src colours — they already mean rent/interest/dividend on this same tab');
+    }
     // The pieces he builds come FIRST and the projection is one card under them; the year-by-year
     // is a plain table behind a fold, not ten bar blocks.
     must(el, 'p-plan', ['Your plan', 'What it comes to', 'Year by year',
@@ -751,6 +763,33 @@ function must(el, panel, needles, label) {
   const el = render(S, 'no rates');
   if (el) must(el, 'p-month', ['Exchange rates are unreachable'], 'no rates');
   if (S.ratesAvailable !== false) fail('with no rate table nothing may claim to be converted');
+}
+
+// ---- "Maybe I was using it for something else — like I am doing right now, paying a loan out
+//      of it — so the % needs a checkbox: is it there, or is it spent." ----
+{
+  const couponSpentAccounts = accounts.map((a) => (a.id === 'a2' ? cleanAccount({ ...a, couponSpent: true }) : a));
+  const S = buildState({ base: 'EUR', table: T, accounts: couponSpentAccounts, spanFlows, subs, goal, events, basis, now: NOW });
+  const el = render(S, 'a deposit\'s coupon marked already spent');
+  if (el) {
+    const goalHtml = el('p-goal').innerHTML;
+    // Isolate the "Already contracted" card specifically — "Cairo CD" legitimately still shows
+    // lower down, in the "What you hold right now" snapshot, since the principal is untouched.
+    const contractedCardHtml = goalHtml.slice(goalHtml.indexOf('Already contracted'), goalHtml.indexOf('What it would take'));
+    if (contractedCardHtml.includes('Cairo CD')) {
+      fail('a coupon marked spent must not still show as "already contracted" income toward the goal');
+    }
+    const worthHtml = el('p-worth').innerHTML;
+    if (!worthHtml.includes('Marked as already spent')) fail('the Worth tab must say out loud that this coupon is excluded — a silent flag is not allowed');
+    if (!worthHtml.includes('Cairo CD')) fail('fixture sanity: the deposit itself must still be on the Worth tab');
+    const planHtml = el('p-plan').innerHTML;
+    if (planHtml.includes('Cairo CD interest')) fail('a spent coupon must not be auto-added to the plan as a piece');
+  }
+  // The principal is untouched: still real net worth, still counted as locked while its term
+  // has not run out. Only the projected coupon income drops out.
+  if (S.snapshot.holdings.locked.every((h) => h.label !== 'Cairo CD')) {
+    fail('marking a coupon spent must not remove the deposit itself from what he owns');
+  }
 }
 
 // ---- "Start from what I hold": the template he asked for, so he can see how it looks before he

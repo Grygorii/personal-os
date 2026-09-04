@@ -236,10 +236,10 @@ a price without one: it looks current.
 2. Railway → same project → **New Service** → same repo.
 3. Start command: `npm run start:pocket`.
 4. Env vars above, `DB_NAME=pocket` among them.
-5. Look for `[boot] pocket-32 · db=pocket · base=EUR`.
+5. Look for `[boot] pocket-33 · db=pocket · base=EUR`.
 
 **Which build is actually serving?** `GET /health` (or `/version`) answers without Telegram —
-`{"ok":true,"app":"pocket","version":"pocket-32"}`. The marker lives in `src/pocket/version.js`;
+`{"ok":true,"app":"pocket","version":"pocket-33"}`. The marker lives in `src/pocket/version.js`;
 bump it on every deploy. Kept has `GET /version` for exactly the same reason: "is my change even
 out there yet" is the first question of every deploy, and guessing at it wastes an evening.
 
@@ -1006,6 +1006,64 @@ once purchasing power is counted; a rebalancing rule decided in advance beats a 
 drawdown; and a household concentrated in one city and one employer is already an un-diversified
 bet before a single investment is chosen. Still nothing computed, still no product or ticker —
 the app has no way to check whether a specific bet stays true, only whether a way of thinking does.
+
+## Real years, and now real months
+
+The very next round of feedback found four more things wrong with the same corner of the app —
+one of them a real modelling bug, not a display slip.
+
+**"It is now September, and I didn't even start to save this 1K."** Year one of the forecast has
+always meant the calendar year already under way — `calYear(1)` prints it as "2026" — but the
+arithmetic behind it credited a full twelve months of saving regardless of the date, which is
+what let a table opened in September read "12,000 EUR saved by the end of 2026" with four of
+those months left to actually happen. `forecast()` takes an optional `now`; when it is given one
+(the live app always gives it one — only a caller that never mentions a clock, which is every
+existing test, keeps the old full-year answer, so nothing already passing had to change) year one
+is credited only the months actually remaining in the calendar year, contributions and growth
+alike — a 12% deposit sitting through four months of the year earns four months of 12%, not
+twelve. Year two onward is an ordinary full year again; only the partial first year changes. The
+year-by-year table now says so directly on year one's own row — "4 months left, not twelve" —
+rather than making him notice the arithmetic disagreed with the calendar on his own.
+
+**"I asked to have a diagram in two tabs, not just move it to Plan — every tab has its own
+purpose."** The allocation chart's move to Plan (previous round) was only half the ask: Goal
+needed its *own* diagram, not a page of numbers. "What you hold right now" is now drawn as a
+ring — a shape with no time axis, on purpose, because this card has none — built in plain CSS
+`conic-gradient`, no library. And "let's add different colours": the ring uses its own three-hue
+set (`--worth-1/2/3`, slots 4/5/7 of the reference categorical palette — yellow, magenta, violet,
+none of them used elsewhere on this tab), never the green/blue/orange the passive-income bar
+directly above it already uses for rent/interest/dividend — the same three colours meaning two
+different things one card apart is exactly the confusion "different colours" was pointing at.
+Colour is tied to the *category* (liquid always slot 1, locked always slot 2, owned always slot
+3), never to which of the three happen to be present in a given household, the same rule the
+`--src` palette already follows one card up.
+
+**"Some lines with 0 in the end, data provided in a weird way."** The year-info drill-down's
+"every line that adds up to this year's total" section was listing every capital bucket,
+including the ones that structurally can never contribute anything to it: a held deposit's own
+monthly figure is *always* zero — its coupon already lands as its own separate piece, higher up
+in the same list — so printing "Deposit 3 — 0 EUR" under a heading that means "what adds up to
+the total" read as broken, not as zero. Those rows are filtered out of that list now; nothing is
+lost, because the same holding is still named in "What the capital is made of," which is the
+section that was never meant to be duplicated in the first place.
+
+**"Maybe I was using it for something else — like I am doing right now, paying a loan out of it —
+so the % needs a checkbox: is it there, or is it spent."** A coupon a deposit pays is not
+automatically his to save: he might already be spending it on something else, a loan instalment
+in the case he described. Asked to choose exactly what the checkbox should do and where it should
+live, his answer was precise — exclude the coupon from the passive-income goal, keep the
+deposit's principal counting as net worth, and put the toggle on the deposit account itself, in
+Worth. `couponSpent` is a plain boolean on the account (`cleanAccount`, `patchFrom` read it the
+way every other boolean field here is read — from whether the key was sent, not its truthiness,
+so unticking it travels as `false` and not as "nothing changed"). `holdingFlow()` — the one
+function both `planTemplate` and the Plan tab's auto-crediting already share — returns `null` for
+a deposit so marked, so its coupon is never auto-added as a piece and never assumed to compound
+into savings; `contractedIncome()` drops it from the Goal tab's "Already contracted" card the
+same way. A liability's own instalment is never touched by this — what he owes does not become
+optional because a deposit happens to be paying it. Nothing about this is silent: the Worth tab
+names the account "Marked as already spent" right where he set the flag, because a flag with a
+real financial consequence and no visible trace of it existing would be exactly the kind of thing
+this app exists to never do.
 
 ## Not done yet
 

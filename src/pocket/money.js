@@ -108,6 +108,12 @@ export function cleanAccount(a) {
       .map(cleanPayment).filter((p) => p.amount > 0).sort((x, y) => x.at - y.at),
     note: txt(a?.note, 300),
     at: num(a?.at) || Date.now(),
+    // "It is there, or it is spent." A deposit's coupon he has already earmarked elsewhere —
+    // paying down a loan, say — is real money, but it is not HIS money to count toward the
+    // passive-income goal a second time. The deposit's own principal is untouched by this: it
+    // is still real net worth on the Worth tab, still locked the same way, still liquid the
+    // same day the term ends. Only the coupon's own projected income drops out of the Goal.
+    couponSpent: !!a?.couponSpent,
   };
 }
 
@@ -732,9 +738,20 @@ export function forecast({
   yieldPct = 5,
   events = [],
   goalMonthly = 0,
+  // "It looks like I will have 12k saved in the end of 2026, but it is now September 2026 and I
+  // didn't even start to save this 1K." Year 1 is labelled with the CURRENT calendar year
+  // (`calYear`), not a rolling twelve months from today — so crediting it a full year of
+  // contributions was the exact mistake: it showed him August's version of December before a
+  // single one of those months had happened. `now` is optional and defaults to unset, which
+  // keeps every existing caller (and every test that never mentioned a clock) exactly as it was —
+  // only a caller that actually knows the wall-clock date opts into the partial first year.
+  now = null,
 } = {}) {
   const n = Math.max(1, Math.min(60, Math.round(num(years)) || 10));
   const y = num(yieldPct) / 100;
+  // Months still to come in the current calendar year, September included (12 - 8 = 4: Sep, Oct,
+  // Nov, Dec). Clamped to at least 1 so a forecast run on 31 December still has a year one.
+  const year1Months = now != null ? Math.max(1, 12 - new Date(now).getUTCMonth()) : 12;
 
   // A LUMP WITH A RATE IS A DEPOSIT, AND A DEPOSIT PAYS ITS RATE OUT.
   //
@@ -857,13 +874,18 @@ export function forecast({
 
     // Contributions through the year, then growth. Deliberately not the other way round: it
     // credits a full year of return to money that arrived in December.
+    //
+    // Year one is the exception: it is THIS calendar year, already partly gone by the time he
+    // opens the app, so it gets `year1Months` of contributions and growth, not twelve — the
+    // months he has left, not the months the year has in total.
+    const monthsThisYear = year === 1 ? year1Months : 12;
     const def = buckets.get('default');
     const monthly = [...buckets.values()].reduce((t, b) => t + b.monthly, 0) + baseMonthly;
     let contributedThisYear = 0;
     for (const b of buckets.values()) {
-      const add = Math.max(0, (b === def ? b.monthly + baseMonthly : b.monthly)) * 12;
+      const add = Math.max(0, (b === def ? b.monthly + baseMonthly : b.monthly)) * monthsThisYear;
       contributedThisYear += add;
-      b.capital = b.capital * (1 + b.rate) + add;
+      b.capital = b.capital * (1 + b.rate * monthsThisYear / 12) + add;
     }
     const capital = [...buckets.values()].reduce((t, b) => t + b.capital, 0);
     // Each bucket yields at ITS rate, so a plan half in 2% deposits does not report itself as
@@ -1402,6 +1424,10 @@ export function patchFrom(kind, raw = {}) {
     const n = raw.payment === '' || raw.payment === null ? null : amount(raw.payment);
     out.payment = n || null;
   }
+  // "Maybe I was using it for something else — like I am doing right now, paying a loan out of
+  // it — so the % needs a checkbox: is it there, or is it spent." A boolean, so `false` (he
+  // unticks it) has to travel the same as `true` — read from presence of the key, not truthiness.
+  if (raw.couponSpent !== undefined) out.couponSpent = !!raw.couponSpent;
   return out;
 }
 
@@ -1427,6 +1453,10 @@ export function contractedIncome(accounts, now = Date.now()) {
     // as 305 a month of contracted income. Exactly the failure this app exists to prevent, and
     // introduced by the change that fixed the one next to it.
     if (!t || !t.schedule || t.ended || t.matured) continue;
+    // "The % needs a checkbox: is it there, or is it spent." A coupon he has already earmarked
+    // elsewhere is real, but it is not his to count toward the passive-income goal a second
+    // time — a liability's own instalment is untouched, only a DEPOSIT's coupon can be marked.
+    if (a.kind === 'deposit' && a.couponSpent) continue;
     const row = {
       label: a.label || a.kind,
       currency: a.currency,
@@ -2100,6 +2130,11 @@ export function planYearOf(at, now = Date.now()) {
 export function holdingFlow(a, now = Date.now()) {
   const t = depositProgress(a, now);
   if (!t?.schedule || !(t.perYear > 0) || t.ended) return null;
+  // "It is there, or it is spent." A deposit's coupon already earmarked elsewhere is not a
+  // piece to add to the plan and not income to auto-credit — the loan it is paying still costs
+  // what it costs, whether or not anything here says so. Never gates a liability's own
+  // instalment: what he owes does not become optional because a deposit is servicing it.
+  if (a.kind === 'deposit' && a.couponSpent) return null;
   const owed = isLiability(a.kind);
   const perMonth = t.perYear / 12;
   // The instalment, not the interest: repaying principal is money leaving his account too, and
