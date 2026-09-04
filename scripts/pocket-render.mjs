@@ -137,6 +137,27 @@ function render(S, label) {
   return el;
 }
 
+/** Like render(), but also triggers the tap-a-year drill-down so its content can be inspected —
+ *  the milestone and the allocation chart both open it, and "what counts as liquid" only exists
+ *  inside that sheet. */
+function renderYearInfo(S, year, label) {
+  const { el, document } = shim();
+  const ctx = vm.createContext({
+    document, window: { Telegram: undefined, confirm: () => true, alert: () => {} },
+    console, fetch: async () => ({ ok: true, json: async () => S }),
+    setTimeout, Date, Math, JSON, Intl, Number, String, Object, Array, encodeURIComponent, Set,
+  });
+  try {
+    vm.runInContext(script, ctx);
+    ctx.__S = S;
+    vm.runInContext(`S = globalThis.__S; draw(); openYearInfo(${year});`, ctx);
+  } catch (err) {
+    fail(`${label}: the year-info drill-down threw. ${err.message}`);
+    return null;
+  }
+  return el;
+}
+
 function must(el, panel, needles, label) {
   const h = el(panel).innerHTML;
   if (!h) return fail(`${label}: ${panel} drew nothing`);
@@ -297,6 +318,13 @@ function must(el, panel, needles, label) {
     }
     if (!S.advice.every((t, i, arr) => i === 0 || arr[i - 1].impactInBase >= t.impactInBase)) {
       fail('advice must be ranked by size, biggest first');
+    }
+
+    // "It should not be only about my numbers — good ideas outside of my numbers." A separate,
+    // clearly-labelled card, never mixed into the personalised list above it.
+    if (!goalHtml.includes('General ideas, not about your numbers')) fail('the general-ideas card must be present, separate from the personalised advice');
+    if (goalHtml.indexOf('Where the next euro could go') > goalHtml.indexOf('General ideas, not about your numbers')) {
+      fail('the personalised advice must come before the general ideas, not after');
     }
 
     // "Maybe some graph in years to see how money allocated" — one tappable column per year, the
@@ -651,6 +679,22 @@ function must(el, panel, needles, label) {
   if (el) {
     const goalHtml = el('p-goal').innerHTML;
     if (!goalHtml.includes('Not reached inside')) fail('the milestone card must say honestly that it is not reached, not silently show a year');
+  }
+
+  // The other half of the fix: tapping the year a milestone (or the allocation chart) points at
+  // has to explain itself — "why does this say I have enough" cannot be a black box a second time.
+  const cash = cleanAccount({ id: 'c2', label: 'Bank', kind: 'cash', currency: 'EUR', value: 40000 });
+  const reached = buildState({ base: 'EUR', table: T, accounts: [cash], spanFlows: [], subs: [], goal,
+    milestone: nextFlat, basis: {}, now: NOW, events: { years: 10, useMeasured: false, list: [ownsAFlat] } });
+  if (!reached.milestone.reachedYear) fail('fixture sanity: 40,000 EUR cash should clear a 28,000 EUR target');
+  const info = renderYearInfo(reached, reached.milestone.reachedYear, 'the milestone drill-down');
+  if (info) {
+    const infoHtml = info('efields').innerHTML;
+    if (!infoHtml.includes('What the capital is made of')) fail('tapping the milestone year must explain what the capital figure is made of');
+    if (!infoHtml.includes('Liquid')) fail('the drill-down must name the liquid portion');
+    if (!infoHtml.includes('Already spent')) fail('and the portion that is spoken for — his flat — sitting right beside it');
+    if (!infoHtml.includes('Cairo flat')) fail('naming the actual holding, not a generic label');
+    if (!infoHtml.includes('30,000')) fail('with its real value, not a rounded-away number');
   }
 }
 

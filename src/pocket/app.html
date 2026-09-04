@@ -775,7 +775,8 @@ function drawGoal() {
       ${milestone ? `
         <div class="sub" style="font-size:15px;color:var(--ink)">${esc(milestone.label || 'What you are saving toward')} needs ${money(milestone.amountInBase, S.base)}</div>
         ${milestone.reachedYear
-          ? `<div class="big in" style="margin-top:4px">${calYear(milestone.reachedYear)}</div><div class="sub">is when your plan has it</div>`
+          ? `<div class="big in" style="margin-top:4px;cursor:pointer" data-plan-year="${milestone.reachedYear}">${calYear(milestone.reachedYear)}</div>
+             <div class="sub">is when your plan has it — tap the year to see what counts toward it</div>`
           : `<div class="sub" style="margin-top:4px">Not reached inside ${f ? f.years : 10} years on your plan today.</div>`}
         <button class="btn ghost" data-milestone-edit="1" style="margin-top:12px">Change</button>
       ` : `
@@ -851,6 +852,27 @@ function drawGoal() {
       computes elsewhere; nothing is a forecast or a guess about markets.</div>
     </div>`;
 
+  /* "It should not be only about my numbers — good ideas outside of my numbers and the
+     investments I have." A short, fixed list — general financial ideas worth knowing, not
+     computed from anything and never pretending to be. No product or market names, because the
+     app has no way to check whether any of them are still true. */
+  const GENERAL_IDEAS = [
+    { t: 'An emergency fund, in the currency you actually spend', d: 'A few months of ordinary spending, held boring and easy to reach, exists so a bad month never forces selling something else at a bad time.' },
+    { t: 'Diversification means more than one country, not just one holding', d: 'A portfolio concentrated in a single economy or currency carries that whole country’s risk, however many different things it is split across inside it.' },
+    { t: 'A broad index fund is a common way to hold "the market" cheaply', d: 'It spreads a stake across many companies rather than betting on any one, usually for less than picking stocks individually costs.' },
+    { t: 'Property is worth what someone will pay, on the day you find them', d: 'Unlike a deposit or a fund, selling real estate can take months — worth building into any plan that assumes its value turns into cash on a specific date.' },
+  ];
+  const ideasCard = `
+    <div class="card">
+      <h2>General ideas, not about your numbers</h2>
+      ${GENERAL_IDEAS.map((x) => `<div class="row">
+        <div class="rmain"><div class="rlabel">${esc(x.t)}</div><div class="rmeta">${esc(x.d)}</div></div>
+      </div>`).join('')}
+      <div class="note">Common financial ideas, not computed from anything you hold and not a
+      recommendation about what to do with it — the tips above this card are the ones built from
+      your real numbers.</div>
+    </div>`;
+
   $('p-goal').innerHTML = `
     <div class="card">
       <h2>Passive income</h2>
@@ -878,6 +900,7 @@ function drawGoal() {
     </div>` : ''}
     ${milestoneCard}
     ${adviceCard}
+    ${ideasCard}
     ${allocCard}`;
 }
 
@@ -1520,21 +1543,46 @@ function openYearInfo(year) {
       </div>
       <div class="ramt ${val >= 0 ? 'in' : 'out'}">${money(val)}</div>
     </div>`;
+  // An asset bucket is never "growing at its own rate" the way a deposit is — it is something he
+  // owns, holding its value (or appreciating, only if he said so), and it is capital he cannot
+  // spend on something else without a separate decision to sell it.
+  const bucketMeta = (x) => x.asset
+    ? (x.ratePct ? `${money(x.capital)} — something you own, growing at ${Math.round(x.ratePct * 10) / 10}%` : `${money(x.capital)} — something you own, holding its value`)
+    : x.held
+      ? `${Math.round(x.ratePct * 10) / 10}% on ${money(x.capital)} held, flat — a certificate does not compound`
+      : `${money(x.capital)} growing at its own ${Math.round(x.ratePct * 10) / 10}%`;
   const monthly = [
     b.base ? line('What you already save', 'measured, not a guess', b.base) : '',
     ...b.pieces.filter((p) => p.monthly != null)
       .map((p) => line(p.label, p.auto ? 'added on its own — a live holding you never typed a piece for' : PLAN_KIND_WORDS[p.kind] || p.kind, p.monthly)),
-    ...b.buckets.map((x) => line(x.label, x.held
-      ? `${Math.round(x.ratePct * 10) / 10}% on ${money(x.capital)} held, flat — a certificate does not compound`
-      : `${money(x.capital)} growing at its own ${Math.round(x.ratePct * 10) / 10}%`, x.monthly)),
+    ...b.buckets.map((x) => line(x.label, bucketMeta(x), x.monthly)),
     b.everythingElse ? line('Everything else', `assumed ${Math.round(b.everythingElse.ratePct * 10) / 10}% on ${money(b.everythingElse.capital)}`, b.everythingElse.monthly) : '',
   ].filter(Boolean).join('');
   const onceOff = b.pieces.filter((p) => p.once != null)
     .map((p) => line(p.label, p.auto ? 'added on its own, this year' : 'this year', p.once)).join('');
+  // WHAT THE CAPITAL FIGURE IS ACTUALLY MADE OF — the one thing a milestone or the allocation
+  // chart cannot show in a single number: how much of it he owns outright versus could redeploy.
+  const assetLabels = b.buckets.filter((x) => x.asset).map((x) => x.label);
+  const spokenFor = r.capital - r.liquidCapital;
+  const capital = r.capital > 0 ? `
+    <h3 style="margin:14px 0 4px">What the capital is made of</h3>
+    <div class="row">
+      <span class="dot in"></span>
+      <div class="rmain"><div class="rlabel">Liquid</div>
+        <div class="rmeta">could go toward something new — a milestone target is checked against this, not the total</div></div>
+      <div class="ramt in">${money(r.liquidCapital)}</div>
+    </div>
+    ${spokenFor > 0.5 ? `<div class="row">
+      <span class="dot" style="background:var(--dim)"></span>
+      <div class="rmain"><div class="rlabel">Already spent</div>
+        <div class="rmeta">${esc(assetLabels.join(', ') || 'something you own')} — real net worth, not money you can also put toward something else without selling it</div></div>
+      <div class="ramt">${money(spokenFor)}</div>
+    </div>` : ''}` : '';
   $('efields').innerHTML = `
     <div class="note" style="margin-top:0">Every line that adds up to this year's ${money(r.passiveMonthly)} a month.</div>
     ${monthly || '<div class="empty" style="padding:16px">Nothing recurring yet.</div>'}
-    ${onceOff ? `<h3 style="margin:14px 0 4px">Landing this year</h3>${onceOff}` : ''}`;
+    ${onceOff ? `<h3 style="margin:14px 0 4px">Landing this year</h3>${onceOff}` : ''}
+    ${capital}`;
   $('esave').hidden = true;
   $('esheet').hidden = false;
 }

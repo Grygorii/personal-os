@@ -236,10 +236,10 @@ a price without one: it looks current.
 2. Railway → same project → **New Service** → same repo.
 3. Start command: `npm run start:pocket`.
 4. Env vars above, `DB_NAME=pocket` among them.
-5. Look for `[boot] pocket-29 · db=pocket · base=EUR`.
+5. Look for `[boot] pocket-30 · db=pocket · base=EUR`.
 
 **Which build is actually serving?** `GET /health` (or `/version`) answers without Telegram —
-`{"ok":true,"app":"pocket","version":"pocket-29"}`. The marker lives in `src/pocket/version.js`;
+`{"ok":true,"app":"pocket","version":"pocket-30"}`. The marker lives in `src/pocket/version.js`;
 bump it on every deploy. Kept has `GET /version` for exactly the same reason: "is my change even
 out there yet" is the first question of every deploy, and guessing at it wastes an evening.
 
@@ -926,6 +926,28 @@ value set aside — real for "what am I worth," not counted for "what could I sp
 `capitalReachedYear` reads. Sell the asset (`sellAtYear`/`sellFor`) and its proceeds rejoin liquid
 capital on the year they land, which is the one legitimate way an owned asset becomes deployable —
 priced, not assumed.
+
+**Still said 2026 after that fix — because it was right, and he did not believe it.** "Still say I
+will have money in 2026 but by what I add it is not correct, review." The asset fix was correct;
+what it exposed is that his real deposits alone, converted at today's rate, already clear a 28,000
+EUR target — a real number in a form (Egyptian term certificates) that does not feel like "money
+for an apartment" the way euro cash would. Rather than guess a third definition of "liquid," the
+milestone's own year is now tappable — it opens the same drill-down the allocation chart already
+uses, with a new section, **"What the capital is made of,"** naming exactly which holdings are
+liquid and which are spoken for (an owned asset, not sold). The `openYearInfo` bucket line also
+stopped describing an asset as "growing at its own 0%" — it now says what it actually is: something
+owned, holding its value, or growing only if he gave it a rate. The number was not wrong twice; the
+first fix just had nothing to show its work, and "why does this say I have enough" cannot be a black
+box a second time.
+
+**An advisor should say more than his own numbers.** "It should not be only about my numbers — it
+could give some good ideas outside of my numbers and investments I have." A second card, **General
+ideas, not about your numbers** — a short, fixed list (an emergency fund in the currency he spends,
+diversification across more than one country, what a broad index fund is for, that property takes
+months to convert to cash) — computed from nothing, and it says so. It sits below the personalised
+advice, never mixed into it: one card is built from his real numbers, the other is common
+financial literacy that owes nothing to any of them. No product or market names — the app has no
+way to check whether any of those are still true.
 
 **How it is allocated.** "Maybe some graph in years to see how money allocated." One column per
 forecast year, stacked by what kind of money it is: held flat (a certificate, or a lump he typed
