@@ -900,6 +900,12 @@ export function forecast({
           label: b.label, capital: b.capital,
           ratePct: b.statedRatePct != null ? b.statedRatePct : b.rate * 100,
           monthly: (b.capital * b.rate) / 12, held: !!b.held, asset: !!b.asset,
+          // A term, or the absence of one. Cash and a portfolio are `held` too — flat, no coupon
+          // to reinvest — but nothing about them is LOCKED the way a certificate mid-term is; only
+          // a bucket that actually has a maturity date still ahead of it is unavailable for that
+          // reason. `untilYear` already decides when a bucket empties into `default` on its own —
+          // reusing it here, rather than inventing a second notion of "locked," is the whole point.
+          untilYear: b.untilYear || null,
         })),
       everythingElse: def.capital > 0 ? { capital: def.capital, ratePct: y * 100, monthly: (def.capital * y) / 12 } : null,
     };
@@ -908,12 +914,18 @@ export function forecast({
       year,
       capital,
       // WORTH IS NOT AVAILABLE. `capital` is the whole household — including a flat he already
-      // lives in, or lets, and has not sold. That is real money and belongs in "what am I worth",
-      // but it is not money he can put toward the NEXT apartment without a separate decision to
-      // sell the current one — a decision this figure never assumes he has made. Only a sale
-      // (`sold`, above) turns that value into something liquid, and the moment it does, it stops
-      // being an asset bucket and joins this figure on its own.
-      liquidCapital: capital - breakdown.buckets.filter((b) => b.asset).reduce((t, b) => t + b.capital, 0),
+      // lives in and has not sold, AND a certificate still mid-term. Asked directly which of his
+      // own money should count, his answer was precise: "money I could take and buy apartment —
+      // saved money, or % from deposits, or deposits money but after the deposit finish." So an
+      // asset (never liquid until sold) AND a bucket with a term still ahead of it (`untilYear` —
+      // a real deposit, or a lump he typed with a rate and a term) are both set aside — but cash
+      // and a portfolio are `held` too, flat with no coupon to reinvest, and NOTHING about them is
+      // locked, so `untilYear` rather than `held` alone is what actually decides "unavailable".
+      // The coupon a locked deposit pays is already its own piece, landing as cash the moment it
+      // arrives, same as always. The instant a deposit's term ends, its bucket empties into
+      // `default` on its own (the maturity rule, above) and rejoins this figure with no special
+      // case needed here. Only a sale (`sold`, above) does the equivalent for an asset.
+      liquidCapital: capital - breakdown.buckets.filter((b) => b.asset || (b.held && b.untilYear)).reduce((t, b) => t + b.capital, 0),
       contributedThisYear,
       monthlyContribution: monthly,
       passiveMonthly: passive,

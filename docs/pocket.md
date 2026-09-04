@@ -236,10 +236,10 @@ a price without one: it looks current.
 2. Railway → same project → **New Service** → same repo.
 3. Start command: `npm run start:pocket`.
 4. Env vars above, `DB_NAME=pocket` among them.
-5. Look for `[boot] pocket-30 · db=pocket · base=EUR`.
+5. Look for `[boot] pocket-31 · db=pocket · base=EUR`.
 
 **Which build is actually serving?** `GET /health` (or `/version`) answers without Telegram —
-`{"ok":true,"app":"pocket","version":"pocket-30"}`. The marker lives in `src/pocket/version.js`;
+`{"ok":true,"app":"pocket","version":"pocket-31"}`. The marker lives in `src/pocket/version.js`;
 bump it on every deploy. Kept has `GET /version` for exactly the same reason: "is my change even
 out there yet" is the first question of every deploy, and guessing at it wastes an evening.
 
@@ -931,14 +931,26 @@ priced, not assumed.
 will have money in 2026 but by what I add it is not correct, review." The asset fix was correct;
 what it exposed is that his real deposits alone, converted at today's rate, already clear a 28,000
 EUR target — a real number in a form (Egyptian term certificates) that does not feel like "money
-for an apartment" the way euro cash would. Rather than guess a third definition of "liquid," the
-milestone's own year is now tappable — it opens the same drill-down the allocation chart already
-uses, with a new section, **"What the capital is made of,"** naming exactly which holdings are
-liquid and which are spoken for (an owned asset, not sold). The `openYearInfo` bucket line also
-stopped describing an asset as "growing at its own 0%" — it now says what it actually is: something
-owned, holding its value, or growing only if he gave it a rate. The number was not wrong twice; the
-first fix just had nothing to show its work, and "why does this say I have enough" cannot be a black
-box a second time.
+for an apartment" the way euro cash would. Rather than guess a third definition of "liquid,"
+the milestone's own year became tappable — it opens the same drill-down the allocation chart
+already uses, with a new section, **"What the capital is made of."** And then the actual question:
+asked directly which of his own money should count, his answer was precise —
+
+> "money I could take and buy apartment — saved money, or % from deposits, or deposits money but
+> after the deposit finish."
+
+A deposit still mid-term is exactly as unavailable as the flat he has not sold — **but they are not
+unavailable for the same reason, and the drill-down now says which is which.** `liquidCapital` sets
+aside an asset (only liquid if sold) and a bucket with a term still ahead of it, `untilYear` — a
+real deposit, or a lump he typed with a rate and a term — but *not* cash or a portfolio, which are
+`held` too (flat, no coupon to reinvest) yet carry no lock at all; `untilYear` is what actually
+decides "unavailable," never `held` on its own. The coupon a locked deposit pays is already its own
+piece and counts as it arrives — "% from deposits" was never in question. And "after the deposit
+finish" needed no new code at all: the moment a deposit's term ends, its bucket already empties into
+`default` on its own (the maturity rule the app has had since the compounding fix), and rejoins
+`liquidCapital` for free. The drill-down names the two kinds of unavailable separately — **"Locked
+until it matures"** for a deposit, **"Something you own"** for an asset — because *when* each one
+frees up is a different fact, and conflating them would have been the same mistake in a new shape.
 
 **An advisor should say more than his own numbers.** "It should not be only about my numbers — it
 could give some good ideas outside of my numbers and investments I have." A second card, **General

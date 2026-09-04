@@ -683,18 +683,36 @@ function must(el, panel, needles, label) {
 
   // The other half of the fix: tapping the year a milestone (or the allocation chart) points at
   // has to explain itself — "why does this say I have enough" cannot be a black box a second time.
-  const cash = cleanAccount({ id: 'c2', label: 'Bank', kind: 'cash', currency: 'EUR', value: 40000 });
-  const reached = buildState({ base: 'EUR', table: T, accounts: [cash], spanFlows: [], subs: [], goal,
+  //
+  // Asked directly which of his own money should count, he was precise: "money I could take and
+  // buy apartment — saved money, or % from deposits, or deposits money but after the deposit
+  // finish." So a term deposit still mid-term is exactly as unavailable as the flat, and the
+  // drill-down has to name them as two DIFFERENT reasons — one that clears on its own the day the
+  // term ends, one that only clears if he sells.
+  const cash = cleanAccount({ id: 'c2', label: 'Bank', kind: 'cash', currency: 'EUR', value: 20000 });
+  const lockedCD = cleanAccount({ id: 'd2', label: 'Cairo CD', kind: 'deposit', currency: 'EGP', value: 1080000, ratePct: 20, payout: 'yearly', startsAt: utc(2025, 1, 1), endsAt: utc(2030, 1, 1) });
+  const reached = buildState({ base: 'EUR', table: T, accounts: [cash, lockedCD], spanFlows: [], subs: [], goal,
     milestone: nextFlat, basis: {}, now: NOW, events: { years: 10, useMeasured: false, list: [ownsAFlat] } });
-  if (!reached.milestone.reachedYear) fail('fixture sanity: 40,000 EUR cash should clear a 28,000 EUR target');
+  if (!reached.milestone.reachedYear) fail('fixture sanity: 20,000 EUR cash plus the flat and the CD should still clear a 28,000 EUR target eventually');
+  if (reached.forecast.mid.rows[0].liquidCapital >= 28000) {
+    fail('fixture sanity: with the CD still years from maturing, year one alone should not already clear the target from cash');
+  }
   const info = renderYearInfo(reached, reached.milestone.reachedYear, 'the milestone drill-down');
   if (info) {
     const infoHtml = info('efields').innerHTML;
     if (!infoHtml.includes('What the capital is made of')) fail('tapping the milestone year must explain what the capital figure is made of');
     if (!infoHtml.includes('Liquid')) fail('the drill-down must name the liquid portion');
-    if (!infoHtml.includes('Already spent')) fail('and the portion that is spoken for — his flat — sitting right beside it');
+    if (!infoHtml.includes('Something you own')) fail('the flat needs its own line, distinct from a locked deposit');
     if (!infoHtml.includes('Cairo flat')) fail('naming the actual holding, not a generic label');
     if (!infoHtml.includes('30,000')) fail('with its real value, not a rounded-away number');
+  }
+  // While the CD is still mid-term, it must count as locked, not liquid — and cash sitting in the
+  // very same fixture must NOT be swept up by the same rule just because both are "held" buckets.
+  const midTerm = renderYearInfo(reached, 2, 'a year while the CD is still locked');
+  if (midTerm) {
+    const midHtml = midTerm('efields').innerHTML;
+    if (!midHtml.includes('Locked until it matures')) fail('a certificate mid-term needs its own line, distinct from money he owns outright');
+    if (!midHtml.includes('Cairo CD')) fail('naming the deposit that is actually locked');
   }
 }
 

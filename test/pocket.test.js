@@ -2150,6 +2150,31 @@ test('capitalReachedYear: an owned asset does not count as money available for t
   assert.equal(capitalReachedYear(sold.rows, 28000), 2, 'once sold, the proceeds are liquid and the target is reached');
 });
 
+// Asked directly which of his own money should count toward a milestone, he was precise: "money
+// I could take and buy apartment — saved money, or % from deposits, or deposits money but after
+// the deposit finish." A deposit still mid-term is exactly as unavailable as an owned asset —
+// until the day it matures, when it needs no special case at all: the existing maturity rule
+// already empties that bucket into `default`, and `liquidCapital` picks it up from there.
+
+test('capitalReachedYear: a deposit still mid-term does not count either — only once it matures', () => {
+  const f = forecast({
+    startCapital: 2000, monthlySurplus: 0, years: 5, yieldPct: 0,
+    startBuckets: [{ id: 'd1', capital: 30000, ratePct: 0, label: 'Deposit', untilYear: 3 }],
+  });
+  assert.equal(f.rows[0].liquidCapital, 2000, 'locked in a certificate is not money for a purchase, same as an owned flat');
+  assert.equal(f.rows[2].liquidCapital, 2000, 'still locked in year three, the last year of the term');
+  assert.equal(f.rows[3].liquidCapital, 32000, 'the day it matures it becomes ordinary cash, automatically');
+  assert.equal(capitalReachedYear(f.rows, 28000), 4, 'so a 28,000 target is reached in the year AFTER the term ends, not before');
+  // The coupon it pays along the way is a different piece of money entirely, and was never
+  // locked — it should count as it arrives, same as any other income.
+  const withCoupon = forecast({
+    startCapital: 0, monthlySurplus: 0, years: 5, yieldPct: 0,
+    startBuckets: [{ id: 'd1', capital: 30000, ratePct: 0, label: 'Deposit', untilYear: 5 }],
+    events: [{ id: 'c1', kind: 'income', amount: 1000, atYear: 1, label: 'Deposit interest' }],
+  });
+  assert.equal(withCoupon.rows[0].liquidCapital, 12000, 'a year of coupons is liquid even while the principal that paid them is still locked');
+});
+
 test('moneyAdvice: up to five tips, ranked by size, and only the ones that actually apply', () => {
   const subs = [cleanSub({ id: 's1', label: 'Netflix', amount: 12.99, currency: 'EUR', every: 'monthly', startsAt: utc(2024, 3, 5) })];
   const tips = moneyAdvice(HIS(), subs, T, 'EUR', SEPT26);

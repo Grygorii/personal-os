@@ -1561,9 +1561,18 @@ function openYearInfo(year) {
   const onceOff = b.pieces.filter((p) => p.once != null)
     .map((p) => line(p.label, p.auto ? 'added on its own, this year' : 'this year', p.once)).join('');
   // WHAT THE CAPITAL FIGURE IS ACTUALLY MADE OF — the one thing a milestone or the allocation
-  // chart cannot show in a single number: how much of it he owns outright versus could redeploy.
+  // chart cannot show in a single number. Asked directly, his own answer was precise: "money I
+  // could take and buy apartment — saved money, or % from deposits, or deposits money but after
+  // the deposit finish." So an asset he owns and a deposit still mid-term are BOTH set aside from
+  // "liquid" — but they are not the same kind of unavailable, and the drill-down says which is
+  // which: a deposit becomes liquid the day its term ends, on its own; an asset only does if he
+  // sells it.
+  // Cash and a portfolio are `held` too — flat, no coupon to reinvest — but nothing about them is
+  // LOCKED the way a certificate mid-term is. Only a bucket with a term still ahead of it counts.
   const assetLabels = b.buckets.filter((x) => x.asset).map((x) => x.label);
-  const spokenFor = r.capital - r.liquidCapital;
+  const lockedLabels = b.buckets.filter((x) => x.held && x.untilYear && !x.asset).map((x) => x.label);
+  const ownedTotal = b.buckets.filter((x) => x.asset).reduce((t, x) => t + x.capital, 0);
+  const lockedTotal = b.buckets.filter((x) => x.held && x.untilYear && !x.asset).reduce((t, x) => t + x.capital, 0);
   const capital = r.capital > 0 ? `
     <h3 style="margin:14px 0 4px">What the capital is made of</h3>
     <div class="row">
@@ -1572,11 +1581,17 @@ function openYearInfo(year) {
         <div class="rmeta">could go toward something new — a milestone target is checked against this, not the total</div></div>
       <div class="ramt in">${money(r.liquidCapital)}</div>
     </div>
-    ${spokenFor > 0.5 ? `<div class="row">
+    ${lockedTotal > 0.5 ? `<div class="row">
       <span class="dot" style="background:var(--dim)"></span>
-      <div class="rmain"><div class="rlabel">Already spent</div>
-        <div class="rmeta">${esc(assetLabels.join(', ') || 'something you own')} — real net worth, not money you can also put toward something else without selling it</div></div>
-      <div class="ramt">${money(spokenFor)}</div>
+      <div class="rmain"><div class="rlabel">Locked until it matures</div>
+        <div class="rmeta">${esc(lockedLabels.join(', '))} — becomes liquid on its own the day the term ends; the coupon it pays along the way already counts, above</div></div>
+      <div class="ramt">${money(lockedTotal)}</div>
+    </div>` : ''}
+    ${ownedTotal > 0.5 ? `<div class="row">
+      <span class="dot" style="background:var(--dim)"></span>
+      <div class="rmain"><div class="rlabel">Something you own</div>
+        <div class="rmeta">${esc(assetLabels.join(', '))} — real net worth, only liquid if you sell it</div></div>
+      <div class="ramt">${money(ownedTotal)}</div>
     </div>` : ''}` : '';
   $('efields').innerHTML = `
     <div class="note" style="margin-top:0">Every line that adds up to this year's ${money(r.passiveMonthly)} a month.</div>
