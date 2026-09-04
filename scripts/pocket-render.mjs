@@ -633,6 +633,27 @@ function must(el, panel, needles, label) {
   }
 }
 
+// ---- "I said I will need 28k for next apartment, it says you will have it in 2026 — from where
+//      data?" A flat he already owns must never count as money available for a second one ----
+{
+  const ownsAFlat = cleanEvent({
+    id: 'flat1', atYear: 1, kind: 'asset', amount: 30000, label: 'Cairo flat',
+  });
+  const nextFlat = { amount: 28000, currency: 'EUR', label: 'Next apartment' };
+  const S = buildState({ base: 'EUR', table: T, accounts: [cleanAccount({ id: 'c1', label: 'Bank', kind: 'cash', currency: 'EUR', value: 2000 })],
+    spanFlows: [], subs: [], goal, milestone: nextFlat, basis: {}, now: NOW,
+    events: { years: 10, useMeasured: false, list: [ownsAFlat] } });
+  if (S.forecast.mid.rows[0].capital <= 28000) fail('fixture sanity: the flat alone should already put total capital past 28,000');
+  if (S.milestone.reachedYear) {
+    fail(`owning a 30,000 EUR flat must not read as "you have 28,000 EUR for the next one" — got year ${S.milestone.reachedYear}`);
+  }
+  const el = render(S, 'a milestone next to a flat he already owns');
+  if (el) {
+    const goalHtml = el('p-goal').innerHTML;
+    if (!goalHtml.includes('Not reached inside')) fail('the milestone card must say honestly that it is not reached, not silently show a year');
+  }
+}
+
 // ---- No exchange rates: nothing is totalled, and the page says so ----
 {
   const S = buildState({ base: 'EUR', table: null, accounts, spanFlows, subs, goal, events, basis, now: NOW });

@@ -907,6 +907,13 @@ export function forecast({
     rows.push({
       year,
       capital,
+      // WORTH IS NOT AVAILABLE. `capital` is the whole household — including a flat he already
+      // lives in, or lets, and has not sold. That is real money and belongs in "what am I worth",
+      // but it is not money he can put toward the NEXT apartment without a separate decision to
+      // sell the current one — a decision this figure never assumes he has made. Only a sale
+      // (`sold`, above) turns that value into something liquid, and the moment it does, it stops
+      // being an asset bucket and joins this figure on its own.
+      liquidCapital: capital - breakdown.buckets.filter((b) => b.asset).reduce((t, b) => t + b.capital, 0),
       contributedThisYear,
       monthlyContribution: monthly,
       passiveMonthly: passive,
@@ -976,7 +983,11 @@ export function forecastRange(opts = {}, yields = planYields(opts.yieldPct ?? 0)
  *  and for a target never reached inside the horizon; never a guess past where the forecast ends. */
 export function capitalReachedYear(rows, target) {
   if (!(num(target) > 0)) return null;
-  const hit = (rows || []).find((r) => r.capital >= target);
+  // liquidCapital, not capital: "enough for the next apartment" means money he could actually put
+  // toward it, not the value of the one he already owns and has not sold. Falls back to `capital`
+  // for a row that has none (a fixture built by hand, before this field existed), which is why the
+  // total-only test above still passes unchanged.
+  const hit = (rows || []).find((r) => (r.liquidCapital ?? r.capital) >= target);
   return hit ? hit.year : null;
 }
 

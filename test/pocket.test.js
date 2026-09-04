@@ -2127,6 +2127,29 @@ test('capitalReachedYear: the first year capital crosses a target, from the rows
   assert.equal(capitalReachedYear(rows, null), null);
 });
 
+// "I said I will need 28k for next apartment, it says you will have it in 2026 — from where
+// data? Something wrong." He was right: `capital` is the whole household, including the flat he
+// already lives in — a real number, but not money he can put toward a SECOND one without a
+// separate decision to sell the first. `liquidCapital` excludes exactly that.
+
+test('capitalReachedYear: an owned asset does not count as money available for the next one', () => {
+  const f = forecast({
+    startCapital: 2000, monthlySurplus: 0, years: 5, yieldPct: 0,
+    events: [{ id: 'a1', atYear: 1, kind: 'asset', amount: 30000, label: 'Cairo flat' }],
+  });
+  // The flat alone puts total capital at 32,000 — well past a 28,000 target, immediately.
+  assert.ok(f.rows[0].capital > 28000, 'sanity: the flat is real money, and it is in the total');
+  assert.equal(capitalReachedYear(f.rows, 28000), null, 'but none of it is money for a second apartment');
+  assert.equal(f.rows[0].liquidCapital, 2000, 'liquid capital is what is left once the asset is set aside');
+  // Selling it turns the same value into money that DOES count — the decision he would actually
+  // have to make, priced honestly instead of assumed.
+  const sold = forecast({
+    startCapital: 2000, monthlySurplus: 0, years: 5, yieldPct: 0,
+    events: [{ id: 'a1', atYear: 1, sellAtYear: 2, sellFor: 30000, kind: 'asset', amount: 30000, label: 'Cairo flat' }],
+  });
+  assert.equal(capitalReachedYear(sold.rows, 28000), 2, 'once sold, the proceeds are liquid and the target is reached');
+});
+
 test('moneyAdvice: up to five tips, ranked by size, and only the ones that actually apply', () => {
   const subs = [cleanSub({ id: 's1', label: 'Netflix', amount: 12.99, currency: 'EUR', every: 'monthly', startsAt: utc(2024, 3, 5) })];
   const tips = moneyAdvice(HIS(), subs, T, 'EUR', SEPT26);

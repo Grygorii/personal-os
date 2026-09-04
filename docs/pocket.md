@@ -236,10 +236,10 @@ a price without one: it looks current.
 2. Railway → same project → **New Service** → same repo.
 3. Start command: `npm run start:pocket`.
 4. Env vars above, `DB_NAME=pocket` among them.
-5. Look for `[boot] pocket-28 · db=pocket · base=EUR`.
+5. Look for `[boot] pocket-29 · db=pocket · base=EUR`.
 
 **Which build is actually serving?** `GET /health` (or `/version`) answers without Telegram —
-`{"ok":true,"app":"pocket","version":"pocket-28"}`. The marker lives in `src/pocket/version.js`;
+`{"ok":true,"app":"pocket","version":"pocket-29"}`. The marker lives in `src/pocket/version.js`;
 bump it on every deploy. Kept has `GET /version` for exactly the same reason: "is my change even
 out there yet" is the first question of every deploy, and guessing at it wastes an evening.
 
@@ -915,6 +915,17 @@ monthly passive-income goal above it (`getMilestone`/`setMilestone`, `/api/miles
 saving an empty amount). `capitalReachedYear(rows, target)` is the whole of the new arithmetic: the
 first row of the Plan tab's own forecast whose capital crosses the line, the same rows the
 year-by-year table already draws — never a second compounding estimate next to the real one.
+
+**Worth is not available, caught the same day it shipped:** "I said I will need 28k for next
+apartment, it says you will have it in 2026 — from where data?" He was right — `capital` is the
+whole household, including the flat he already lives in, added as an `asset` piece with real value
+and never sold. That is genuine net worth and belongs in "what am I worth," but it is not money he
+can put toward a *second* apartment without a separate decision to sell the first, one the milestone
+was quietly assuming he had already made. `liquidCapital` is `capital` with every asset bucket's
+value set aside — real for "what am I worth," not counted for "what could I spend" — and it is what
+`capitalReachedYear` reads. Sell the asset (`sellAtYear`/`sellFor`) and its proceeds rejoin liquid
+capital on the year they land, which is the one legitimate way an owned asset becomes deployable —
+priced, not assumed.
 
 **How it is allocated.** "Maybe some graph in years to see how money allocated." One column per
 forecast year, stacked by what kind of money it is: held flat (a certificate, or a lump he typed
