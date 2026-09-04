@@ -236,10 +236,10 @@ a price without one: it looks current.
 2. Railway → same project → **New Service** → same repo.
 3. Start command: `npm run start:pocket`.
 4. Env vars above, `DB_NAME=pocket` among them.
-5. Look for `[boot] pocket-31 · db=pocket · base=EUR`.
+5. Look for `[boot] pocket-32 · db=pocket · base=EUR`.
 
 **Which build is actually serving?** `GET /health` (or `/version`) answers without Telegram —
-`{"ok":true,"app":"pocket","version":"pocket-31"}`. The marker lives in `src/pocket/version.js`;
+`{"ok":true,"app":"pocket","version":"pocket-32"}`. The marker lives in `src/pocket/version.js`;
 bump it on every deploy. Kept has `GET /version` for exactly the same reason: "is my change even
 out there yet" is the first question of every deploy, and guessing at it wastes an evening.
 
@@ -977,6 +977,35 @@ subscription costs in capital (`subsSummary`), a deposit maturing within the yea
 into one sentence and a decision, ranked by euro size, up to five, only the ones that actually
 apply. A clean household with no idle cash and no costly debt gets an empty list, not five tips
 padded out to look complete.
+
+**Liquid still didn't name itself.** "I want not only year but when I press on it it shows me
+actually funds I could use, what this funds are." Locked and Owned already named their holdings in
+the year-info drill-down; Liquid was the one line that only showed a number. It now lists the same
+way — every liquid holding by label, plus "everything else" for the unrated remainder — so "money I
+could take and buy apartment" points at *Bank*, not a total taken on faith.
+
+**Two questions, two diagrams.** "Goal it is real what I have now at this moment but plan it is
+sandbox where I am looking for my north." One chart had been answering both questions at once, and
+it lived on the Goal tab. It is now two. The year-by-year allocation chart — unchanged in what it
+draws, still tappable into the same drill-down — moved to the Plan tab, next to the forecast it
+belongs to. The Goal tab got its own, narrower card instead: **"What you hold right now"**
+(`worthSnapshot(accounts, table, base, now)`), no years anywhere in it — a straight read of current
+accounts, split into the same liquid/locked/owned vocabulary a milestone target is checked against,
+each category naming its holdings directly on the card rather than a tap away, because there is
+nothing to tap through: it is one moment, not ten years of them.
+
+**The general ideas were textbook, and he said so.** "I know you are a financial advisor — even
+what you put here it is lol, could you give ideas on the level of a PWM firm's advisor, imagine you
+have unlimited experience in all markets." The first four (an emergency fund, diversification,
+index funds, property's illiquidity) were true and useless — the kind of thing anyone already knows
+to say. Replaced with six that argue an actual point: match a goal's currency and time horizon to
+how the money is held, not just its return; diversification is about what moves together, not how
+many names are on the list; a lock-up should be paid for in extra return, or the liquid version is
+doing the same job for less risk; a nominal rate in a high-inflation currency can still be a loss
+once purchasing power is counted; a rebalancing rule decided in advance beats a decision made mid-
+drawdown; and a household concentrated in one city and one employer is already an un-diversified
+bet before a single investment is chosen. Still nothing computed, still no product or ticker —
+the app has no way to check whether a specific bet stays true, only whether a way of thinking does.
 
 ## Not done yet
 

@@ -2197,3 +2197,32 @@ test('moneyAdvice: up to five tips, ranked by size, and only the ones that actua
   // No rate table, no confident number to build a tip from.
   assert.deepEqual(moneyAdvice(HIS(), subs, null, 'EUR', SEPT26), []);
 });
+
+// "Goal is real, what I have now at this moment; Plan is a sandbox where I am looking for my
+// north." worthSnapshot() is Goal's own answer — no years, no projection, the same three-way
+// split liquidCapital already uses, read off today's holdings instead of a forecast row.
+
+import { worthSnapshot } from '../src/pocket/money.js';
+
+test('worthSnapshot: what he has right now, split the same way liquidCapital splits a forecast', () => {
+  const s = worthSnapshot(HIS(), T, 'EUR', SEPT26);
+  // d1 (Deposit 1, endsAt 2027) is still mid-term at SEPT26 — locked. c1 (Bank, cash) is liquid.
+  // p1 (apartment) is owned outright. l1 (Loan 2) is a liability and does not appear here at
+  // all — that is the Worth tab's job.
+  assert.ok(s.locked > 0, 'a deposit still mid-term is locked');
+  assert.deepEqual(s.holdings.locked.map((h) => h.label), ['Deposit 1']);
+  assert.deepEqual(s.holdings.liquid.map((h) => h.label), ['Bank']);
+  assert.deepEqual(s.holdings.owned.map((h) => h.label), ['apartment']);
+  assert.equal(s.liquid, 2000, 'his own number, not a rounded-off guess');
+  assert.ok(s.owned > 0, 'the flat he owns outright is real net worth, just not liquid');
+  assert.equal(Math.round(s.total), Math.round(s.liquid + s.locked + s.owned));
+  // A matured deposit — its term already behind it — is just cash sitting still, not locked.
+  const matured = [cleanAccount({ id: 'd9', label: 'Old CD', kind: 'deposit', currency: 'EUR', value: 5000, endsAt: utc(2020, 1, 1) })];
+  assert.deepEqual(worthSnapshot(matured, T, 'EUR', SEPT26).holdings.locked, []);
+  assert.equal(worthSnapshot(matured, T, 'EUR', SEPT26).liquid, 5000);
+  // A liability never appears — it belongs to the Worth tab, not to "what could I spend".
+  const withLoan = [cleanAccount({ id: 'l9', label: 'Card', kind: 'card', currency: 'EUR', value: 900 })];
+  assert.deepEqual(worthSnapshot(withLoan, T, 'EUR', SEPT26), { liquid: 0, locked: 0, owned: 0, holdings: { liquid: [], locked: [], owned: [] }, total: 0 });
+  // No rate table, nothing confidently totalled.
+  assert.equal(worthSnapshot(HIS(), null, 'EUR', SEPT26).total, 0);
+});

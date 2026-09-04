@@ -326,17 +326,29 @@ function must(el, panel, needles, label) {
     if (goalHtml.indexOf('Where the next euro could go') > goalHtml.indexOf('General ideas, not about your numbers')) {
       fail('the personalised advice must come before the general ideas, not after');
     }
+    // "Are you kidding me — ideas on the level of a PWM firm's advisor." The first draft read as
+    // an emergency-fund-101 list; locking in a couple of headlines from the rewrite so a future
+    // edit cannot quietly slide back to the textbook version without a test noticing.
+    for (const headline of ['Match a goal', 'Diversification is about what moves together', 'Decide the rule for selling before you are holding the asset']) {
+      if (!goalHtml.includes(headline)) fail(`the general-ideas card must still carry the upgraded content: "${headline}"`);
+    }
+    if (goalHtml.includes('An emergency fund, in the currency you actually spend')) {
+      fail('the old, textbook-level general ideas must be gone');
+    }
 
-    // "Maybe some graph in years to see how money allocated" — one tappable column per year, the
-    // same drill-down the Plan tab's own table already opens.
-    if (!goalHtml.includes('How it is allocated')) fail('the allocation chart must be present');
-    if (!goalHtml.includes('class="alloc-col"')) fail('the chart needs at least one column');
-    if ((goalHtml.match(/class="alloc-col" data-plan-year="1"/g) || []).length !== 1) {
-      fail('the first column must be tappable into the same year-info drill-down as the Plan tab');
+    // "Goal it is real what I have now at this moment but plan it is sandbox where I am looking
+    // for my north." No years on this card at all — a snapshot of what he holds today, split the
+    // same way a milestone target is checked against it.
+    if (!goalHtml.includes('What you hold right now')) fail('the current-holdings snapshot must be present on the Goal tab');
+    if (!S.snapshot || !(S.snapshot.total > 0)) fail('this fixture has real holdings and the snapshot must not come back empty');
+    for (const key of ['liquid', 'locked', 'owned']) {
+      if (S.snapshot[key] > 0) {
+        for (const h of S.snapshot.holdings[key]) {
+          if (!goalHtml.includes(h.label)) fail(`the snapshot must name its own holding "${h.label}" (${key}), not just a total`);
+        }
+      }
     }
-    for (const catLabel of ['Deposits and certificates', 'What you own', 'Growing at your own rate', 'Everything else']) {
-      if (!goalHtml.includes(catLabel)) fail(`the allocation legend must name "${catLabel}", not just colour it`);
-    }
+    if (goalHtml.includes('How it is allocated')) fail('the year-by-year allocation chart must not live on the Goal tab any more — it moved to Plan');
     // The pieces he builds come FIRST and the projection is one card under them; the year-by-year
     // is a plain table behind a fold, not ten bar blocks.
     must(el, 'p-plan', ['Your plan', 'What it comes to', 'Year by year',
@@ -352,6 +364,20 @@ function must(el, panel, needles, label) {
     const plan = el('p-plan').innerHTML;
     if (plan.indexOf('Your plan') > plan.indexOf('What it comes to')) {
       fail('what he builds belongs above what it comes to');
+    }
+    // "Maybe some graph in years to see how money allocated" — one tappable column per year, the
+    // same drill-down this tab's own table already opens. It lives here, not on Goal, because
+    // "plan it is sandbox where I am looking for my north" — this is the multi-year forecast.
+    if (!plan.includes('How it is allocated')) fail('the allocation chart must be present on the Plan tab');
+    if (!plan.includes('class="alloc-col"')) fail('the chart needs at least one column');
+    if ((plan.match(/class="alloc-col" data-plan-year="1"/g) || []).length !== 1) {
+      fail('the first column must be tappable into the same year-info drill-down as the year-by-year table');
+    }
+    for (const catLabel of ['Deposits and certificates', 'What you own', 'Growing at your own rate', 'Everything else']) {
+      if (!plan.includes(catLabel)) fail(`the allocation legend must name "${catLabel}", not just colour it`);
+    }
+    if (plan.indexOf('How it is allocated') > plan.indexOf('Year by year')) {
+      fail('the chart is a summary of the table below it, and belongs above the fold, not after it');
     }
     // ONLY WHAT HE ADDS. Holdings used to sit in "Your plan" as read-only rows he never asked for
     // and could not touch — exactly the clutter he pointed at, twice.
@@ -705,6 +731,9 @@ function must(el, panel, needles, label) {
     if (!infoHtml.includes('Something you own')) fail('the flat needs its own line, distinct from a locked deposit');
     if (!infoHtml.includes('Cairo flat')) fail('naming the actual holding, not a generic label');
     if (!infoHtml.includes('30,000')) fail('with its real value, not a rounded-away number');
+    // "Show me actually funds I could use, what this funds are." Locked and owned already named
+    // their holdings — the liquid line was the one that did not, and that was the real complaint.
+    if (!infoHtml.includes('Bank')) fail('the liquid line must name the actual holdings it is made of, same as the other two');
   }
   // While the CD is still mid-term, it must count as locked, not liquid — and cash sitting in the
   // very same fixture must NOT be swept up by the same rule just because both are "held" buckets.

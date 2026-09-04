@@ -1834,6 +1834,37 @@ export function scheduledFlows(accounts, window = {}, { now = Date.now(), record
 // rate he got it at, and the app records the rate each day from here on. Neither is invented:
 // where there is no history, this says so rather than drawing a line through one point.
 
+// ---- What he has, right now — not a forecast ----
+//
+// "Goal is real, what I have now at this moment; Plan is a sandbox where I am looking for my
+// north." Two different questions, and the app was answering both from the same ten-year
+// projection. This one has no years in it at all — it is `liquidCapital`'s own three-way split
+// (liquid, locked in a term, owned outright), read off his holdings today rather than off a
+// forecast row. Same rule, same vocabulary, no arithmetic borrowed from the future.
+
+/** A snapshot, not a projection: what he owns, right now, split by whether he could actually
+ *  spend it. What he owes lives on the Worth tab already and is not repeated here. */
+export function worthSnapshot(accounts = [], table, base = 'EUR', now = Date.now()) {
+  const liquid = [], locked = [], owned = [];
+  for (const a of accounts || []) {
+    if (isLiability(a.kind) || !(a.value > 0)) continue;
+    const inBase = toBase(balanceNow(a, now).amount, a.currency, table);
+    if (inBase == null) continue;
+    const row = { label: a.label || a.kind, amount: inBase };
+    if (a.kind === 'property') owned.push(row);
+    // Locked the same way `liquidCapital` decides it in the forecast: a term still ahead of it,
+    // not merely being a deposit. One matured and never redrawn is just cash sitting still.
+    else if (a.kind === 'deposit' && a.endsAt > now) locked.push(row);
+    else liquid.push(row);
+  }
+  const sum = (list) => list.reduce((t, x) => t + x.amount, 0);
+  return {
+    liquid: sum(liquid), locked: sum(locked), owned: sum(owned),
+    holdings: { liquid, locked, owned },
+    total: sum(liquid) + sum(locked) + sum(owned),
+  };
+}
+
 /** What each currency he holds is doing to him.
  *
  *  `history` is a list of dated rate tables, oldest first, as recorded day by day. */

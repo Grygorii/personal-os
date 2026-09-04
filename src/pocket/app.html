@@ -787,52 +787,38 @@ function drawGoal() {
       `}
     </div>`;
 
-  /* "Maybe some graph in years to see how money allocated." One column per year of the SAME
-     forecast, stacked by what kind of money it is — held flat (a certificate, or a deposit he
-     typed by hand), something he owns, growing at a rate he stated himself, or the market
-     assumption everything else follows. Fixed hue order, never cycled — the same four categories
-     always wear the same colour, whichever years happen to have them. */
-  const ALLOC = [
-    { key: 'held', label: 'Deposits and certificates' },
-    { key: 'asset', label: 'What you own' },
-    { key: 'own', label: 'Growing at your own rate' },
-    { key: 'else', label: 'Everything else' },
+  /* "Goal it is real what I have now at this moment but plan it is sandbox where I am looking for
+     my north." The year-by-year allocation chart moved to the Plan tab for exactly this reason —
+     see drawPlan(). What belongs here instead is a snapshot with no years in it at all: the same
+     liquid/locked/owned split a milestone target is checked against, read off what he holds today. */
+  const SNAP = [
+    { key: 'liquid', label: 'Liquid' },
+    { key: 'locked', label: 'Locked in a term' },
+    { key: 'owned', label: 'Owned outright' },
   ];
-  const allocOf = (row) => {
-    const a = { held: 0, asset: 0, own: 0, else: row.breakdown?.everythingElse ? row.breakdown.everythingElse.capital : 0 };
-    for (const b of (row.breakdown?.buckets || [])) {
-      if (b.asset) a.asset += b.capital;
-      else if (b.held) a.held += b.capital;
-      else a.own += b.capital;
-    }
-    return a;
-  };
-  const allocCard = (() => {
-    if (!f || !f.mid || !f.mid.rows.length) return '';
-    const rows = f.mid.rows;
-    const maxCap = Math.max(1, ...rows.map((r) => r.capital));
-    const H = 120;
-    const cols = rows.map((r) => {
-      const a = allocOf(r);
-      const segs = ALLOC.map((cat, j) => ({ cat, j, val: a[cat.key] })).filter((s) => s.val > 0)
-        .map(({ j, val }) => `<div class="alloc-seg" style="height:${Math.max(2, Math.round((val / maxCap) * H))}px;background:var(--src-${j + 1})"></div>`)
-        .join('');
-      return `<div class="alloc-col" data-plan-year="${r.year}">
-        <div class="alloc-stack">${segs}</div>
-        <div class="alloc-yr">${calYear(r.year)}</div>
-      </div>`;
-    }).join('');
+  const snap = S.snapshot;
+  const snapCard = (snap && snap.total > 0) ? (() => {
+    const cats = SNAP.filter((c) => snap[c.key] > 0);
     return `<div class="card">
-      <h2>How it is allocated</h2>
-      <div class="alloc">${cols}</div>
-      <div class="legend">${ALLOC.map((cat, j) => `<div>
+      <h2>What you hold right now</h2>
+      <div class="big in">${money(snap.total, S.base)}</div>
+      <div class="sub">across everything you have today — no forecast in this number</div>
+      <div class="meter">${cats.map((c, j) => `<i style="width:${Math.max(3, (snap[c.key] / snap.total) * 100)}%;background:var(--src-${j + 1})"></i>`).join('')}</div>
+      <div class="legend">${cats.map((c, j) => `<div>
         <span class="swatch" style="background-color:var(--src-${j + 1})"></span>
-        <span class="lname">${esc(cat.label)}</span>
+        <span class="lname">${esc(c.label)}</span>
+        <span class="lamt">${money(snap[c.key], S.base)}</span>
       </div>`).join('')}</div>
-      <div class="note">Each column is a year of your plan — tap one to see what it is made of.
-      Assumes ${esc(f.assumes)}.</div>
+      ${cats.map((c) => `<div class="row">
+        <div class="rmain"><div class="rlabel">${esc(c.label)}</div>
+          <div class="rmeta">${esc(snap.holdings[c.key].map((h) => h.label).join(', '))}</div></div>
+        <div class="ramt in">${money(snap[c.key], S.base)}</div>
+      </div>`).join('')}
+      <div class="note">A snapshot, not a forecast — money you could spend now, money locked in a
+      term until it matures, and something you own outright. This is what a milestone target is
+      checked against; the year-by-year picture of where this is heading lives on the Plan tab.</div>
     </div>`;
-  })();
+  })() : '';
 
   /* "I don't mind having an advisor with 3-5 advise about interesting ways to allocate money."
      Not a chat, and nothing invented — every tip is a figure this app already computes for
@@ -852,15 +838,19 @@ function drawGoal() {
       computes elsewhere; nothing is a forecast or a guess about markets.</div>
     </div>`;
 
-  /* "It should not be only about my numbers — good ideas outside of my numbers and the
-     investments I have." A short, fixed list — general financial ideas worth knowing, not
-     computed from anything and never pretending to be. No product or market names, because the
-     app has no way to check whether any of them are still true. */
+  /* "Are you kidding me, I know you are a financial advisor — could you give ideas on the level
+     of a PWM firm's advisor, imagine you have unlimited experience in all markets." The first
+     version read like a textbook's first chapter. This one is the second chapter — the ideas a
+     desk actually argues about, not the ones everyone already knows to say out loud. Still a
+     fixed list, still nothing computed, still no product, ticker, or market call: the app has no
+     way to check whether any specific bet is still true, only whether a way of thinking holds up. */
   const GENERAL_IDEAS = [
-    { t: 'An emergency fund, in the currency you actually spend', d: 'A few months of ordinary spending, held boring and easy to reach, exists so a bad month never forces selling something else at a bad time.' },
-    { t: 'Diversification means more than one country, not just one holding', d: 'A portfolio concentrated in a single economy or currency carries that whole country’s risk, however many different things it is split across inside it.' },
-    { t: 'A broad index fund is a common way to hold "the market" cheaply', d: 'It spreads a stake across many companies rather than betting on any one, usually for less than picking stocks individually costs.' },
-    { t: 'Property is worth what someone will pay, on the day you find them', d: 'Unlike a deposit or a fund, selling real estate can take months — worth building into any plan that assumes its value turns into cash on a specific date.' },
+    { t: 'Match a goal’s currency and time horizon before you match its return', d: 'Money due in a year should be held like money due in a year, in the currency it will actually be spent in — short, boring, and safe — whatever the rest of the plan is doing for the years after. The time you can genuinely wait is what earns you the right to hold something volatile at all; a goal eighteen months out has already spent most of that right.' },
+    { t: 'Diversification is about what moves together, not how many names you hold', d: 'Two properties in the same city, or a dozen funds all tracking the same handful of global companies, can fall on the same day for the same reason. Real diversification pairs things that respond to different forces — a country’s growth, an interest-rate move, a currency — not just different labels on the same underlying bet.' },
+    { t: 'Ask what you are actually paid for money you cannot touch', d: 'A term deposit or an illiquid property should earn more than a liquid alternative, to compensate for the years you cannot reach it or the buyer you cannot choose on your own timetable. When that extra return is thin, the liquid version is quietly doing the same job for less risk — the lock-up itself is a cost, not a feature.' },
+    { t: 'A return only counts once inflation has taken its share', d: 'In a currency running high inflation, a rate that looks strong printed on a statement can still be losing purchasing power underneath it. The number that matters is what the money still buys later, not the number credited to the account now — which is also the case for comparing returns earned in two different currencies at all.' },
+    { t: 'Decide the rule for selling before you are holding the asset', d: 'A target split with no rule for when it has drifted turns into whatever feels right in the moment — which is usually after the move, not before it. A fixed band (rebalance once a position is off target by a set amount) or a fixed date takes the decision away from the day the market is loudest and handing it to a version of you that was calmer.' },
+    { t: 'A household concentrated in one property market and one employer is already un-diversified, before a single investment is chosen', d: 'Income, a home, and a rental in the same city all rise and fall with the same local economy. The investing side of a plan can either lean further into that same bet or deliberately point somewhere else — doing it without noticing is the only genuinely wrong choice.' },
   ];
   const ideasCard = `
     <div class="card">
@@ -899,9 +889,9 @@ function drawGoal() {
       Open Plan to see what it is made of, or to change any of it.</div>
     </div>` : ''}
     ${milestoneCard}
+    ${snapCard}
     ${adviceCard}
-    ${ideasCard}
-    ${allocCard}`;
+    ${ideasCard}`;
 }
 
 
@@ -963,6 +953,55 @@ function drawPlan() {
     .filter((e) => !['lump', 'asset'].includes(e.kind) && e.amountInBase != null)
     .reduce((n, e) => n + (e.kind === 'spending' ? -e.amountInBase : e.amountInBase), 0);
   const goesIn = base + listedMonthly;
+
+  /* "Maybe some graph in years to see how money allocated." One column per year of this
+     forecast, stacked by what kind of money it is — held flat (a certificate, or a deposit he
+     typed by hand), something he owns, growing at a rate he stated himself, or the market
+     assumption everything else follows. Fixed hue order, never cycled — the same four categories
+     always wear the same colour, whichever years happen to have them. This is the sandbox chart:
+     what this plan turns into over time. The Goal tab has its own, no-years counterpart —
+     "what you hold right now" — because a snapshot and a forecast are different questions. */
+  const ALLOC = [
+    { key: 'held', label: 'Deposits and certificates' },
+    { key: 'asset', label: 'What you own' },
+    { key: 'own', label: 'Growing at your own rate' },
+    { key: 'else', label: 'Everything else' },
+  ];
+  const allocOf = (row) => {
+    const a = { held: 0, asset: 0, own: 0, else: row.breakdown?.everythingElse ? row.breakdown.everythingElse.capital : 0 };
+    for (const b of (row.breakdown?.buckets || [])) {
+      if (b.asset) a.asset += b.capital;
+      else if (b.held) a.held += b.capital;
+      else a.own += b.capital;
+    }
+    return a;
+  };
+  const allocCard = (() => {
+    if (!f || !f.mid || !f.mid.rows.length) return '';
+    const rows = f.mid.rows;
+    const maxCap = Math.max(1, ...rows.map((r) => r.capital));
+    const H = 120;
+    const cols = rows.map((r) => {
+      const a = allocOf(r);
+      const segs = ALLOC.map((cat, j) => ({ cat, j, val: a[cat.key] })).filter((s) => s.val > 0)
+        .map(({ j, val }) => `<div class="alloc-seg" style="height:${Math.max(2, Math.round((val / maxCap) * H))}px;background:var(--src-${j + 1})"></div>`)
+        .join('');
+      return `<div class="alloc-col" data-plan-year="${r.year}">
+        <div class="alloc-stack">${segs}</div>
+        <div class="alloc-yr">${calYear(r.year)}</div>
+      </div>`;
+    }).join('');
+    return `<div class="card">
+      <h2>How it is allocated</h2>
+      <div class="alloc">${cols}</div>
+      <div class="legend">${ALLOC.map((cat, j) => `<div>
+        <span class="swatch" style="background-color:var(--src-${j + 1})"></span>
+        <span class="lname">${esc(cat.label)}</span>
+      </div>`).join('')}</div>
+      <div class="note">Each column is a year of your plan — tap one to see what it is made of.
+      Assumes ${esc(f.assumes)}.</div>
+    </div>`;
+  })();
 
   $('p-plan').innerHTML = `
     <div class="card">
@@ -1034,6 +1073,8 @@ function drawPlan() {
         ? `<div class="sub in" style="margin-top:8px">You reach ${money(goal)} a month in ${calYear(mid.goalReachedInYear)}.</div>`
         : `<div class="sub" style="margin-top:8px">Not enough to reach ${money(goal)} a month inside ${yrs} years. Adding to what goes in moves this far more than a better yield does.</div>`) : ''}
     </div>
+
+    ${allocCard}
 
     <details class="card" id="yby">
       <summary style="cursor:pointer;color:var(--dim);font-size:13px;font-weight:600;letter-spacing:.03em;text-transform:uppercase">Year by year</summary>
@@ -1573,12 +1614,18 @@ function openYearInfo(year) {
   const lockedLabels = b.buckets.filter((x) => x.held && x.untilYear && !x.asset).map((x) => x.label);
   const ownedTotal = b.buckets.filter((x) => x.asset).reduce((t, x) => t + x.capital, 0);
   const lockedTotal = b.buckets.filter((x) => x.held && x.untilYear && !x.asset).reduce((t, x) => t + x.capital, 0);
+  // "Show me actually funds I could use, what this funds are." Locked and owned already name
+  // their holdings — liquid was the one line that did not, and that was the actual complaint.
+  const liquidLabels = [
+    ...b.buckets.filter((x) => !x.asset && !(x.held && x.untilYear)).map((x) => x.label),
+    ...(b.everythingElse ? ['everything else'] : []),
+  ];
   const capital = r.capital > 0 ? `
     <h3 style="margin:14px 0 4px">What the capital is made of</h3>
     <div class="row">
       <span class="dot in"></span>
       <div class="rmain"><div class="rlabel">Liquid</div>
-        <div class="rmeta">could go toward something new — a milestone target is checked against this, not the total</div></div>
+        <div class="rmeta">${esc(liquidLabels.join(', ') || 'nothing yet')} — could go toward something new; a milestone target is checked against this, not the total</div></div>
       <div class="ramt in">${money(r.liquidCapital)}</div>
     </div>
     ${lockedTotal > 0.5 ? `<div class="row">

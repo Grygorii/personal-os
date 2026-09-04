@@ -27,7 +27,7 @@ import {
   monthWindowOf, recentMonths, monthsSummary, patchFrom, depositsSummary, contractedIncome,
   missingRecurring, cleanFlow, balanceNow, subsSummary, BILLING_PERIODS, cleanSub,
   scheduledFlows, EVENT_KINDS, parseDate, yearsBetween, matchRecorded, subChargeDates, currencyPicture, cleanEvent, planYields, planTemplate, holdingFlow,
-  capitalReachedYear, moneyAdvice,
+  capitalReachedYear, moneyAdvice, worthSnapshot,
 } from './money.js';
 
 const json = (res, code, body) => {
@@ -278,6 +278,8 @@ export function buildState({ base = 'EUR', table, monthKey, accounts = [], spanF
       .filter((f) => f.principalPart != null)
       .reduce((n2, f) => n2 + (fx.toBase(f.principalPart, f.currency, table) || 0), 0),
     worth: { total: n.total, assets: n.assets, debts: n.debts, exposure: n.exposure, unconverted: n.unconverted },
+    // "Goal is real, what I have now; Plan is a sandbox." No years in this one at all.
+    snapshot: worthSnapshot(accounts, table, base, now),
     interest: {
       earned: ip.earned, paid: ip.paid, net: ip.net,
       ended: ip.ended, notStarted: ip.notStarted,
