@@ -172,6 +172,22 @@ export async function setGoal({ monthly, currency }) {
   return goal;
 }
 
+// A one-off target, separate from the monthly passive-income goal: "when will I have enough for
+// the next apartment" is a different question from "when does €2,000 a month arrive", and the
+// two must never share a number just because they are both on the Goal tab.
+export async function getMilestone() {
+  const doc = await col('settings').findOne({ _id: 'milestone' });
+  return doc ? { amount: Number(doc.amount) || 0, currency: doc.currency || 'EUR', label: doc.label || '' } : null;
+}
+
+export async function setMilestone({ amount, currency, label }) {
+  const amt = Math.max(0, Number(amount) || 0);
+  if (!amt) { await col('settings').deleteOne({ _id: 'milestone' }); return null; }
+  const milestone = { amount: amt, currency: String(currency || 'EUR').toUpperCase(), label: String(label || '').slice(0, 80) };
+  await col('settings').updateOne({ _id: 'milestone' }, { $set: milestone }, { upsert: true });
+  return milestone;
+}
+
 // ---- The exchange rate, day by day ----
 //
 // The app could always convert his money and never say what the currency itself had done to

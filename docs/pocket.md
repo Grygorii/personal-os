@@ -236,10 +236,10 @@ a price without one: it looks current.
 2. Railway → same project → **New Service** → same repo.
 3. Start command: `npm run start:pocket`.
 4. Env vars above, `DB_NAME=pocket` among them.
-5. Look for `[boot] pocket-27 · db=pocket · base=EUR`.
+5. Look for `[boot] pocket-28 · db=pocket · base=EUR`.
 
 **Which build is actually serving?** `GET /health` (or `/version`) answers without Telegram —
-`{"ok":true,"app":"pocket","version":"pocket-27"}`. The marker lives in `src/pocket/version.js`;
+`{"ok":true,"app":"pocket","version":"pocket-28"}`. The marker lives in `src/pocket/version.js`;
 bump it on every deploy. Kept has `GET /version` for exactly the same reason: "is my change even
 out there yet" is the first question of every deploy, and guessing at it wastes an evening.
 
@@ -903,6 +903,35 @@ as text, where it cannot be mistaken for precision — with `assumes` attached t
 
 Over ten years the yield assumption is most of the answer: 3.5% against 7% on the same
 contributions differs by tens of thousands. Showing that gap *is* the feature.
+
+## Thinking about the next investment
+
+"Now my problem is to think about next investments" — three additions to the Goal tab, all read
+off the one forecast, none of them a projection of their own.
+
+**A milestone.** "I want to be able to see when a substantial amount saved so I could buy
+something else." A one-off capital target — a deposit, another apartment — separate from the
+monthly passive-income goal above it (`getMilestone`/`setMilestone`, `/api/milestone`, cleared by
+saving an empty amount). `capitalReachedYear(rows, target)` is the whole of the new arithmetic: the
+first row of the Plan tab's own forecast whose capital crosses the line, the same rows the
+year-by-year table already draws — never a second compounding estimate next to the real one.
+
+**How it is allocated.** "Maybe some graph in years to see how money allocated." One column per
+forecast year, stacked by what kind of money it is: held flat (a certificate, or a lump he typed
+with a rate), something he owns, growing at a rate he stated himself, or the market assumption
+everything else follows — four categories, fixed hue order, never cycled, the same validated
+palette the Goal bar already uses. Tapping a column opens the same year-info sheet the Plan tab's
+table already opens (`data-plan-year`, reused as-is) — one drill-down, wherever a year is tapped
+from.
+
+**An advisor.** "I don't mind having an advisor with 3-5 advise about interesting ways to allocate
+money." Not a chat, and nothing invented: `moneyAdvice()` reads figures this file already computes
+for other cards — a loan costing more than a safe deposit pays (`debtVsInvesting`), cash sitting at
+0% (`accounts`), how concentrated he is in a currency he does not spend (`currencyPicture`), what a
+subscription costs in capital (`subsSummary`), a deposit maturing within the year — and turns each
+into one sentence and a decision, ranked by euro size, up to five, only the ones that actually
+apply. A clean household with no idle cash and no costly debt gets an empty list, not five tips
+padded out to look complete.
 
 ## Not done yet
 

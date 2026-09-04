@@ -18,7 +18,7 @@
 import { readFileSync } from 'fs';
 import vm from 'vm';
 import { buildState } from '../src/pocket/web.js';
-import { balanceNow, planTemplate } from '../src/pocket/money.js';
+import { balanceNow, planTemplate, capitalReachedYear } from '../src/pocket/money.js';
 import { cleanAccount, cleanFlow, cleanSub, cleanEvent } from '../src/pocket/money.js';
 
 const utc = (y, m, d) => Date.UTC(y, m - 1, d);
@@ -71,6 +71,8 @@ const subs = [
 // Everything he holds in EGP was bought with euro at one rate, on one day.
 const basis = { EGP: { rateThen: 48, at: utc(2024, 5, 26) } };
 const goal = { monthly: 2000, currency: 'EUR' };
+// "I want to be able to see when a substantial amount saved so I could buy something else."
+const milestone = { amount: 60000, currency: 'EUR', label: 'Next apartment' };
 // The plan in his own words: "500 from salary, rent from apartment 1, deposit 10000 under 2%,
 // and in year 3 I will add another apartment".
 const events = {
@@ -143,7 +145,7 @@ function must(el, panel, needles, label) {
 
 // ---- This month, everything present ----
 {
-  const S = buildState({ base: 'EUR', table: T, accounts, spanFlows, subs, goal, events, basis, now: NOW });
+  const S = buildState({ base: 'EUR', table: T, accounts, spanFlows, subs, goal, milestone, events, basis, now: NOW });
   const el = render(S, 'this month');
   if (el) {
     // Mid-September: the Soon CD coupon has landed (1st), Loan 2's instalment has not (26th).
@@ -271,6 +273,42 @@ function must(el, panel, needles, label) {
       }
     }
     if (!goalHtml.includes("your Plan tab's own projection")) fail('the Goal tab must say plainly that this is the Plan tab\'s own number, not a second one');
+
+    // "See when a substantial amount saved so I could buy something else" — a milestone, read off
+    // the same forecast, never a separate estimate.
+    if (!goalHtml.includes('Next apartment')) fail('the milestone must be named on the Goal tab');
+    if (!S.milestone) fail('a milestone was set on this fixture and must come back in the state');
+    if (S.milestone.reachedYear) {
+      const milestoneYear = new Date().getUTCFullYear() + S.milestone.reachedYear - 1;
+      if (!goalHtml.includes(String(milestoneYear))) fail(`the milestone's reached-year must be shown (${milestoneYear})`);
+      // Cross-checked directly against the pure function, not just against what the page prints.
+      if (capitalReachedYear(S.forecast.mid.rows, S.milestone.amountInBase) !== S.milestone.reachedYear) {
+        fail('the milestone year must come from capitalReachedYear on the same rows the Plan tab draws');
+      }
+    }
+
+    // "An advisor with 3-5 advise about interesting ways to allocate money" — every tip a real
+    // number, never a generic line, and never padded to look complete.
+    if (!goalHtml.includes('Where the next euro could go')) fail('the advisor card must be present when there is real advice to give');
+    if (!S.advice || !S.advice.length) fail('this fixture has costly debt, idle cash and a maturing deposit — advice must not come back empty');
+    if (S.advice.length > 5) fail('never more than five tips');
+    for (const tip of S.advice) {
+      if (!goalHtml.includes(tip.headline)) fail(`every tip's headline must actually be printed: "${tip.headline}"`);
+    }
+    if (!S.advice.every((t, i, arr) => i === 0 || arr[i - 1].impactInBase >= t.impactInBase)) {
+      fail('advice must be ranked by size, biggest first');
+    }
+
+    // "Maybe some graph in years to see how money allocated" — one tappable column per year, the
+    // same drill-down the Plan tab's own table already opens.
+    if (!goalHtml.includes('How it is allocated')) fail('the allocation chart must be present');
+    if (!goalHtml.includes('class="alloc-col"')) fail('the chart needs at least one column');
+    if ((goalHtml.match(/class="alloc-col" data-plan-year="1"/g) || []).length !== 1) {
+      fail('the first column must be tappable into the same year-info drill-down as the Plan tab');
+    }
+    for (const catLabel of ['Deposits and certificates', 'What you own', 'Growing at your own rate', 'Everything else']) {
+      if (!goalHtml.includes(catLabel)) fail(`the allocation legend must name "${catLabel}", not just colour it`);
+    }
     // The pieces he builds come FIRST and the projection is one card under them; the year-by-year
     // is a plain table behind a fold, not ten bar blocks.
     must(el, 'p-plan', ['Your plan', 'What it comes to', 'Year by year',

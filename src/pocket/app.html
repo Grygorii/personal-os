@@ -128,6 +128,23 @@
   .bar>i.owed{background:var(--out)}
   .catbar{height:6px;border-radius:4px;background:var(--out);opacity:.85;margin-top:6px}
 
+  /* ---- Allocation chart: one stacked column per year ---- */
+  /* Horizontally scrolling so thirty years never squeeze onto one screen — the column itself
+     stays a fixed, tappable width instead of shrinking to fit. */
+  .alloc{display:flex;align-items:flex-end;gap:6px;overflow-x:auto;padding:4px 2px 0;margin-top:10px;
+    -webkit-overflow-scrolling:touch}
+  .alloc-col{flex:none;display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;
+    width:22px}
+  /* The stack itself: segments in a fixed hue order, a 2px surface gap between them so touching
+     fills never read as one, rounded only where the whole stack meets the top. */
+  .alloc-stack{width:20px;display:flex;flex-direction:column-reverse;border-radius:4px 4px 0 0;
+    overflow:hidden}
+  .alloc-seg{width:100%}
+  .alloc-seg+.alloc-seg{margin-bottom:2px}
+  .alloc-col:active .alloc-stack{outline:2px solid var(--ink);outline-offset:1px}
+  .alloc-yr{font-size:10px;color:var(--dim);writing-mode:vertical-rl;transform:rotate(180deg);
+    height:26px;white-space:nowrap}
+
   .warn{background:var(--out-bg);border-left:3px solid var(--out);border-radius:0 10px 10px 0;padding:11px 13px;margin-bottom:12px;font-size:13px;line-height:1.5}
   .note{color:var(--dim);font-size:12px;line-height:1.5;margin-top:10px}
   .empty{color:var(--dim);text-align:center;padding:26px 10px;font-size:14px}
@@ -748,6 +765,92 @@ function drawGoal() {
       reaching it until they do.
     </div>`;
 
+  /* "I want to be able to see when a substantial amount saved so I could buy something else."
+     A one-off target — a deposit, another apartment — read off the SAME forecast as everything
+     else on this tab. Never its own compounding estimate. */
+  const milestone = S.milestone;
+  const milestoneCard = `
+    <div class="card">
+      <h2>Next investment</h2>
+      ${milestone ? `
+        <div class="sub" style="font-size:15px;color:var(--ink)">${esc(milestone.label || 'What you are saving toward')} needs ${money(milestone.amountInBase, S.base)}</div>
+        ${milestone.reachedYear
+          ? `<div class="big in" style="margin-top:4px">${calYear(milestone.reachedYear)}</div><div class="sub">is when your plan has it</div>`
+          : `<div class="sub" style="margin-top:4px">Not reached inside ${f ? f.years : 10} years on your plan today.</div>`}
+        <button class="btn ghost" data-milestone-edit="1" style="margin-top:12px">Change</button>
+      ` : `
+        <div class="empty" style="padding:16px 0">Set an amount you are saving toward — a deposit
+        on another apartment, a car, whatever is next — and see when your plan actually gets you
+        there.</div>
+        <button class="btn ghost" data-milestone-edit="1">+ Set a target</button>
+      `}
+    </div>`;
+
+  /* "Maybe some graph in years to see how money allocated." One column per year of the SAME
+     forecast, stacked by what kind of money it is — held flat (a certificate, or a deposit he
+     typed by hand), something he owns, growing at a rate he stated himself, or the market
+     assumption everything else follows. Fixed hue order, never cycled — the same four categories
+     always wear the same colour, whichever years happen to have them. */
+  const ALLOC = [
+    { key: 'held', label: 'Deposits and certificates' },
+    { key: 'asset', label: 'What you own' },
+    { key: 'own', label: 'Growing at your own rate' },
+    { key: 'else', label: 'Everything else' },
+  ];
+  const allocOf = (row) => {
+    const a = { held: 0, asset: 0, own: 0, else: row.breakdown?.everythingElse ? row.breakdown.everythingElse.capital : 0 };
+    for (const b of (row.breakdown?.buckets || [])) {
+      if (b.asset) a.asset += b.capital;
+      else if (b.held) a.held += b.capital;
+      else a.own += b.capital;
+    }
+    return a;
+  };
+  const allocCard = (() => {
+    if (!f || !f.mid || !f.mid.rows.length) return '';
+    const rows = f.mid.rows;
+    const maxCap = Math.max(1, ...rows.map((r) => r.capital));
+    const H = 120;
+    const cols = rows.map((r) => {
+      const a = allocOf(r);
+      const segs = ALLOC.map((cat, j) => ({ cat, j, val: a[cat.key] })).filter((s) => s.val > 0)
+        .map(({ j, val }) => `<div class="alloc-seg" style="height:${Math.max(2, Math.round((val / maxCap) * H))}px;background:var(--src-${j + 1})"></div>`)
+        .join('');
+      return `<div class="alloc-col" data-plan-year="${r.year}">
+        <div class="alloc-stack">${segs}</div>
+        <div class="alloc-yr">${calYear(r.year)}</div>
+      </div>`;
+    }).join('');
+    return `<div class="card">
+      <h2>How it is allocated</h2>
+      <div class="alloc">${cols}</div>
+      <div class="legend">${ALLOC.map((cat, j) => `<div>
+        <span class="swatch" style="background-color:var(--src-${j + 1})"></span>
+        <span class="lname">${esc(cat.label)}</span>
+      </div>`).join('')}</div>
+      <div class="note">Each column is a year of your plan — tap one to see what it is made of.
+      Assumes ${esc(f.assumes)}.</div>
+    </div>`;
+  })();
+
+  /* "I don't mind having an advisor with 3-5 advise about interesting ways to allocate money."
+     Not a chat, and nothing invented — every tip is a figure this app already computes for
+     another card (the loan warning, the currency exposure, the subs-as-capital line), pointed
+     at a decision and ranked by the size of it in euro. */
+  const advice = S.advice || [];
+  const adviceCard = !advice.length ? '' : `
+    <div class="card">
+      <h2>Where the next euro could go</h2>
+      ${advice.map((t) => `<div class="row">
+        <div class="rmain">
+          <div class="rlabel">${esc(t.headline)}</div>
+          <div class="rmeta">${esc(t.detail)}</div>
+        </div>
+      </div>`).join('')}
+      <div class="note">Ranked by size, biggest first — every figure here is one this app already
+      computes elsewhere; nothing is a forecast or a guess about markets.</div>
+    </div>`;
+
   $('p-goal').innerHTML = `
     <div class="card">
       <h2>Passive income</h2>
@@ -772,7 +875,10 @@ function drawGoal() {
       <div class="note">This is your Plan tab's own projection — what you already hold, what you have
       told it to expect, and what you are actually saving. Assumes ${esc(f.assumes)}.
       Open Plan to see what it is made of, or to change any of it.</div>
-    </div>` : ''}`;
+    </div>` : ''}
+    ${milestoneCard}
+    ${adviceCard}
+    ${allocCard}`;
 }
 
 
@@ -1205,6 +1311,24 @@ function openFxBasis(currency) {
   $('esheet').hidden = false;
 }
 
+/** "When will I have enough to buy something else." One amount, one label — read against the
+ *  same forecast the rest of the Goal tab already uses, never a projection of its own. */
+function openMilestone() {
+  const m = S.milestone;
+  editing = { kind: 'milestone' };
+  $('etitle').textContent = 'What are you saving toward?';
+  $('eerr').hidden = true;
+  $('efields').innerHTML = `
+    ${field('What is it', input('label', m?.label || '', 'placeholder="Next apartment"'))}
+    <div class="two">
+      ${field('Amount', input('amount', m?.amount ?? '', 'inputmode="decimal" placeholder="60000"'))}
+      ${field('Currency', select('currency', currencyOptions(m?.currency || S.base), m?.currency || S.base))}
+    </div>
+    <div class="note" style="margin-top:0">Checked against your Plan tab's own forecast — the
+    same one "What it would take" reads. Clear the amount and save to remove it.</div>`;
+  $('esheet').hidden = false;
+}
+
 function openEdit(kind, id) {
   const it = kind === 'flow' ? S.flows.find((f) => f.id === id)
     : kind === 'sub' ? (S.subs?.rows || []).find((r) => r.id === id)
@@ -1244,6 +1368,19 @@ $('esave').onclick = async () => {
     $('esave').disabled = true;
     try {
       S = await api('/api/fxbasis', { currency: editing.id, rateThen: v.rateThen === '' ? 0 : Number(v.rateThen), at: v.at });
+      draw(); closeEdit();
+      tg?.HapticFeedback?.notificationOccurred?.('success');
+    } catch (err) { $('eerr').textContent = err.message; $('eerr').hidden = false; }
+    finally { $('esave').disabled = false; }
+    return;
+  }
+
+  if (editing.kind === 'milestone') {
+    const v = {};
+    $('efields').querySelectorAll('[data-k]').forEach((el) => { v[el.dataset.k] = el.value.trim(); });
+    $('esave').disabled = true;
+    try {
+      S = await api('/api/milestone', { amount: v.amount === '' ? 0 : Number(v.amount), currency: v.currency, label: v.label });
       draw(); closeEdit();
       tg?.HapticFeedback?.notificationOccurred?.('success');
     } catch (err) { $('eerr').textContent = err.message; $('eerr').hidden = false; }
@@ -1448,6 +1585,8 @@ document.body.addEventListener('click', async (e) => {
 
   const fxBtn = e.target.closest('[data-fx]');
   if (fxBtn) { openFxBasis(fxBtn.dataset.fx); return; }
+
+  if (e.target.closest('[data-milestone-edit]')) { openMilestone(); return; }
 
   const chg = e.target.closest('[data-charge]');
   if (chg) {

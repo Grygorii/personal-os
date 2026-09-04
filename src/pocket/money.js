@@ -899,7 +899,7 @@ export function forecast({
         .map(([, b]) => ({
           label: b.label, capital: b.capital,
           ratePct: b.statedRatePct != null ? b.statedRatePct : b.rate * 100,
-          monthly: (b.capital * b.rate) / 12, held: !!b.held,
+          monthly: (b.capital * b.rate) / 12, held: !!b.held, asset: !!b.asset,
         })),
       everythingElse: def.capital > 0 ? { capital: def.capital, ratePct: y * 100, monthly: (def.capital * y) / 12 } : null,
     };
@@ -969,6 +969,15 @@ export function forecastRange(opts = {}, yields = planYields(opts.yieldPct ?? 0)
     spreadAtEnd: runs[runs.length - 1].endCapital - runs[0].endCapital,
     assumes: runs[0].assumes,
   };
+}
+
+/** The first year a forecast's capital reaches a target — "when will I have enough for the next
+ *  apartment", read off the same rows the year-by-year table already draws. `null` for no target
+ *  and for a target never reached inside the horizon; never a guess past where the forecast ends. */
+export function capitalReachedYear(rows, target) {
+  if (!(num(target) > 0)) return null;
+  const hit = (rows || []).find((r) => r.capital >= target);
+  return hit ? hit.year : null;
 }
 
 
@@ -1909,6 +1918,102 @@ export function currencyPicture(accounts, table, base = 'EUR', { history = [], n
   return rows.sort((a2, b2) => Math.abs(b2.exposureInBase || 0) - Math.abs(a2.exposureInBase || 0));
 }
 
+// ---- "Interesting ways to allocate money" ----
+//
+// He asked for an advisor. Not a chat, and not a model guessing at markets it knows nothing
+// about — every figure this app already has, pointed at the one question that matters: where
+// does the next euro do the most good. Up to five, ranked by size, and only the ones that
+// actually apply to him. Nothing here is invented; each tip is a number this file computes
+// elsewhere for a different card, read again with "so what should I do about it" attached.
+
+const money2 = (n, cur) => `${Math.round(n).toLocaleString()} ${cur}`;
+
+/** Up to five things worth doing with the next euro, biggest first. Every figure is one this
+ *  file already computes somewhere else — this just points each at a decision. */
+export function moneyAdvice(accounts = [], subs = [], table, base = 'EUR', now = Date.now()) {
+  if (!table) return [];
+  const tips = [];
+
+  // 1. THE SUREST RETURN IN THE HOUSE. A loan costing more than a safe deposit pays is a euro
+  // paid down that is a guaranteed return at that rate — no market bet required.
+  const costly = debtVsInvesting(accounts, { expectedYieldPct: 5, now }).filter((d) => d.payFirst)
+    .sort((a, b) => b.effectiveCostPct - a.effectiveCostPct)[0];
+  if (costly) {
+    const acct = accounts.find((a) => a.label === costly.label && isLiability(a.kind));
+    const owedInBase = acct ? toBase(balanceNow(acct, now).amount, acct.currency, table) : null;
+    if (owedInBase > 0) {
+      const pct = Math.round(costly.effectiveCostPct * 10) / 10;
+      tips.push({
+        id: 'debt', impactInBase: owedInBase * (costly.effectiveCostPct / 100),
+        headline: `${costly.label} costs ${pct}% — pay it down before anything else`,
+        detail: `${money2(owedInBase, base)} still owed at ${pct}% is a euro paid off that beats any deposit here. No investment is a surer return than that.`,
+      });
+    }
+  }
+
+  // 2. IDLE CASH. Money sitting at 0% is a choice, even when nobody meant to make one.
+  const idle = accounts.filter((a) => a.kind === 'cash' && a.value > 0)
+    .reduce((t, a) => t + (toBase(a.value, a.currency, table) || 0), 0);
+  if (idle > 0) {
+    const assumedPct = 2;
+    tips.push({
+      id: 'idle', impactInBase: idle * (assumedPct / 100),
+      headline: `${money2(idle, base)} is sitting in cash, earning nothing`,
+      detail: `Even a plain deposit at ${assumedPct}% would be ${money2(idle * assumedPct / 100, base)} a year you are not collecting. Cash is a decision, not a default.`,
+    });
+  }
+
+  // 3. CURRENCY CONCENTRATION. The size of the bet he is already holding, whether he chose it
+  // as a bet or not.
+  const currencies = currencyPicture(accounts, table, base, { now });
+  const biggest = currencies[0];
+  const netWorthInBase = currencies.reduce((t, c) => t + Math.abs(c.exposureInBase || 0), 0)
+    + accounts.filter((a) => a.currency === base && !isLiability(a.kind))
+      .reduce((t, a) => t + (toBase(balanceNow(a, now).amount, a.currency, table) || 0), 0);
+  if (biggest && netWorthInBase > 0 && Math.abs(biggest.exposureInBase) / netWorthInBase > 0.5) {
+    const share = Math.round((Math.abs(biggest.exposureInBase) / netWorthInBase) * 100);
+    const hit = Math.abs(biggest.sensitivity[0].deltaInBase);
+    tips.push({
+      id: 'currency', impactInBase: hit,
+      headline: `${share}% of what you own is in ${biggest.currency}, a currency you do not spend`,
+      detail: `If it weakens 10% against ${base}, that is ${money2(hit, base)} gone before you have chosen to spend a cent. Worth knowing you are holding that bet, whether or not you meant to.`,
+    });
+  }
+
+  // 4. WHAT SUBSCRIPTIONS COST IN CAPITAL. A recurring bill is a claim on money that could be
+  // invested instead — the same arithmetic the Subs tab already runs, aimed at a decision.
+  const sub = subsSummary(subs, table, base, now);
+  const biggestSub = (sub.rows || []).filter((r) => !r.ended && !r.inTrial)
+    .sort((a, b) => (b.perYearInBase || 0) - (a.perYearInBase || 0))[0];
+  if (biggestSub && biggestSub.perYearInBase > 0) {
+    const capital = biggestSub.perYearInBase / 0.035;
+    tips.push({
+      id: 'sub', impactInBase: biggestSub.perYearInBase,
+      headline: `${biggestSub.label} costs ${money2(biggestSub.perYearInBase, base)} a year`,
+      detail: `Funding that forever, sustainably, takes about ${money2(capital, base)} in capital. Cancelling it frees that much to invest instead.`,
+    });
+  }
+
+  // 5. A DEPOSIT MATURING SOON. When it lands, it is cash at 0% until he decides what is next —
+  // deciding before it lands beats deciding after.
+  const YEAR = 365 * DAY;
+  const soon = accounts.filter((a) => a.kind === 'deposit' && a.endsAt && a.endsAt > now && a.endsAt - now < YEAR)
+    .map((a) => ({ a, t: depositProgress(a, now) }))
+    .filter(({ t }) => t?.schedule && !t.ended)
+    .sort((x, y) => x.a.endsAt - y.a.endsAt)[0];
+  if (soon) {
+    const capInBase = toBase(balanceNow(soon.a, now).amount, soon.a.currency, table);
+    if (capInBase > 0) {
+      tips.push({
+        id: 'maturing', impactInBase: capInBase,
+        headline: `${soon.a.label} matures within a year`,
+        detail: `${money2(capInBase, base)} becomes plain cash the day it does, at whatever rate you have set for money with no rate of its own — decide where it goes next before it just sits there.`,
+      });
+    }
+  }
+
+  return tips.filter((x) => x.impactInBase > 0).sort((a, b) => b.impactInBase - a.impactInBase).slice(0, 5);
+}
 
 // ---- A plan to start from ----
 //

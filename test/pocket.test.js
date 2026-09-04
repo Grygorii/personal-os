@@ -2107,3 +2107,45 @@ test('forecast: a year is a total nobody has to take on trust', () => {
   assert.ok(!y3.pieces.some((p) => p.label === 'Deposit 1 interest'), 'a matured coupon stops appearing, not just stops paying');
   assert.ok(!y3.buckets.some((b) => b.label === 'Deposit 1'), 'and its bucket is gone too — the money is just cash now');
 });
+
+// "Now my problem is to think about next investments... I want to be able to see when a
+//  substantial amount saved so I could buy something else... I don't mind having an advisor with
+//  3-5 advise about interesting ways to allocate money."
+//
+// Not a chat, and not a model guessing at markets — every figure moneyAdvice() uses is one this
+// file already computes for a different card. capitalReachedYear() answers "when do I have
+// enough" from the same rows the year-by-year table already draws.
+
+import { moneyAdvice, capitalReachedYear } from '../src/pocket/money.js';
+
+test('capitalReachedYear: the first year capital crosses a target, from the rows already drawn', () => {
+  const rows = [{ year: 1, capital: 10000 }, { year: 2, capital: 22000 }, { year: 3, capital: 35000 }];
+  assert.equal(capitalReachedYear(rows, 20000), 2);
+  assert.equal(capitalReachedYear(rows, 10000), 1, 'already there in year one counts as year one');
+  assert.equal(capitalReachedYear(rows, 100000), null, 'never reached inside the horizon is null, not a guess');
+  assert.equal(capitalReachedYear(rows, 0), null, 'no target set is not "reached in year one"');
+  assert.equal(capitalReachedYear(rows, null), null);
+});
+
+test('moneyAdvice: up to five tips, ranked by size, and only the ones that actually apply', () => {
+  const subs = [cleanSub({ id: 's1', label: 'Netflix', amount: 12.99, currency: 'EUR', every: 'monthly', startsAt: utc(2024, 3, 5) })];
+  const tips = moneyAdvice(HIS(), subs, T, 'EUR', SEPT26);
+  assert.equal(tips.length, 5);
+  assert.deepEqual(tips.map((t) => t.id), ['maturing', 'currency', 'debt', 'sub', 'idle'], 'ranked by euro impact, biggest first');
+  assert.ok(tips.every((t) => t.impactInBase > 0), 'nothing padded in with a zero just to reach five');
+  assert.ok(tips.every((t, i, arr) => i === 0 || arr[i - 1].impactInBase >= t.impactInBase), 'strictly by size — never by category or the order things were typed');
+
+  const debt = tips.find((t) => t.id === 'debt');
+  assert.ok(debt.headline.includes('Loan 2'), 'names the loan, not a generic warning');
+  assert.ok(debt.headline.includes('%'), 'and the rate it actually costs');
+
+  const idle = tips.find((t) => t.id === 'idle');
+  assert.ok(idle.headline.includes('2,000 EUR'), 'his own number, not a rounded-off guess');
+
+  // Nothing invented: a household with no idle cash, no costly debt, no subs, and every deposit
+  // years from maturing gets an empty list, not five tips padded out to look complete.
+  const clean = [cleanAccount({ id: 'x1', label: 'Portfolio', kind: 'portfolio', currency: 'EUR', value: 5000 })];
+  assert.deepEqual(moneyAdvice(clean, [], T, 'EUR', SEPT26), []);
+  // No rate table, no confident number to build a tip from.
+  assert.deepEqual(moneyAdvice(HIS(), subs, null, 'EUR', SEPT26), []);
+});

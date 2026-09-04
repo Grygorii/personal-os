@@ -27,6 +27,7 @@ import {
   monthWindowOf, recentMonths, monthsSummary, patchFrom, depositsSummary, contractedIncome,
   missingRecurring, cleanFlow, balanceNow, subsSummary, BILLING_PERIODS, cleanSub,
   scheduledFlows, EVENT_KINDS, parseDate, yearsBetween, matchRecorded, subChargeDates, currencyPicture, cleanEvent, planYields, planTemplate, holdingFlow,
+  capitalReachedYear, moneyAdvice,
 } from './money.js';
 
 const json = (res, code, body) => {
@@ -90,14 +91,14 @@ export function spanFor(monthKey, now = Date.now()) {
 /** Everything the page draws, from data already loaded. Pure on purpose: no database, no clock
  *  of its own, no network — so the entire payload the browser receives can be built from
  *  fixtures and checked, which is how the drawing code gets tested at all. */
-export function buildState({ base = 'EUR', table, monthKey, accounts = [], spanFlows = [], subs = [], goal = null, events = { years: 10, list: [] }, history = [], basis = {}, now = Date.now() }) {
+export function buildState({ base = 'EUR', table, monthKey, accounts = [], spanFlows = [], subs = [], goal = null, milestone = null, events = { years: 10, list: [] }, history = [], basis = {}, now = Date.now() }) {
   const { w, strip, span } = spanFor(monthKey, now);
   const flows = spanFlows.filter((f) => f.ts >= w.from && f.ts <= w.to);
 
   // Without rates nothing can be totalled honestly, so the page is told so rather than being
   // handed numbers that quietly exclude two of three currencies.
   if (!table) {
-    return { base, ratesAvailable: false, accounts, flows, subs: { rows: [] }, goal, kinds: ACCOUNT_KINDS, events: events.list };
+    return { base, ratesAvailable: false, accounts, flows, subs: { rows: [] }, goal, milestone, kinds: ACCOUNT_KINDS, events: events.list };
   }
 
   // Sanitised here rather than trusted from the caller: a plan piece stored before pieces had a
@@ -172,6 +173,30 @@ export function buildState({ base = 'EUR', table, monthKey, accounts = [], spanF
     .map((a) => ({ a, flow: holdingFlow(a, now) }))
     .filter(({ flow }) => flow)
     .map(({ a, flow }) => cleanEvent({ ...flow, id: `auto:${a.id}`, atYear: 1, untilYear: yearOf(a.endsAt), auto: true }));
+
+  // Hoisted out of the return object so `milestone` and `advice` below can both read it — the
+  // Goal tab's "when do I have enough" and the Plan tab's "when do I reach the goal" are now
+  // answers read off the SAME forecast, never two pieces of arithmetic that could disagree.
+  const forecast = forecastRange({
+    // Not one lump at one rate any more.
+    startCapital: 0,
+    startBuckets: planBuckets,
+    monthlySurplus: plan.useMeasured ? cur.surplus : 0,
+    events: [...plan.list, ...autoFlows]
+      .map((e) => ({
+        ...e,
+        amount: fx.toBase(e.amount, e.currency, table),
+        sellFor: e.sellFor == null ? null : fx.toBase(e.sellFor, e.currency, table),
+      }))
+      // No rate, no amount. Excluded and named above, never passed through as though the
+      // number were euro — which is exactly the failure that put 2.77 million on his screen.
+      .filter((e) => e.amount != null),
+    monthlyPassiveNow: 0,
+    years: Number(plan.years) || 10,
+    // HIS number, not one this file made up.
+    yieldPct: plan.yieldPct || 0,
+    goalMonthly: goal?.monthly || 0,
+  });
 
   return {
     base,
@@ -399,26 +424,19 @@ export function buildState({ base = 'EUR', table, monthKey, accounts = [], spanF
     // what put "5% a year" on his Egyptian certificates.
     planBuckets: planBuckets.map((b) => ({ ...b })),
     eventKinds: EVENT_KINDS,
-    forecast: forecastRange({
-      // Not one lump at one rate any more.
-      startCapital: 0,
-      startBuckets: planBuckets,
-      monthlySurplus: plan.useMeasured ? cur.surplus : 0,
-      events: [...plan.list, ...autoFlows]
-        .map((e) => ({
-          ...e,
-          amount: fx.toBase(e.amount, e.currency, table),
-          sellFor: e.sellFor == null ? null : fx.toBase(e.sellFor, e.currency, table),
-        }))
-        // No rate, no amount. Excluded and named above, never passed through as though the
-        // number were euro — which is exactly the failure that put 2.77 million on his screen.
-        .filter((e) => e.amount != null),
-      monthlyPassiveNow: 0,
-      years: Number(plan.years) || 10,
-      // HIS number, not one this file made up.
-      yieldPct: plan.yieldPct || 0,
-      goalMonthly: goal?.monthly || 0,
-    }),
+    forecast,
+    // "See when a substantial amount is saved, so I could buy something else." A one-off target,
+    // read off the SAME forecast — never a separate compounding estimate of its own.
+    milestone: milestone && milestone.amount > 0 ? (() => {
+      const amountInBase = fx.toBase(milestone.amount, milestone.currency, table);
+      return {
+        ...milestone, amountInBase,
+        reachedYear: amountInBase != null ? capitalReachedYear(forecast.mid.rows, amountInBase) : null,
+      };
+    })() : null,
+    // "An advisor with 3-5 advise about interesting ways to allocate money" — not a chat, every
+    // figure here is one this file already computes for another card, aimed at a decision.
+    advice: moneyAdvice(accounts, subs, table, base, now),
     events: plan.list.map((e) => ({
       ...e,
       amountInBase: fx.toBase(e.amount, e.currency, table),
@@ -438,12 +456,12 @@ async function state(monthKey) {
   // One snapshot a day, so that in a month there is something to compare today against. Never
   // allowed to break a page load — a rate the app failed to file away is not worth an error.
   if (table) store.recordRates(table).catch((e) => console.error('[pocket] rate snapshot:', e.message));
-  const [accounts, spanFlows, subs, goal, events, history, basis] = await Promise.all([
-    store.accounts(), store.flows(span), store.subs(), store.getGoal(), store.getPlanEvents(),
+  const [accounts, spanFlows, subs, goal, milestone, events, history, basis] = await Promise.all([
+    store.accounts(), store.flows(span), store.subs(), store.getGoal(), store.getMilestone(), store.getPlanEvents(),
     table ? store.rateHistory().catch(() => []) : Promise.resolve([]),
     store.getFxBasis().catch(() => ({})),
   ]);
-  return buildState({ base, table, monthKey, accounts, spanFlows, subs, goal, events, history, basis });
+  return buildState({ base, table, monthKey, accounts, spanFlows, subs, goal, milestone, events, history, basis });
 }
 
 export function startWeb(port = process.env.PORT || 3000) {
@@ -488,6 +506,14 @@ export function startWeb(port = process.env.PORT || 3000) {
         if (url.pathname === '/api/goal' && req.method === 'POST') {
           const body = await readBody(req);
           await store.setGoal({ monthly: Number(body.monthly) || 0, currency: body.currency || config.baseCurrency });
+          return json(res, 200, await state(asked()));
+        }
+
+        // "When will I have enough saved to buy something else" — a one-off capital target,
+        // separate from the monthly passive-income goal above. An amount of 0 clears it.
+        if (url.pathname === '/api/milestone' && req.method === 'POST') {
+          const body = await readBody(req);
+          await store.setMilestone({ amount: Number(body.amount) || 0, currency: body.currency || config.baseCurrency, label: body.label });
           return json(res, 200, await state(asked()));
         }
 
