@@ -190,6 +190,11 @@ tax, no inflation adjustment'` attached, and that string travels with the number
 shown. This is deliberately the opposite of the 31-year projection quoted to the dollar that he
 was shown — same arithmetic, one optimistic yield, presented as a fact.
 
+**This is what the Telegram `/goal` command still does — the Mini App's Goal tab does not any
+more.** See "One forecast, not two" below: the Mini App now answers the same question from the
+real, per-holding forecast the Plan tab already builds, and only the bot command is left running
+`yearsToGoal()`'s hard-coded 3.5/5/7% over his holdings as one lump. Known, not yet asked for.
+
 **And the honest headline: at his stage the savings rate moves the goal far more than the
 picking does.** Going from €1,000 to €1,400 a month shortens the road by years; beating the
 index by 1% on €25,000 is worth €250 a year. `goal` says so.
@@ -231,10 +236,10 @@ a price without one: it looks current.
 2. Railway → same project → **New Service** → same repo.
 3. Start command: `npm run start:pocket`.
 4. Env vars above, `DB_NAME=pocket` among them.
-5. Look for `[boot] pocket-26 · db=pocket · base=EUR`.
+5. Look for `[boot] pocket-27 · db=pocket · base=EUR`.
 
 **Which build is actually serving?** `GET /health` (or `/version`) answers without Telegram —
-`{"ok":true,"app":"pocket","version":"pocket-26"}`. The marker lives in `src/pocket/version.js`;
+`{"ok":true,"app":"pocket","version":"pocket-27"}`. The marker lives in `src/pocket/version.js`;
 bump it on every deploy. Kept has `GET /version` for exactly the same reason: "is my change even
 out there yet" is the first question of every deploy, and guessing at it wastes an evening.
 
@@ -824,6 +829,24 @@ real holding and, at the time, false of a rate-bearing lump; now that a lump is 
 it is finally the same true sentence for both, and the rate he stated (not the bucket's own,
 now-flat 0%) is still the one shown.
 
+### One forecast, not two
+
+"Check the goal tab too, might have the same problem." It did, and worse than the Plan tab ever
+was: the Goal tab's **"What it would take"** card ran its own projection, `yearsToGoal()`, from
+before the Plan tab existed — hard-coded at 3.5/5/7% (the exact invented figure "where did the 5%
+come from" was about) and compounding his four EGP certificates and his portfolio together as one
+undifferentiated lump, the exact "one lump at one rate" mistake the Plan tab was rebuilt to stop
+making. Two tabs, both answering "when do I reach the goal," from two different pieces of
+arithmetic that had no reason to agree and no way to be told apart.
+
+There is one forecast now. The Goal tab's card reads `S.forecast` — the same object the Plan tab's
+"What it comes to" card reads — so the year it names is, structurally, the same year the Plan tab
+would give for the same question, built from what he actually holds (auto-credited, same as
+everywhere else) and whatever he has added himself. No new arithmetic was written for this; the
+old, separate kind was deleted. `pocket-render.mjs` checks the two tabs never disagree by
+construction: the Goal tab must name the calendar year `S.forecast.mid.goalReachedInYear` gives, not
+a year of its own.
+
 ### Real years, not "year 1, year 2"
 
 Small, and asked for directly: "put correct years like 2026, 2027." Year 1 has always meant *the
@@ -894,5 +917,8 @@ contributions differs by tens of thousands. Showing that gap *is* the feature.
   read the steward's book directly, so the two need keeping in step manually.
 - Removing or editing an account or flow works in the Mini App, but not from a Telegram message.
 - The bot itself still only knows "this month". The month strip is the app's alone.
+- The Telegram `/goal` command's "at what you saved this month" projection is still
+  `yearsToGoal()` — hard-coded 3.5/5/7%, one lump. The Mini App's Goal tab no longer works this
+  way (see "One forecast, not two"); the bot was not carried over in this pass.
 - The Mini App has never been opened against real Telegram — `initData` verification, the
   Railway domain and the web_app button are all untested end to end.

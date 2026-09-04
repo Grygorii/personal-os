@@ -256,6 +256,21 @@ function must(el, panel, needles, label) {
     for (const name of S.goal.sources.map((x) => x.category)) {
       if (!goalHtml.includes(`>${name}<`)) fail(`the legend must name "${name}", not just colour it`);
     }
+    // "Check the goal tab too, might have the same problem" — it did: "What it would take" ran its
+    // own projection, hard-coded at 3.5/5/7% and compounding his real certificates as one lump,
+    // while the Plan tab had already been rebuilt to stop doing exactly that. Now there is one
+    // forecast and both tabs read it — so the year named here has to be the SAME year the Plan
+    // tab's own forecast reaches the goal, not a second, disagreeing answer.
+    if (goalHtml.includes('yield →') || goalHtml.includes('needs') && goalHtml.includes('invested')) {
+      fail('the old, separate 3.5/5/7% projection must be gone from the Goal tab');
+    }
+    if (S.forecast.mid.goalReachedInYear) {
+      const goalYear = new Date().getUTCFullYear() + S.forecast.mid.goalReachedInYear - 1;
+      if (!goalHtml.includes(String(goalYear))) {
+        fail(`the Goal tab must name the same year the Plan tab's forecast reaches the goal (${goalYear})`);
+      }
+    }
+    if (!goalHtml.includes("your Plan tab's own projection")) fail('the Goal tab must say plainly that this is the Plan tab\'s own number, not a second one');
     // The pieces he builds come FIRST and the projection is one card under them; the year-by-year
     // is a plain table behind a fold, not ten bar blocks.
     must(el, 'p-plan', ['Your plan', 'What it comes to', 'Year by year',

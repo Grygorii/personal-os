@@ -22,7 +22,7 @@ import { VERSION } from './version.js';
 import * as fx from '../fx.js';
 import * as store from './store.js';
 import {
-  netWorth, monthOf, goalProgress, yearsToGoal, interestPicture, debtVsInvesting,
+  netWorth, monthOf, goalProgress, interestPicture, debtVsInvesting,
   parseEntry, ACCOUNT_KINDS, PAYOUT_KINDS, isLiability, forecastRange, depositProgress,
   monthWindowOf, recentMonths, monthsSummary, patchFrom, depositsSummary, contractedIncome,
   missingRecurring, cleanFlow, balanceNow, subsSummary, BILLING_PERIODS, cleanSub,
@@ -372,9 +372,15 @@ export function buildState({ base = 'EUR', table, monthKey, accounts = [], spanF
         firstEndsAt: rows.length ? rows[0].endsAt : null,
       };
     })(),
-    plan: g ? yearsToGoal({ invested, monthlyContribution: Math.max(0, cur.surplus), goalMonthly: goal.monthly }) : null,
     // Ten years from what he ACTUALLY saved this month, plus whatever he has said will change.
     // Three yields, because over a decade the yield assumption is most of the answer.
+    //
+    // The Goal tab's "what it would take" card used to run its OWN projection here — yearsToGoal(),
+    // hard-coded at 3.5/5/7% and compounding his four EGP certificates and his portfolio as one
+    // undifferentiated lump. That is exactly the mistake the Plan tab was rebuilt to stop making
+    // ("where did the 5% come from — from me"), just never carried over to this tab, so the two
+    // could show different answers to the same question. There is only one forecast now —
+    // `forecast` below — and both tabs read it.
     // The plan is BUILT, not inferred. `planBase` is the one number it starts from — what he
     // actually saved this month — and he can switch it off and list everything himself instead.
     //

@@ -679,7 +679,7 @@ function drawGoal() {
         <div class="note">Set a goal and this gets a target to sit against.</div></div>` : ''}`;
     return;
   }
-  const g = S.goal, p = S.plan, c = S.contracted;
+  const g = S.goal, f = S.forecast, c = S.contracted;
   // Fixed slots, never by rank: rent keeps its colour when a dividend appears beside it, and the
   // "already contracted" list below wears the same colours as the bar above it.
   const SLOT = { rent: 1, interest: 2, dividend: 3 };
@@ -758,16 +758,21 @@ function drawGoal() {
     </div>
     ${ending}
     ${contracted}
-    ${p && p.fastest != null ? `<div class="card">
+    ${/* WHAT IT WOULD TAKE, from the one forecast this app has — the Plan tab's own. This card used
+          to run a second projection of its own, hard-coded at 3.5/5/7% and compounding his four
+          EGP certificates and his portfolio as one lump — the exact mistake the Plan tab was
+          rebuilt to stop making. Two tabs, two answers to the same question. Now there is one. */ ''}
+    ${f && f.mid ? `<div class="card">
       <h2>What it would take</h2>
-      ${p.scenarios.map((s) => `<div class="row">
-        <div class="rmain"><div class="rlabel">${s.yieldPct.toFixed(1)}% yield</div>
-          <div class="rmeta">needs ${money(s.capitalNeeded)} invested</div></div>
-        <div class="ramt">${s.years == null ? '—' : s.years + ' yrs'}</div>
-      </div>`).join('')}
-      <div class="note">Roughly <b>${p.fastest}–${p.slowest} years</b> at what you saved this month. Assumes ${esc(p.assumes)}.
-      Saving more moves this far faster than picking better investments does.</div>
-    </div>` : p ? `<div class="card"><div class="note">Nothing was saved this month, so on these numbers the goal isn't reachable. The savings rate is the lever, not the returns.</div></div>` : ''}`;
+      ${f.mid.goalReachedInYear
+        ? `<div class="sub in" style="font-size:15px;color:var(--ink)">You reach ${money(g.target, g.currency)} a month in <b>${calYear(f.mid.goalReachedInYear)}</b>${f.runs.length > 1
+            ? ` — ${f.low.goalReachedInYear ? calYear(f.low.goalReachedInYear) : 'beyond ' + f.years + ' years'} to ${f.high.goalReachedInYear ? calYear(f.high.goalReachedInYear) : 'beyond ' + f.years + ' years'} if your ${S.planYieldPct}% is a point and a half out either way`
+            : ''}.</div>`
+        : `<div class="sub">Not reached inside ${f.years} years on your plan today.</div>`}
+      <div class="note">This is your Plan tab's own projection — what you already hold, what you have
+      told it to expect, and what you are actually saving. Assumes ${esc(f.assumes)}.
+      Open Plan to see what it is made of, or to change any of it.</div>
+    </div>` : ''}`;
 }
 
 
