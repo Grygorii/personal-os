@@ -95,6 +95,35 @@ const events = {
 const html = readFileSync(new URL('../src/pocket/app.html', import.meta.url), 'utf8');
 const script = html.match(/<script>([\s\S]*?)<\/script>/g).pop().replace(/^<script>|<\/script>$/g, '');
 
+// ---- `hidden` LOSES TO ANY AUTHOR `display` RULE ----
+//
+// A class that sets `display:` beats the browser's own `[hidden]` styling, so an element the code
+// hides stays on screen — the invariant in CLAUDE.md, and one Kept's smoke test guards while
+// Pocket's had nothing. Every element this app hides in JS is checked against its own class here,
+// so adding `display:flex` to, say, `.err` can never quietly put an error message back on screen.
+{
+  const displayClasses = new Set(
+    [...html.matchAll(/^\s*\.([a-z-]+)\{[^}]*display:/gm)].map((m) => m[1]),
+  );
+  const guarded = new Set(
+    [...html.matchAll(/\.([a-z-]+)\[hidden\]\s*\{\s*display:\s*none/g)].map((m) => m[1]),
+  );
+  // Everything the script toggles: $('x').hidden = …
+  for (const [, id] of script.matchAll(/\$\('([a-z-]+)'\)\.hidden\s*=/g)) {
+    const tag = html.match(new RegExp(`<[^>]*id="${id}"[^>]*>`));
+    const cls = tag && tag[0].match(/class="([^"]*)"/);
+    for (const name of (cls ? cls[1].split(/\s+/) : [])) {
+      if (displayClasses.has(name) && !guarded.has(name)) {
+        fail(`#${id} is hidden in JS but .${name} sets display: — it needs .${name}[hidden]{display:none} or it stays on screen`);
+      }
+    }
+  }
+  // The panels are hidden by class rather than by id, and are the original case this bit us on.
+  for (const name of ['panel', 'sheet']) {
+    if (!guarded.has(name)) fail(`.${name}[hidden]{display:none} has gone missing — tabs and sheets stop hiding`);
+  }
+}
+
 /** Just enough DOM for the drawing code. Anything it reaches for that is not here shows up as a
  *  crash, which is the point — this is a tripwire, not a browser. */
 function shim() {
@@ -804,6 +833,69 @@ function must(el, panel, needles, label) {
   // has not run out. Only the projected coupon income drops out.
   if (S.snapshot.holdings.locked.every((h) => h.label !== 'Cairo CD')) {
     fail('marking a coupon spent must not remove the deposit itself from what he owns');
+  }
+}
+
+// ---- Nought and nearly-nought are different facts ----
+//
+// "Some lines with 0 in the end, data provided in a weird way." A certificate genuinely paying two
+// cents a month rounded to "0 EUR", which reads as an app that has lost the number rather than as
+// a very small one.
+{
+  const tiny = cleanAccount({ id: 't1', label: 'Tiny CD', kind: 'deposit', currency: 'EGP', value: 60, ratePct: 20, payout: 'monthly', startsAt: utc(2025, 1, 1), endsAt: utc(2029, 1, 1) });
+  const S = buildState({ base: 'EUR', table: T, accounts: [tiny], spanFlows: [], subs: [], goal,
+    events: { years: 5, useMeasured: false, list: [] }, basis: {}, now: NOW });
+  if (!(S.contracted.perMonth > 0 && S.contracted.perMonth < 0.5)) fail('fixture sanity: this should be real money that rounds to nothing');
+  const el = render(S, 'money too small to round to a whole unit');
+  if (el) {
+    const goal = el('p-goal').innerHTML;
+    if (/>0 EUR</.test(goal)) fail('real money must never print as a bare "0 EUR" — that is the line he called weird');
+    if (!goal.includes('under 1 EUR')) fail('money that rounds away has to say so, not disappear into a zero');
+    if (goal.includes('About under 1 EUR a month is scheduled')) fail('and it must not turn the headline sentence into broken prose');
+  }
+}
+
+// ---- The flat is on Goal and not in the Plan, and the gap between them has to be named ----
+//
+// "What you hold right now" counts a 50,000 flat; the plan opens without it, because a flat only
+// joins a plan once he has said what he would sell it for. Right model, wrong silence: the two
+// tabs differed by tens of thousands with nothing anywhere to account for it.
+{
+  const flat = cleanAccount({ id: 'p9', label: 'Cairo flat', kind: 'property', currency: 'EGP', value: 2700000 });
+  const S = buildState({ base: 'EUR', table: T, accounts: [flat], spanFlows: [], subs: [], goal,
+    events: { years: 10, useMeasured: false, list: [] }, basis: {}, now: NOW });
+  if (!S.planMissing.length) fail('a flat he owns and has not put in the plan must be named as not counted');
+  if (!(S.snapshot.owned > 0)) fail('fixture sanity: the Goal tab does count it');
+  const el = render(S, 'a flat the plan is not counting');
+  if (el) {
+    const plan = el('p-plan').innerHTML;
+    if (!plan.includes('Not counted here')) fail('the Plan tab must account for what it is leaving out, not just omit it');
+    if (!plan.includes('Cairo flat')) fail('and name it');
+  }
+}
+
+// ---- A plan that spends more than it saves has to SAY so, not draw a flat line ----
+//
+// The forecast used to floor a negative month at zero, so a household 700 a month short saw its
+// capital sit perfectly still — and the milestone, the goal year and "what it comes to" were all
+// computed off that impossible line.
+{
+  const broke = {
+    years: 5,
+    useMeasured: false,
+    list: [
+      { id: 'b1', atYear: 1, kind: 'contribution', amount: 200, label: 'savings' },
+      { id: 'b2', atYear: 1, kind: 'spending', amount: 900, label: 'the new car' },
+    ],
+  };
+  const S = buildState({ base: 'EUR', table: T, accounts: [cleanAccount({ id: 'c9', label: 'Bank', kind: 'cash', currency: 'EUR', value: 30000 })],
+    spanFlows: [], subs: [], goal, events: broke, basis: {}, now: NOW });
+  if (!(S.forecast.mid.rows[0].drawnDown > 0)) fail('a plan 700 a month short must show money leaving the pot, not a flat line');
+  if (S.forecast.mid.rows[4].capital >= 30000) fail('five years of spending more than you save cannot leave the pot untouched');
+  const el = render(S, 'a plan that spends more than it saves');
+  if (el) {
+    const plan = el('p-plan').innerHTML;
+    if (!plan.includes('rather than adding to it')) fail('the Plan tab must say out loud that the plan is draining his money');
   }
 }
 

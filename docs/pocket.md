@@ -236,10 +236,10 @@ a price without one: it looks current.
 2. Railway → same project → **New Service** → same repo.
 3. Start command: `npm run start:pocket`.
 4. Env vars above, `DB_NAME=pocket` among them.
-5. Look for `[boot] pocket-33 · db=pocket · base=EUR`.
+5. Look for `[boot] pocket-34 · db=pocket · base=EUR`.
 
 **Which build is actually serving?** `GET /health` (or `/version`) answers without Telegram —
-`{"ok":true,"app":"pocket","version":"pocket-33"}`. The marker lives in `src/pocket/version.js`;
+`{"ok":true,"app":"pocket","version":"pocket-34"}`. The marker lives in `src/pocket/version.js`;
 bump it on every deploy. Kept has `GET /version` for exactly the same reason: "is my change even
 out there yet" is the first question of every deploy, and guessing at it wastes an evening.
 
@@ -1064,6 +1064,67 @@ optional because a deposit happens to be paying it. Nothing about this is silent
 names the account "Marked as already spent" right where he set the flag, because a flag with a
 real financial consequence and no visible trace of it existing would be exactly the kind of thing
 this app exists to never do.
+
+## Complete days, and ten passes looking for what else was wrong
+
+**"No, let's make data should be complete day month year."** He typed `28.05.2027` into a box
+labelled "From year", which wanted the number `2`, and the form told him it needed a year. Plan
+pieces carry real dates now — the same date control the Worth tab already uses — and the day
+**means** something rather than being decoration: a contribution starting on 28 May counts eight
+months of that year, not twelve, and a lease ending in June is not in December's per-month figure.
+The plan year is still there, derived from the date, so buckets maturing, the year-by-year table
+and the drill-down are untouched, and a piece stored before dates existed behaves exactly as it
+did. The drill-down names the difference where it shows up — "8 months of this year, not 12".
+
+Two bugs fell out of building it. **`planYearOf` counted rolling twelve-month blocks from today**,
+which disagreed with every label on the page: his Cairo certificate matures 28.05.2027, eight
+months out, so it answered "year 1" — and year 1's row is headed **2026**. The table said a
+deposit maturing in May 2027 ended in 2026. And **`cleanEvent` takes a clock now**, which makes a
+bare `.map(cleanEvent)` hand it the array *index* — every piece after the first would have been
+read against a different "today".
+
+Then, because he asked for it twice: **ten passes over the app looking for what else was wrong.**
+
+1. **Escaping** — clean (the `input()` helper escapes; category-to-colour lookups return numbers).
+   But two native date pickers in a `.two` flex row would have pushed the sheet off the edge of a
+   360px phone: flex items refuse to shrink below their content's intrinsic width. `min-width:0`.
+2. **A plan that spends more than it saves ran the pot down — or rather, didn't.** €500 a month in
+   against €900 a month out, and the app drew capital **perfectly flat for ten years** while the
+   same row reported "−400 a month". It knew he was short and would not let it touch the money.
+   That was a deliberate old decision ("draining capital invents a response he never stated") and
+   it was defensible while the capital line was only *looked at* — it stopped being defensible the
+   day `capitalReachedYear` started reading these rows to answer "when do I have 28,000 for the
+   next apartment". Money that goes out comes out of the pot now, the row carries `drawnDown` and
+   `ranShort`, and the Plan tab says it in red.
+3. **`newId()` was probabilistic where it claimed to be certain.** Its own docstring calls a
+   collision the worst thing in the file — an account is upserted *on its id*, so the second one
+   silently replaces the first. The counter wrapped every 1,296 regardless of the clock, leaving
+   two random characters holding the guarantee; 5,000 ids in a millisecond collided about six
+   times, which is how its own test turned out to be flaky. The counter resets per millisecond and
+   runs to 46,655: 200,000 ids, five runs, zero collisions.
+4. **The drawdown had to reach his actual money.** First cut drained the `default` pot — which is
+   empty, because his cash lives in a start bucket. The same flat line, one level down. It now
+   comes out of anything he could actually reach (cash, a portfolio) and never out of a
+   certificate still mid-term or a flat he has not sold, which would be the app inventing a
+   decision he never made.
+5. **Goal said €51,852, Plan opened at €1,852.** The flat is deliberately not in the plan — it
+   joins only when he prices it and says when he'd sell. Right model, wrong silence: tens of
+   thousands between two tabs with nothing anywhere to account for it, which is the shape of every
+   "from where data?" he has sent. The Plan tab now names what it is leaving out.
+6. **Nothing guarded `hidden` losing to a `display` rule.** Kept's smoke test guards it; Pocket's
+   harness had nothing. It now checks every element the app hides in JS against its own class —
+   verified by breaking it on purpose (`display:block` on `.err`) and watching it fail.
+7. **"0 EUR" again, in a card I hadn't touched.** A certificate genuinely paying two cents a month
+   printed "About 0 EUR a month is scheduled to arrive". Nought and nearly-nought are different
+   facts: real money that rounds away now says "under 1 EUR", and the headline sentence stays
+   quiet below half a unit rather than turning into "About under 1 EUR a month".
+8. The same flaw in the **advisor's own formatter** (`money2`), where a tip whose entire point is
+   a number is the last place it should happen.
+9. **The milestone told the flattering half.** A plan can reach €30,000 in 2027 and be empty by
+   2029; "2027" was true and, alone, misleading. Reaching it and keeping it are two questions, and
+   the card answers both.
+10. **The `assumes` line stopped describing the arithmetic.** It travels with every projected
+    figure and still said "contributions continue" — now "each piece runs exactly as dated".
 
 ## Not done yet
 

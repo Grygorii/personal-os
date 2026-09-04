@@ -172,6 +172,18 @@ export function buildState({ base = 'EUR', table, monthKey, accounts = [], spanF
   // — by pressing "Start from what I hold" or adding a piece by hand — `holdingId` says so, and
   // the automatic version stands down for that account.
   const explicitHoldingIds = new Set(plan.list.filter((e) => e.holdingId).map((e) => e.holdingId));
+
+  // WHAT HE OWNS THAT THE PLAN IS NOT COUNTING, said out loud.
+  //
+  // `planBuckets` above takes deposits, portfolios and cash. A flat is deliberately NOT in it —
+  // it joins the plan only when he adds it as a piece he can price and sell, which is what "Start
+  // from what I hold" writes. That is the right model and the wrong silence: the Goal tab says he
+  // holds 51,852 while the Plan tab opens at 1,852, and nothing anywhere accounts for the 50,000
+  // between them. Named here, printed there.
+  const planMissing = accounts
+    .filter((a) => a.kind === 'property' && a.value > 0 && !explicitHoldingIds.has(a.id))
+    .map((a) => ({ label: a.label || a.kind, inBase: fx.toBase(a.value, a.currency, table) }))
+    .filter((m) => m.inBase != null);
   const autoFlows = accounts
     .filter((a) => ['deposit', 'loan', 'card'].includes(a.kind) && !explicitHoldingIds.has(a.id))
     .map((a) => ({ a, flow: holdingFlow(a, now) }))
@@ -432,6 +444,9 @@ export function buildState({ base = 'EUR', table, monthKey, accounts = [], spanF
     // he expects the market to do; cash does nothing. The old single lump at one invented rate is
     // what put "5% a year" on his Egyptian certificates.
     planBuckets: planBuckets.map((b) => ({ ...b })),
+    // What he owns that this plan is not counting — so the gap between "what you hold right now"
+    // on Goal and where the plan starts on Plan is explained rather than left for him to find.
+    planMissing,
     eventKinds: EVENT_KINDS,
     forecast,
     // "See when a substantial amount is saved, so I could buy something else." A one-off target,

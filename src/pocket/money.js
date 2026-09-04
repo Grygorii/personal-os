@@ -23,7 +23,20 @@ import { toBase, cleanCurrency, isKnownCurrency, realReturn } from '../fx.js';
  *  which is saved by upsert on its id — the SECOND one silently overwriting the first. A lost
  *  holding that never reported an error is the worst outcome this file can produce. */
 let idSeq = 0;
-export const newId = () => `${Date.now().toString(36)}${(idSeq = (idSeq + 1) % 1296).toString(36).padStart(2, '0')}${Math.floor(Math.random() * 1296).toString(36).padStart(2, '0')}`;
+let idMs = 0;
+export const newId = () => {
+  // The counter RESETS each millisecond and runs to 46,655 (three base-36 characters), instead of
+  // wrapping every 1,296 regardless of the clock. The wrap was the hole: ids number 1 and number
+  // 1,297 inside one millisecond carried the same counter, leaving two random characters as the
+  // only thing standing between a holding and the next one silently upserting over it — and at
+  // five thousand ids in a millisecond that collided about six times, which is how the test that
+  // guards this failed. Now uniqueness within a millisecond is guaranteed rather than likely; the
+  // random tail is for two of these running at once, which is the case it can still only guess at.
+  const ms = Date.now();
+  idSeq = ms === idMs ? idSeq + 1 : 0;
+  idMs = ms;
+  return `${ms.toString(36)}${idSeq.toString(36).padStart(3, '0')}${Math.floor(Math.random() * 1296).toString(36).padStart(2, '0')}`;
+};
 
 const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
 const txt = (v, n) => String(v == null ? '' : v).replace(/\s+/g, ' ').trim().slice(0, n);
@@ -974,12 +987,40 @@ export function forecast({
       .reduce((t, e) => t + e.amount, 0);
     const monthly = [...buckets.values()].reduce((t, b) => t + b.monthly, 0) + baseMonthly - stopped;
     let contributedThisYear = 0;
+    // A PLAN THAT SPENDS MORE THAN IT SAVES RUNS THE POT DOWN.
+    //
+    // This used to floor every bucket's yearly contribution at zero, so a household putting in
+    // 500 a month against 900 a month of costs was shown its capital sitting perfectly flat for
+    // ten years — while the very same row reported "−400 a month". The app knew he was 400 short
+    // and would not let it touch the money. That is the flattering direction, and the one this
+    // file is not allowed to be wrong in. Money going out now comes out of the spendable pot.
+    let ranShort = false;
+    let deficit = 0;
     for (const b of buckets.values()) {
-      // Never below nothing: a bucket whose pieces net out negative contributes zero, it does not
-      // drain capital — the same floor this line has always had, applied after the shortfall too.
-      const add = Math.max(0, Math.max(0, (b === def ? b.monthly + baseMonthly : b.monthly)) * monthsThisYear - (shortfall.get(b) || 0));
-      contributedThisYear += add;
-      b.capital = b.capital * (1 + b.rate * monthsThisYear / 12) + add;
+      const raw = (b === def ? b.monthly + baseMonthly : b.monthly) * monthsThisYear - (shortfall.get(b) || 0);
+      // Growth always applies; only what is PUT IN is added here. A year that costs more than it
+      // earns is a withdrawal, collected as a deficit and taken out of spendable money below —
+      // never floored away, which is what drew a flat line under a plan that could not happen.
+      b.capital = b.capital * (1 + b.rate * monthsThisYear / 12) + Math.max(0, raw);
+      if (raw > 0) contributedThisYear += raw;
+      else deficit += -raw;
+    }
+    const drawnDown = deficit;
+    if (deficit > 0) {
+      // WHERE THE MONEY ACTUALLY COMES FROM. Ordinary money first, then anything else he could
+      // reach without breaking something: cash and a portfolio are spendable, a certificate still
+      // mid-term and a flat he has not sold are NOT — raiding those would be the app inventing a
+      // decision he never made. The pot he can actually reach is the pot this comes out of.
+      const spendable = [def, ...[...buckets.values()].filter((b) => b !== def && !b.asset && !b.untilYear)];
+      for (const b of spendable) {
+        if (deficit <= 0) break;
+        const taken = Math.min(b.capital, deficit);
+        b.capital -= taken;
+        deficit -= taken;
+      }
+      // Nothing goes below nothing. Once there is no reachable money left the plan has run out
+      // rather than quietly borrowing some, and the row says so instead of absorbing it.
+      if (deficit > 0) ranShort = true;
     }
     const capital = [...buckets.values()].reduce((t, b) => t + b.capital, 0);
     // Each bucket yields at ITS rate, so a plan half in 2% deposits does not report itself as
@@ -1049,6 +1090,10 @@ export function forecast({
       // case needed here. Only a sale (`sold`, above) does the equivalent for an asset.
       liquidCapital: capital - breakdown.buckets.filter((b) => b.asset || (b.held && b.untilYear)).reduce((t, b) => t + b.capital, 0),
       contributedThisYear,
+      // What this year TOOK OUT of the spendable pot, and whether the pot ran dry. Never a
+      // rounding detail: it is the answer to "can I actually afford this plan", and the app used
+      // to hide it by flooring the arithmetic at zero and drawing a flat line instead.
+      drawnDown, ranShort,
       monthlyContribution: monthly,
       passiveMonthly: passive,
       extraSpending,
@@ -1078,7 +1123,11 @@ export function forecast({
     endPassive: rows[rows.length - 1].passiveMonthly,
     goalReachedInYear: hit ? hit.year : null,
     // Travels with every figure this produces, wherever it is printed.
-    assumes: 'the yield holds every year, contributions continue, no tax, no inflation, no bad year',
+    // This sentence travels with every projected figure on the page, so it has to keep describing
+    // what the arithmetic actually does. It now counts only the months of this year that are left
+    // and only the months each piece actually runs — the honest caveat is no longer "twelve
+    // months of everything, for ever".
+    assumes: 'the yield holds every year, each piece runs exactly as dated, no tax, no inflation, no bad year',
   };
 }
 
@@ -2110,7 +2159,10 @@ export function currencyPicture(accounts, table, base = 'EUR', { history = [], n
 // actually apply to him. Nothing here is invented; each tip is a number this file computes
 // elsewhere for a different card, read again with "so what should I do about it" attached.
 
-const money2 = (n, cur) => `${Math.round(n).toLocaleString()} ${cur}`;
+// Same rule the page's own `money` follows: real money that rounds to nothing says so, rather
+// than printing "0 EUR" and reading as an app that lost the figure. A tip whose whole point is a
+// number is the last place that should happen.
+const money2 = (n, cur) => (n !== 0 && Math.abs(n) < 0.5 ? `under 1 ${cur}` : `${Math.round(n).toLocaleString()} ${cur}`);
 
 /** Up to five things worth doing with the next euro, biggest first. Every figure is one this
  *  file already computes somewhere else — this just points each at a decision. */

@@ -213,7 +213,10 @@
   .field input,.field select{width:100%;background:var(--bg);border:1px solid var(--line);border-radius:11px;
     color:var(--ink);font:16px/1.2 inherit;padding:12px 13px}
   .two{display:flex;gap:8px}
-  .two>.field{flex:1}
+  /* min-width:0, or a flex item refuses to shrink below its content's intrinsic width — and a
+     native date picker's is wide ("dd/mm/yyyy" plus its calendar glyph). Two of them side by
+     side would push the whole sheet past the edge of a 360px phone rather than fit. */
+  .two>.field{flex:1;min-width:0}
   .seg{display:flex;gap:6px}
   .seg button{flex:1;background:var(--bg);border:1.5px solid var(--line);border-radius:11px;color:var(--dim);
     font:600 14px/1 inherit;padding:12px 4px;cursor:pointer}
@@ -298,7 +301,12 @@ tg?.ready(); tg?.expand();
 let S = null;
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+// "Some lines with 0 in the end, data provided in a weird way." Nought and nearly-nought are
+// different facts, and rounding to whole units printed both as "0 EUR" — a certificate genuinely
+// paying two cents a month read as an app that had lost the number. Real money that rounds away
+// says so instead; an actual zero still prints as zero, because that is also a real answer.
 const money = (n, cur) => n == null ? '—'
+  : n !== 0 && Math.abs(n) < 0.5 ? `under 1 ${cur || S.base}`
   : (n < 0 ? '−' : '') + Math.abs(n).toLocaleString(undefined,{maximumFractionDigits:0}) + ' ' + (cur || S.base);
 // Plan year 1 is the calendar year already under way — "1, 2, 3" made him do the arithmetic
 // himself every time he read the table. It used to also be credited a full twelve months of
@@ -741,7 +749,7 @@ function drawGoal() {
     const c0 = S.contracted;
     $('p-goal').innerHTML = `<div class="card"><h2>Passive income goal</h2>
       <div class="empty">No goal set. Tap Add and type <b>goal 2000</b>.</div></div>
-      ${c0 && c0.perMonth > 0 ? `<div class="card"><h2>Already contracted</h2>
+      ${c0 && c0.perMonth >= 0.5 ? `<div class="card"><h2>Already contracted</h2>
         <div class="sub" style="font-size:15px;color:var(--ink)">About ${money(c0.perMonth)} a month is scheduled to arrive from what you already hold.</div>
         <div class="note">Set a goal and this gets a target to sit against.</div></div>` : ''}`;
     return;
@@ -760,7 +768,7 @@ function drawGoal() {
   const contracted = c && (c.streams.length || c.lumps.length) ? `
     <div class="card">
       <h2>Already contracted</h2>
-      ${c.perMonth > 0 ? `<div class="sub" style="font-size:15px;color:var(--ink)">About ${money(c.perMonth)} a month is scheduled to arrive from what you already hold.</div>` : ''}
+      ${c.perMonth >= 0.5 ? `<div class="sub" style="font-size:15px;color:var(--ink)">About ${money(c.perMonth)} a month is scheduled to arrive from what you already hold.</div>` : ''}
       ${c.streams.map((r) => `<div class="row">
         <span class="swatch" style="background:var(--src-${SLOT[r.category] || 4})"></span>
         <div class="rmain"><div class="rlabel">${esc(r.label)}</div>
@@ -826,7 +834,16 @@ function drawGoal() {
         <div class="sub" style="font-size:15px;color:var(--ink)">${esc(milestone.label || 'What you are saving toward')} needs ${money(milestone.amountInBase, S.base)}</div>
         ${milestone.reachedYear
           ? `<div class="big in" style="margin-top:4px;cursor:pointer" data-plan-year="${milestone.reachedYear}">${calYear(milestone.reachedYear)}</div>
-             <div class="sub">is when your plan has it — tap the year to see what counts toward it</div>`
+             <div class="sub">is when your plan has it — tap the year to see what counts toward it</div>
+             ${/* THE OTHER HALF OF THE ANSWER. The year he first clears the target is true, and on
+                   its own it is the flattering half: a plan can reach 30,000 in 2027 and be empty
+                   by 2029. Reaching it and keeping it are two facts, and he gets both. */ ''}
+             ${(() => {
+               const dry = (f?.mid?.rows || []).find((r) => r.ranShort && r.year >= milestone.reachedYear);
+               return dry ? `<div class="warn" style="margin:10px 0 0">Worth knowing: on this same plan
+                 the spendable money runs out again in <b>${calYear(dry.year)}</b> — reaching the target
+                 and still having it later are two different questions.</div>` : '';
+             })()}`
           : `<div class="sub" style="margin-top:4px">Not reached inside ${f ? f.years : 10} years on your plan today.</div>`}
         <button class="btn ghost" data-milestone-edit="1" style="margin-top:12px">Change</button>
       ` : `
@@ -1121,6 +1138,19 @@ function drawPlan() {
       <div class="sub">${money(mid.endCapital)} after ${yrs} years${f.runs.length > 1
         ? ` · ${money(low.endCapital)} to ${money(high.endCapital)} if your ${S.planYieldPct}% is a point and a half out either way`
         : ' · no range, because every rate here is one you stated'}</div>
+      ${/* SPENDING MORE THAN YOU SAVE HAS TO BE SAID OUT LOUD. The plan used to floor a negative
+            month at zero and draw a flat line, so a household 400 a month short saw its capital
+            sit perfectly still for ten years. It comes out of the pot now, and the moment it does
+            this says so — in the red the app reserves for money leaving. */ ''}
+      ${(() => {
+        const short = mid.rows.find((r) => r.ranShort);
+        const draining = mid.rows.find((r) => r.drawnDown > 0);
+        if (!draining) return '';
+        return `<div class="warn" style="margin:10px 0 0">
+          <b>This plan takes ${money(draining.drawnDown)} out of your money in ${calYear(draining.year)}</b>, rather than adding to it —
+          what you have listed going out is more than what is coming in.
+          ${short ? `On these numbers the spendable money is gone by ${calYear(short.year)}.` : ''}</div>`;
+      })()}
       ${/* What he already holds, in one sentence rather than a row per certificate — a result, not
             a piece he built. This is CURRENT holdings (`planBuckets`), not the end-of-forecast
             state (`ownRate`): his real certificates mature well inside the horizon he was looking
@@ -1132,6 +1162,14 @@ function drawPlan() {
             2% lump, the flat — is already a row above and is not repeated here. */ ''}
       ${(S.planBuckets || []).length ? `<div class="note">${money((S.planBuckets || []).reduce((t, b) => t + b.capital, 0))} of this you already have — ${(S.planBuckets || []).map((b) =>
         `${esc(b.label)}${b.ratePct ? `, growing at its own ${b.ratePct}%` : ', held flat (its coupon counts on its own, wherever it is earning)'}`).join('; ')}.</div>` : ''}
+      ${/* AND WHAT IT IS NOT COUNTING. The Goal tab says what he holds today; this plan opens at a
+            different number, because a flat is only in it once he has said what he would sell it
+            for. That is the right model — but the difference was tens of thousands with nothing
+            anywhere to explain it, which is the shape of every "from where data?" he has sent. */ ''}
+      ${(S.planMissing || []).length ? `<div class="note">Not counted here:
+        ${(S.planMissing || []).map((m) => `<b>${esc(m.label)}</b> (${money(m.inBase)})`).join(', ')} —
+        Goal counts what you own, a plan counts what you could put to work. Add it with
+        <b>Start from what I hold</b> and say what you would sell it for, and it joins this.</div>` : ''}
       <div class="row" style="margin-top:8px">
         <span class="dot ${S.planYieldPct > 0 ? 'in' : 'out'}"></span>
         <div class="rmain">

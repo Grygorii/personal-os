@@ -370,14 +370,39 @@ test('forecast: a lump sum lands once, and spending reduces what is saved', () =
   assert.equal(spend.rows[1].monthlyContribution, 600);
 });
 
-test('forecast: a contribution driven negative never becomes a withdrawal', () => {
-  // Saving less than nothing is a real situation; silently draining capital to model it is not
-  // what was asked for, and would produce a confident number nobody entered.
+test('forecast: spending more than you save runs the pot down, and says so', () => {
+  // This test used to assert the opposite — that a negative month never touches capital, on the
+  // grounds that draining it invents a response he never stated. That was defensible while the
+  // capital line was only ever LOOKED at. It stopped being defensible the day `capitalReachedYear`
+  // began reading these rows to answer "when do I have 28,000 for the next apartment": a pot held
+  // flat at 5,000 while the plan is 700 a month short is not a cautious number, it is an
+  // impossible one, and it was being handed to the milestone, the goal year and "what it comes
+  // to" as though it could happen. Money that goes out comes from somewhere. It comes from here,
+  // and the row says how much, rather than absorbing it in silence.
   const f = forecast({ startCapital: 5000, monthlySurplus: 200, years: 2, yieldPct: 0,
     events: [{ atYear: 1, kind: 'spending', amount: 900 }] });
   assert.equal(f.rows[0].monthlyContribution, -700, 'the shortfall is reported honestly');
-  assert.equal(f.rows[0].contributedThisYear, 0, 'but nothing is added, and nothing is taken');
-  assert.equal(f.rows[0].capital, 5000);
+  assert.equal(f.rows[0].contributedThisYear, 0, 'nothing was PUT IN — a drawdown is not a contribution');
+  assert.equal(f.rows[0].drawnDown, 8400, 'and 700 a month came out of the pot');
+  assert.equal(f.rows[0].capital, 5000 - 8400 < 0 ? 0 : 5000 - 8400);
+  assert.equal(f.rows[0].ranShort, true, 'the pot is empty before the year is out, and the row says so');
+
+  // AND IT HAS TO REACH HIS ACTUAL MONEY. His cash sits in a start bucket, not in `startCapital`,
+  // so a first version of this fix drained a `default` pot that was empty while the Bank account
+  // beside it sat untouched — the same flat line, one level down.
+  const cash = forecast({ startCapital: 0, monthlySurplus: 200, years: 5, yieldPct: 0,
+    startBuckets: [{ id: 'c1', capital: 30000, ratePct: 0, label: 'Bank' }],
+    events: [{ atYear: 1, kind: 'spending', amount: 900 }] });
+  assert.deepEqual(cash.rows.map((r) => Math.round(r.capital)), [21600, 13200, 4800, 0, 0]);
+  assert.deepEqual(cash.rows.map((r) => r.ranShort), [false, false, false, true, true]);
+
+  // A locked certificate cannot be raided to cover a shortfall — taking it would be the app
+  // inventing a decision he never made. Only money he could actually reach goes backwards.
+  const withCD = forecast({ startCapital: 0, monthlySurplus: 0, years: 2, yieldPct: 0,
+    startBuckets: [{ id: 'd1', capital: 20000, ratePct: 0, label: 'CD', untilYear: 5 }],
+    events: [{ atYear: 1, kind: 'spending', amount: 100 }] });
+  assert.equal(withCD.rows[0].breakdown.buckets.find((b) => b.label === 'CD').capital, 20000);
+  assert.equal(withCD.rows[0].ranShort, true, 'there was no spendable money to take it from');
 });
 
 test('forecast: reports the year a goal is met, or that it is not', () => {
@@ -1643,9 +1668,12 @@ test('newId: unique even twice in the same millisecond', () => {
   // index on flows that is a 500 he sees; with accounts, which are saved by upsert ON THAT ID,
   // it is the second one silently REPLACING the first. A holding lost without an error is the
   // worst thing this file can do.
+  // 5,000 of these used to collide about six times a run — the counter wrapped every 1,296 and
+  // left two random characters holding the guarantee, so this very test was flaky. 50,000 now,
+  // because the counter resets per millisecond and cannot repeat inside one.
   const ids = new Set();
-  for (let i = 0; i < 5000; i++) ids.add(newId());
-  assert.equal(ids.size, 5000);
+  for (let i = 0; i < 50000; i++) ids.add(newId());
+  assert.equal(ids.size, 50000);
 
   const a = cleanAccount({ label: 'one', kind: 'cash', currency: 'EUR', value: 1 });
   const b = cleanAccount({ label: 'two', kind: 'cash', currency: 'EUR', value: 2 });
