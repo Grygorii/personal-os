@@ -206,7 +206,12 @@ function must(el, panel, needles, label) {
     // Mid-September: the Soon CD coupon has landed (1st), Loan 2's instalment has not (26th).
     // One of each, which is exactly the pair this feature has to keep apart.
     must(el, 'p-month', ['Repeats — not recorded yet', 'Yes, add it', 'Left over', 'September',
-      'scheduled', 'Still due this month', 'After these, the month ends at'], 'this month');
+      // The projected end-of-month figure moved into the "still due" table's own total row —
+      // same fact, now the bottom line of the column it belongs to.
+      'scheduled', 'Still due this month', 'The month ends at',
+      // The month is a ledger: dated rows in columns, ending in the three figures the card above
+      // states, so what he can read adds up to what he is told.
+      'class="tbl"', 'Came in', 'Went out'], 'this month');
     // Owned and owed are separate sections with their own totals, not one long mixed list.
     must(el, 'p-worth', ['What you own', 'What you owe',
       'Cairo CD', 'earned so far', 'quarterly', 'matured on', 'matures in', 'Not counted:',
@@ -459,7 +464,12 @@ function must(el, panel, needles, label) {
     }
     if (!plan.includes('<details')) fail('the year-by-year is behind a fold, not the page');
     if ((plan.match(/class="bar"/g) || []).length) fail('ten bars over numbers that are already labelled is decoration');
-    if (!plan.includes('<table class="yrs"')) fail('and the years read as a table');
+    // The years wear the app's shared table styling now (`tbl`), plus `yrs` for the bits that are
+    // its own — a forecast is the same kind of object as the ledger and should read like one.
+    if (!plan.includes('class="tbl yrs"')) fail('and the years read as a table');
+    for (const col of ['Added', 'Spendable', 'Everything', 'Passive a month']) {
+      if (!plan.includes(`>${col}<`)) fail(`the forecast needs its "${col}" column — a year with only a total cannot be read`);
+    }
     // "You left deposits there and it did not make sense": a live certificate now credits its own
     // coupon to the plan without him having to add a piece for it — the fix for exactly that.
     const y1 = S.forecast.mid.rows[0].breakdown;
@@ -849,6 +859,51 @@ function must(el, panel, needles, label) {
   // has not run out. Only the projected coupon income drops out.
   if (S.snapshot.holdings.locked.every((h) => h.label !== 'Cairo CD')) {
     fail('marking a coupon spent must not remove the deposit itself from what he owns');
+  }
+}
+
+// ---- "All pocket looks now just like data in line" ----
+//
+// Every list was a label with a number stuck on the end, so nothing lined up and nothing added up.
+// The tables are the fix, and a TOTAL is the half that matters: a column of figures with no
+// bottom line is still just figures. Checked per tab, because the one that quietly goes back to
+// sentences is the one he will be looking at.
+{
+  const S = buildState({ base: 'EUR', table: T, accounts, spanFlows, subs, goal, milestone, events, basis, now: NOW });
+  const el = render(S, 'every tab reads as a table');
+  if (el) {
+    for (const [panel, totals] of [
+      ['p-month', ['Came in', 'Went out', 'Left over']],
+      ['p-worth', ['What you own', 'What you owe']],
+      ['p-subs', ['A year']],
+      ['p-goal', ['Scheduled to arrive']],
+      ['p-plan', ['Going in every month']],
+    ]) {
+      const html = el(panel).innerHTML;
+      if (!html.includes('class="tbl"') && !html.includes('class="tbl yrs"')) {
+        fail(`${panel} still reads as a list of sentences — it needs a table`);
+      }
+      if (!html.includes('<tfoot')) fail(`${panel} has a table with no total; a column that does not add up is just figures`);
+      for (const t of totals) if (!html.includes(t)) fail(`${panel} is missing its "${t}" line`);
+    }
+    // Worth groups by kind, with a subtotal each — "how much do I hold in cash" was a question he
+    // could only answer by adding rows up in his head.
+    const worth = el('p-worth').innerHTML;
+    for (const kind of ['Cash', 'Deposits', 'Property']) {
+      if (!worth.includes(`>${kind}<`)) fail(`the Worth table must group by kind and subtotal each — "${kind}" is missing`);
+    }
+    // The drill-down he screenshotted: four numbers floating in prose, and no total anywhere.
+    const info = renderYearInfo(S, 2, 'the year drill-down as a table');
+    if (info) {
+      const fields = info('efields').innerHTML;
+      if (!fields.includes('class="tbl"')) fail('the year drill-down must read as a table');
+      if (!fields.includes('Adds up to')) fail('and say what its lines add up to — the whole point of opening it');
+    }
+  }
+  // A column that is dropped on a phone has to be MARKED, not crushed: three action buttons
+  // stacking three rows high is what happens when every column insists on staying.
+  if (!readFileSync(new URL('../src/pocket/app.html', import.meta.url), 'utf8').includes('table.tbl .opt{display:none}')) {
+    fail('the narrow-screen rule that drops an optional column has gone missing');
   }
 }
 

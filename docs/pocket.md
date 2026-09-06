@@ -236,10 +236,10 @@ a price without one: it looks current.
 2. Railway → same project → **New Service** → same repo.
 3. Start command: `npm run start:pocket`.
 4. Env vars above, `DB_NAME=pocket` among them.
-5. Look for `[boot] pocket-35 · db=pocket · base=EUR`.
+5. Look for `[boot] pocket-36 · db=pocket · base=EUR`.
 
 **Which build is actually serving?** `GET /health` (or `/version`) answers without Telegram —
-`{"ok":true,"app":"pocket","version":"pocket-35"}`. The marker lives in `src/pocket/version.js`;
+`{"ok":true,"app":"pocket","version":"pocket-36"}`. The marker lives in `src/pocket/version.js`;
 bump it on every deploy. Kept has `GET /version` for exactly the same reason: "is my change even
 out there yet" is the first question of every deploy, and guessing at it wastes an evening.
 
@@ -1150,6 +1150,50 @@ is one more charge to come or nothing more to pay. The advisor skips it entirely
 next subscription that is still an open question, because that card is for decisions he has not
 made yet. The yearly total still counts it: he is still paying it until October, and "ending" is
 not "ended".
+
+## Tables, because a column is what makes money comparable
+
+"All pocket looks now just like data in line. I am building it to help me understand what I have,
+make plans and forecast what I will have, be able to open months and know what is coming, what
+passive will be — nice tables, how it should be for a finance app."
+
+He was right, and the diagnosis is sharper than "it looks plain": every list in this app was a
+sentence with a number stuck on the end, so **nothing lined up and nothing added up**. To see
+whether one rent was bigger than another his eye had to READ both, because the two figures sat at
+different places on different lines. A column does that work for him — equal-width digits on one
+right edge, so magnitudes compare without reading a single figure — and a **total** is the half
+that matters most: a column of numbers with no bottom line is still just numbers.
+
+One table system (`.tbl`), applied everywhere the data is actually tabular:
+
+- **Month** is a ledger now: a date column, the amounts on one edge, and it ends in *Came in /
+  Went out / Left over* — so what he can read adds up to what the card above him claims. "Still
+  due" ends in *the month ends at*, which used to be a sentence in a footnote.
+- **Worth** groups by kind with a subtotal each, then the section total. "How much do I hold in
+  cash" was a question he could only answer by adding rows up in his head. Each holding's own
+  story — a term's progress, what a loan really costs, extra payments — sits in a full-width row
+  under its line, where it no longer fights the columns.
+- **Subs** gets a month column beside the year column and a live/ended total.
+- **Goal** shows what each holding pays per month *and* per year, with what arrives and what goes
+  back out on debt as two rows of the same footer, where the comparison belongs.
+- **Plan**'s pieces total to *going in every month* — the figure the whole forecast is built on
+  and the one the list could never tell him without a calculator. The year-by-year gained the
+  columns a forecast needs: **Added**, **Spendable**, **Everything**, **Passive a month**, with the
+  year frozen in place while the rest scrolls.
+- **The year drill-down** — the screen he sent — ends in *Adds up to* and *Everything, end of
+  2027*. It had four numbers floating in prose and no total anywhere.
+
+**Rendered and looked at, not just tested.** Chromium ships in this environment, so the panels
+were drawn through the app's own code, given the app's real stylesheet, and photographed at 390px.
+That caught three things no assertion would have: the two money columns printed as
+`28 EUR−333 EUR` with no gap between them; the action buttons stacked three rows high, because
+`.edit` is `display:flex` everywhere else and a block-level button cannot be kept on one line by
+`white-space:nowrap`; and the subscriptions card was quoting **"at 7.000000000000001% and
+3.5000000000000004% a year"** — binary floating point, printed straight at him, in a sentence
+whose entire job is a rate he can read.
+
+A phone cannot carry every column, so one per table is marked optional and dropped under 560px
+rather than crushing the rest — full width on the web, essentials on the phone.
 
 ## Not done yet
 

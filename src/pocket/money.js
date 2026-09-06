@@ -1786,7 +1786,10 @@ export function subsSummary(subs, table, base = 'EUR', now = Date.now()) {
     unconverted: live.filter((r) => r.perYearInBase == null).map((r) => `${r.label} (${r.currency})`),
     // What a bill that never ends costs in capital that never ends. A range, at the same yields
     // the goal uses, because one number here would be a promise about the next thirty years.
-    capitalNeeded: perYear > 0 ? [0.035, 0.07].map((y) => ({ yieldPct: y * 100, capital: perYear / y })) : [],
+    // Rounded, because 0.07 * 100 is 7.000000000000001 in binary floating point and the page
+    // printed exactly that at him — "at 7.000000000000001% and 3.5000000000000004% a year".
+    // A rate he can read is the whole point of the sentence it sits in.
+    capitalNeeded: perYear > 0 ? [0.035, 0.07].map((y) => ({ yieldPct: Math.round(y * 1000) / 10, capital: perYear / y })) : [],
   };
 }
 

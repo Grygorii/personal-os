@@ -224,14 +224,66 @@
   .sheetbox h3{font-size:15px;margin:0 0 12px;font-weight:600}
   /* A plain table beats ten blocks each carrying a bar, a total, a range and a monthly figure —
      the bar added nothing, because every point was already labelled. */
-  .yrs{width:100%;border-collapse:collapse;margin-top:10px;font-size:13px}
-  .yrs th{text-align:left;color:var(--dim);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.03em;padding:0 0 6px}
-  .yrs th.n,.yrs td.n{text-align:right;font-variant-numeric:tabular-nums}
-  .yrs thead th:not(:first-child){text-align:right}
-  .yrs td{padding:7px 0;border-top:1px solid var(--line)}
+  /* ---- TABLES: the shape money is supposed to be read in ----
+     "All pocket looks now just like data in line." Every list here was a label on the left and a
+     number on the right, which reads as prose and cannot be compared: to see whether one rent is
+     bigger than another his eye had to READ both, because nothing lined up. A column does that
+     work for him — equal-width digits on a shared right edge, so magnitudes compare at a glance
+     without reading a single figure — and every table ends in the line all of them were missing,
+     which is the total. */
+  .tblwrap{overflow-x:auto;-webkit-overflow-scrolling:touch;margin-top:10px}
+  table.tbl{width:100%;border-collapse:collapse;font-size:14px}
+  table.tbl th{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;
+    color:var(--dim);text-align:left;padding:0 0 7px;white-space:nowrap}
+  table.tbl th.n{text-align:right}
+  table.tbl thead th{border-bottom:1px solid var(--line)}
+  table.tbl td{padding:9px 0;border-top:1px solid var(--line);vertical-align:top}
+  table.tbl tbody tr:first-child td{border-top:0}
+  /* tabular-nums ONLY in columns, per the reference: a shared digit width is what makes a column
+     comparable, and the same trick on a headline figure just makes it look typed by a machine. */
+  /* Air between columns. Without it "28 EUR" and "−333 EUR" print as "28 EUR−333 EUR" — measured
+     on a 390px phone, not imagined. */
+  table.tbl td.n,table.tbl th.n{padding-left:14px}
+  table.tbl td.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;font-weight:600}
+  table.tbl td.act{text-align:right;white-space:nowrap;padding:4px 0 4px 6px;width:1%}
+  /* The buttons are display:flex everywhere else, which makes them BLOCK-level — so in a cell
+     they stacked one above the other, three rows tall, and `white-space:nowrap` could do nothing
+     about it. inline-flex keeps the box and puts them back on one line. */
+  table.tbl td.act .edit,table.tbl td.act .del,table.tbl td.act .add{display:inline-flex;vertical-align:middle}
+  /* A COLUMN THAT EARNS ITS PLACE ON A PHONE, AND ONE THAT ONLY EARNS IT ON A SCREEN.
+     "It is over website now, you have opportunity to make good tables" — so the full table is the
+     wide view, and the narrow one drops the column it can best afford to lose rather than
+     crushing every column until the buttons stack three high. Non-overlapping widths, so source
+     order never has to decide it. */
+  @media (max-width: 560px){
+    table.tbl .opt{display:none}
+    /* Measured, not guessed: at 360px the month's ledger came out three pixels over its
+       container. Four pixels a side off the number columns buys back twelve. */
+    table.tbl td.n,table.tbl th.n{padding-left:10px}
+  }
+  /* A kind heading INSIDE the table, so cash and property stay one table under one set of
+     columns rather than becoming four little tables that cannot be compared. */
+  table.tbl tr.grp td{padding:14px 0 4px;font-size:10px;font-weight:600;text-transform:uppercase;
+    letter-spacing:.05em;color:var(--dim)}
+  table.tbl tr.grp:first-child td{border-top:0;padding-top:0}
+  /* THE TOTAL — the line every one of these lists was missing. */
+  table.tbl tfoot td{border-top:2px solid var(--line);padding-top:11px;font-weight:700}
+  table.tbl tfoot td.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+  table.tbl tfoot tr.soft td{border-top:1px solid var(--line);font-weight:600;color:var(--dim);padding-top:8px}
+  .tsub{display:block;color:var(--dim);font-size:12px;font-weight:400;margin-top:2px;white-space:normal}
+  .torig{display:block;color:var(--dim);font-size:11px;font-weight:400}
+  table.tbl tr.tap{cursor:pointer}
+  table.tbl tr.tap:active td{background:var(--line)}
+
+  /* The forecast is the widest table here — five columns will not fit a phone, so it scrolls
+     sideways and the YEAR stays put while it does. A column of numbers you cannot see the year
+     for is not a table, it is a list of numbers. */
+  .yrs{font-size:13px;min-width:100%}
+  .yrs th:first-child,.yrs td:first-child{position:sticky;left:0;background:var(--card);
+    padding-right:12px;z-index:1}
+  .yrs th:not(:first-child),.yrs td:not(:first-child){padding-left:14px}
   .yrs tr.hit td{color:var(--in)}
-  .yrs tbody tr{cursor:pointer}
-  .yrs tbody tr:active td{background:var(--line)}
+  .yrs tr.hit td.n{color:var(--in)}
   details>summary{list-style:none}
   details>summary::-webkit-details-marker{display:none}
   details>summary::before{content:'▸ ';display:inline-block;transition:none}
@@ -400,23 +452,28 @@ function drawMonthStrip() {
 function drawMonth() {
   const m = S.month;
   const showing = monthName(S.monthFrom, { month: 'long', year: 'numeric' });
+  /* THE MONTH AS A LEDGER, which is what it is. The date belongs in its own column — a month is
+     read down the days, and "what is coming" is a question about order — and the amount column
+     ends in the three figures the card above states, so what he can see adds up to what he is
+     told. */
+  const day = (ts) => new Date(ts).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
   const rows = S.flows.slice(0, 60).map((f) => `
-    <div class="row">
-      <span class="dot ${f.dir === 'in' ? 'in' : 'out'}"></span>
-      <div class="rmain">
-        <div class="rlabel">${esc(f.scheduled ? f.label : (f.category || 'uncategorised'))}${f.passive ? ' <span class="pill">passive</span>' : ''}${f.scheduled ? ' <span class="pill sched">scheduled</span>' : ''}</div>
-        <div class="rmeta">${new Date(f.ts).toLocaleDateString(undefined,{day:'numeric',month:'short'})}${f.recurring ? ' · repeats' : ''}${
-          f.scheduled && f.principalPart != null ? ` · ${Math.round(f.interestPart).toLocaleString()} interest, ${Math.round(f.principalPart).toLocaleString()} off the debt` : ''}${
-          f.scheduled && f.estimated ? ' · estimated' : ''}</div>
-      </div>
-      <div class="ramt ${f.dir === 'in' ? 'in' : 'out'}">${f.dir === 'in' ? '+' : '−'}${money(f.inBase)}
-        ${f.currency !== S.base ? `<span class="rorig">${esc(Math.round(f.amount).toLocaleString())} ${esc(f.currency)}</span>` : ''}
-      </div>
-      ${f.scheduled
+    <tr>
+      <td style="font-weight:400;color:var(--dim);white-space:nowrap;padding-right:10px">${day(f.ts)}</td>
+      <td><span class="dot ${f.dir === 'in' ? 'in' : 'out'}" style="display:inline-block;margin-right:8px;vertical-align:middle"></span>${esc(f.scheduled ? f.label : (f.category || 'uncategorised'))}${
+        f.passive ? ' <span class="pill">passive</span>' : ''}${f.scheduled ? ' <span class="pill sched">scheduled</span>' : ''}
+        ${(f.recurring || (f.scheduled && f.principalPart != null) || (f.scheduled && f.estimated)) ? `<span class="tsub">${[
+          f.recurring ? 'repeats' : '',
+          f.scheduled && f.principalPart != null ? `${Math.round(f.interestPart).toLocaleString()} interest, ${Math.round(f.principalPart).toLocaleString()} off the debt` : '',
+          f.scheduled && f.estimated ? 'estimated' : '',
+        ].filter(Boolean).join(' · ')}</span>` : ''}</td>
+      <td class="n ${f.dir === 'in' ? 'in' : 'out'}">${f.dir === 'in' ? '+' : '−'}${money(f.inBase)}
+        ${f.currency !== S.base ? `<span class="torig">${esc(Math.round(f.amount).toLocaleString())} ${esc(f.currency)}</span>` : ''}</td>
+      <td class="act">${f.scheduled
         ? `<button class="edit" data-confirm="${esc(f.schedId)}" title="Confirm this went through" aria-label="Confirm">✓</button>`
         : `<button class="edit" data-edit="flow" data-id="${esc(f.id)}" aria-label="Edit">✎</button>
-           <button class="del" data-del="flow" data-id="${esc(f.id)}" aria-label="Remove">×</button>`}
-    </div>`).join('');
+           <button class="del" data-del="flow" data-id="${esc(f.id)}" aria-label="Remove">×</button>`}</td>
+    </tr>`).join('');
 
   /* Still to come before the month is out.
      Deliberately NOT in In / Out / Left over. A charge that has not happened folded into those
@@ -425,14 +482,20 @@ function drawMonth() {
   const up = S.upcoming || { rows: [] };
   const upcoming = !up.rows.length ? '' : `
     <div class="card"><h2>Still due this month</h2>
-      ${up.rows.map((f) => `<div class="row">
-        <span class="dot ${f.dir === 'in' ? 'in' : 'out'}"></span>
-        <div class="rmain"><div class="rlabel">${esc(f.label)}</div>
-          <div class="rmeta">${new Date(f.ts).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}</div></div>
-        <div class="ramt ${f.dir === 'in' ? 'in' : 'out'}">${f.dir === 'in' ? '+' : '−'}${money(f.inBase)}</div>
-      </div>`).join('')}
-      <div class="note">Not in the totals above — those count what has actually moved.
-      After these, the month ends at <b class="${up.surplusAfter >= 0 ? 'in' : 'out'}">${money(up.surplusAfter)}</b>.</div>
+      <div class="tblwrap"><table class="tbl">
+        <thead><tr><th>When</th><th>What</th><th class="n">Amount</th></tr></thead>
+        <tbody>${up.rows.map((f) => `<tr>
+          <td style="font-weight:400;color:var(--dim);white-space:nowrap;padding-right:10px">${day(f.ts)}</td>
+          <td><span class="dot ${f.dir === 'in' ? 'in' : 'out'}" style="display:inline-block;margin-right:8px;vertical-align:middle"></span>${esc(f.label)}</td>
+          <td class="n ${f.dir === 'in' ? 'in' : 'out'}">${f.dir === 'in' ? '+' : '−'}${money(f.inBase)}</td>
+        </tr>`).join('')}</tbody>
+        <tfoot><tr>
+          <td colspan="2">The month ends at</td>
+          <td class="n ${up.surplusAfter >= 0 ? 'in' : 'out'}">${money(up.surplusAfter)}</td>
+        </tr></tfoot>
+      </table></div>
+      <div class="note">Not in the totals above — those count what has actually moved. This line is
+      what is left once these have gone through.</div>
     </div>`;
 
   const cats = m.spendingByCategory.slice(0, 8);
@@ -480,8 +543,17 @@ function drawMonth() {
     ${upcoming}
     ${todo ? `<div class="card"><h2>Repeats — not recorded yet</h2>${todo}
       <div class="note">Not counted in anything above. Money that has not arrived is not income.</div></div>` : ''}
-    <div class="card"><h2>${esc(showing)}</h2>${rows || '<div class="empty">Nothing recorded in ' + esc(showing) + '.</div>'}
-      ${hidden ? `<div class="note">${hidden} more not shown.</div>` : ''}</div>
+    <div class="card"><h2>${esc(showing)}</h2>
+      ${rows ? `<div class="tblwrap"><table class="tbl">
+        <thead><tr><th>When</th><th>What</th><th class="n">Amount</th><th></th></tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot>
+          <tr class="soft"><td colspan="2">Came in</td><td class="n in">+${money(m.income)}</td><td></td></tr>
+          <tr class="soft"><td colspan="2">Went out</td><td class="n out">−${money(m.spending)}</td><td></td></tr>
+          <tr><td colspan="2">Left over</td><td class="n ${m.surplus >= 0 ? 'in' : 'out'}">${money(m.surplus)}</td><td></td></tr>
+        </tfoot>
+      </table></div>` : '<div class="empty">Nothing recorded in ' + esc(showing) + '.</div>'}
+      ${hidden ? `<div class="note">${hidden} more not shown — the totals count all of them.</div>` : ''}</div>
     <div class="note">Rates ${esc(S.ratesAge)}.</div>`;
 
   // Land on the month being shown rather than on January. Instant, not smooth: this runs on
@@ -588,22 +660,24 @@ function drawWorth() {
         ${extras}
       </div>` : (t ? `<div class="rmeta" style="margin-top:6px">${money(t.perYearInBase)} a year${t.hasTerm === false && t.start ? ' · running since ' + dd(t.start) : ''}</div>${sched}${spentNote}${yieldLine}${extras}` : '');
 
+    /* ONE HOLDING, ONE ROW, and its whole story underneath it.
+       Every account used to be a block with its number floating somewhere on the right, so
+       "which of these is the big one" meant reading nine paragraphs. The headline row is a
+       table row now — name, rate, value, all in columns that line up down the page — and the
+       detail a holding actually needs (a term's progress, what a loan has really cost, extra
+       payments) sits in a full-width row beneath it, where it does not fight the columns. */
     return `
-    <div style="padding:11px 0;border-top:1px solid var(--line)">
-      <div style="display:flex;align-items:center;gap:11px">
-        <span class="dot ${a.liability ? 'out' : 'in'}"></span>
-        <div class="rmain">
-          <div class="rlabel">${esc(a.label || a.kind)}</div>
-          <div class="rmeta">${esc(a.kind)}${a.ratePct != null ? ' · ' + a.ratePct + '%' : ''}${a.payout ? ' ' + esc(a.payout) : ''}</div>
-        </div>
-        <div class="ramt ${a.liability ? 'out' : 'in'}">${a.liability ? '−' : ''}${money(a.inBase)}
-          ${a.currency !== S.base ? `<span class="rorig">${esc(Math.round(a.owedNow ?? a.value).toLocaleString())} ${esc(a.currency)}</span>` : ''}
-        </div>
+    <tr>
+      <td><span class="dot ${a.liability ? 'out' : 'in'}" style="display:inline-block;margin-right:8px;vertical-align:middle"></span>${esc(a.label || a.kind)}</td>
+      <td class="n opt" style="font-weight:400;color:var(--dim)">${a.ratePct != null ? a.ratePct + '%' : '—'}</td>
+      <td class="n ${a.liability ? 'out' : 'in'}">${a.liability ? '−' : ''}${money(a.inBase)}
+        ${a.currency !== S.base ? `<span class="torig">${esc(Math.round(a.owedNow ?? a.value).toLocaleString())} ${esc(a.currency)}</span>` : ''}</td>
+      <td class="act">
         <button class="edit" data-edit="account" data-id="${esc(a.id)}" aria-label="Edit">✎</button>
         <button class="del" data-del="account" data-id="${esc(a.id)}" aria-label="Remove">×</button>
-      </div>
-      ${term}
-    </div>`;
+      </td>
+    </tr>
+    ${term ? `<tr><td colspan="4" style="border-top:0;padding-top:0">${term}</td></tr>` : ''}`;
   };
 
   /* OWNED and OWED, in two lists with their own totals.
@@ -613,13 +687,26 @@ function drawWorth() {
   const sorted = (list) => [...list].sort((a, b) => (order[a.kind] ?? 9) - (order[b.kind] ?? 9));
   const owned = sorted(S.accounts.filter((a) => !a.liability));
   const owed = sorted(S.accounts.filter((a) => a.liability));
+  /* GROUPED BY KIND, WITH A SUBTOTAL EACH. "How much do I actually hold in cash" was a question
+     he could only answer by adding rows up in his head — the kinds were sorted together but
+     nothing counted them. A subhead inside the table keeps one set of columns for everything,
+     so a flat and a deposit still compare down the same edge. */
+  const KIND_WORDS = { cash: 'Cash', deposit: 'Deposits', portfolio: 'Portfolio', property: 'Property', card: 'Cards', loan: 'Loans', other: 'Other' };
   const section = (title, list, total, cls) => !list.length ? '' : `
     <div class="card">
-      <div style="display:flex;justify-content:space-between;align-items:baseline">
-        <h2 style="margin-bottom:0">${title}</h2>
-        <span class="${cls}" style="font-weight:700;font-variant-numeric:tabular-nums">${cls === 'out' ? '−' : ''}${money(total)}</span>
-      </div>
-      ${list.map(drawRow).join('')}
+      <h2>${title}</h2>
+      <div class="tblwrap"><table class="tbl">
+        <thead><tr><th>What</th><th class="n opt">Rate</th><th class="n">Value</th><th></th></tr></thead>
+        <tbody>${[...new Set(list.map((a) => a.kind))].map((kind) => {
+          const of = list.filter((a) => a.kind === kind);
+          const sub = of.reduce((t, a) => t + (a.inBase || 0), 0);
+          return `<tr class="grp"><td>${esc(KIND_WORDS[kind] || kind)}</td><td class="opt"></td>
+            <td class="n" style="font-weight:600">${cls === 'out' ? '−' : ''}${money(sub)}</td><td></td></tr>
+            ${of.map(drawRow).join('')}`;
+        }).join('')}</tbody>
+        <tfoot><tr><td colspan="2">${title}</td>
+          <td class="n ${cls}">${cls === 'out' ? '−' : ''}${money(total)}</td><td></td></tr></tfoot>
+      </table></div>
     </div>`;
 
   $('p-worth').innerHTML = `
@@ -695,26 +782,28 @@ function drawWorth() {
    the Month tab counts what actually left. Doing both would double-count every charge. */
 function drawSubs() {
   const S_ = S.subs || { rows: [] };
+  /* CANCELLED SHOWS AS CANCELLED, from the day he says so and not from the day it stops. A
+     subscription he had already ended on the 4th of October read exactly like one running for
+     ever, so nothing told him the date had registered and he had to come and ask.
+     And the whole thing is a TABLE now: a month column beside a year column, because "which of
+     these actually costs me the most" is a comparison, and a comparison needs a column. */
   const rows = (S_.rows || []).map((r) => `
-    <div class="row" style="${r.ended ? 'opacity:.45' : ''}">
-      <span class="dot out"></span>
-      <div class="rmain">
-        ${/* CANCELLED SHOWS AS CANCELLED, from the day he says so and not from the day it stops.
-              A subscription he had already ended on the 4th of October read exactly like one
-              running for ever — no pill, "next 4 Oct" underneath — so there was nothing anywhere
-              telling him the date had registered, and he had to come and ask. */ ''}
-        <div class="rlabel">${esc(r.label)}${r.inTrial ? ' <span class="pill out">free trial</span>' : ''}${r.ending ? ' <span class="pill sched">ending</span>' : ''}${r.paidThisMonth ? ' <span class="pill">paid</span>' : ''}</div>
-        <div class="rmeta">${esc(Math.round(r.amount).toLocaleString())} ${esc(r.currency)} ${esc(r.every)}${
+    <tr style="${r.ended ? 'opacity:.45' : ''}">
+      <td><span class="dot out" style="display:inline-block;margin-right:8px;vertical-align:middle"></span>${esc(r.label)}${
+        r.inTrial ? ' <span class="pill out">free trial</span>' : ''}${r.ending ? ' <span class="pill sched">ending</span>' : ''}${r.paidThisMonth ? ' <span class="pill">paid</span>' : ''}
+        <span class="tsub">${esc(Math.round(r.amount).toLocaleString())} ${esc(r.currency)} ${esc(r.every)}${
           r.ended ? ' · ended ' + dd(r.endsAt)
           : r.ending ? ' · stops ' + dd(r.endsAt) + (r.next && r.next < r.endsAt ? ' · one more on ' + dd(r.next) : ' · nothing more to pay')
           : r.inTrial ? ' · free until ' + dd(r.trialEndsAt)
-          : r.next ? ' · next ' + dd(r.next) : ''}</div>
-      </div>
-      <div class="ramt out">−${money(r.perYearInBase)}<span class="rorig">a year</span></div>
-      ${!r.ended && !r.paidThisMonth ? `<button class="edit" data-charge="${esc(r.id)}" title="Record this charge" aria-label="Record this charge">✓</button>` : ''}
-      <button class="edit" data-edit="sub" data-id="${esc(r.id)}" aria-label="Edit">✎</button>
-      <button class="del" data-del="sub" data-id="${esc(r.id)}" aria-label="Remove">×</button>
-    </div>`).join('');
+          : r.next ? ' · next ' + dd(r.next) : ''}</span></td>
+      <td class="n opt">${r.perYearInBase == null ? '—' : money(r.perYearInBase / 12)}</td>
+      <td class="n out">${r.perYearInBase == null ? 'no rate' : '−' + money(r.perYearInBase)}</td>
+      <td class="act">
+        ${!r.ended && !r.paidThisMonth ? `<button class="edit" data-charge="${esc(r.id)}" title="Record this charge" aria-label="Record this charge">✓</button>` : ''}
+        <button class="edit" data-edit="sub" data-id="${esc(r.id)}" aria-label="Edit">✎</button>
+        <button class="del" data-del="sub" data-id="${esc(r.id)}" aria-label="Remove">×</button>
+      </td>
+    </tr>`).join('');
 
   const cap = S_.capitalNeeded || [];
   const shareOfIncome = S.month && S.month.income > 0 ? (S_.perMonth / S.month.income) * 100 : null;
@@ -738,13 +827,28 @@ function drawSubs() {
       ${S_.trials.map((t) => `${esc(t.label)} starts charging ${money(t.perYearInBase / (t.every === 'yearly' ? 1 : t.every === 'quarterly' ? 4 : t.every === 'weekly' ? 52 : 12))} on ${dd(t.trialEndsAt)}`).join('. ')}.
       This is how subscriptions actually cost people money — not by being expensive, by starting.</div>` : ''}
     ${(S_.dueSoon || []).length ? `<div class="card"><h2>Charging in the next two weeks</h2>
-      ${S_.dueSoon.map((r) => `<div class="row">
-        <div class="rmain"><div class="rlabel">${esc(r.label)}</div><div class="rmeta">${dd(r.next)}</div></div>
-        <div class="ramt out">−${money(r.amountInBase)}</div>
-      </div>`).join('')}</div>` : ''}
+      <div class="tblwrap"><table class="tbl">
+        <thead><tr><th>What</th><th class="n">When</th><th class="n">Amount</th></tr></thead>
+        <tbody>${S_.dueSoon.map((r) => `<tr>
+          <td>${esc(r.label)}</td>
+          <td class="n" style="font-weight:400;color:var(--dim)">${dd(r.next)}</td>
+          <td class="n out">−${money(r.amountInBase)}</td>
+        </tr>`).join('')}</tbody>
+        <tfoot><tr><td colspan="2">Leaving in the next two weeks</td>
+          <td class="n out">−${money(S_.dueSoon.reduce((t, r) => t + (r.amountInBase || 0), 0))}</td></tr></tfoot>
+      </table></div></div>` : ''}
     <div class="card"><h2>What you subscribe to</h2>
-      ${rows || `<div class="empty">Nothing yet. Tap Add and type <b>sub 12.99 netflix monthly</b>.</div>`}
-      ${rows ? '<div class="note">Every charge lands in the month on the day it bills, the same as a loan instalment or a deposit coupon — one still ahead shows under “still due”. ✓ confirms one early if it has already gone through.</div>' : ''}
+      ${rows ? `<div class="tblwrap"><table class="tbl">
+        <thead><tr><th>What</th><th class="n opt">A month</th><th class="n">A year</th><th></th></tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot><tr>
+          <td>${S_.count} live${(S_.ended || []).length ? ` · ${S_.ended.length} ended` : ''}</td>
+          <td class="n opt">${money(S_.perMonth)}</td>
+          <td class="n out">−${money(S_.perYear)}</td>
+          <td></td>
+        </tr></tfoot>
+      </table></div>` : `<div class="empty">Nothing yet. Tap Add and type <b>sub 12.99 netflix monthly</b>.</div>`}
+      ${rows ? '<div class="note">Every charge lands in the month on the day it bills, the same as a loan instalment or a deposit coupon — one still ahead shows under “still due”. ✓ confirms one early if it has already gone through. The total counts what is live; an ended one is greyed and counts nothing.</div>' : ''}
     </div>
     ${(S_.unconverted || []).length ? `<div class="warn">No exchange rate for ${esc(S_.unconverted.join(', '))} — not in the totals above.</div>` : ''}`;
 }
@@ -774,18 +878,37 @@ function drawGoal() {
     <div class="card">
       <h2>Already contracted</h2>
       ${c.perMonth >= 0.5 ? `<div class="sub" style="font-size:15px;color:var(--ink)">About ${money(c.perMonth)} a month is scheduled to arrive from what you already hold.</div>` : ''}
-      ${c.streams.map((r) => `<div class="row">
-        <span class="swatch" style="background:var(--src-${SLOT[r.category] || 4})"></span>
-        <div class="rmain"><div class="rlabel">${esc(r.label)}</div>
-          <div class="rmeta">${esc(Math.round(r.perPayment).toLocaleString())} ${esc(r.currency)} ${esc(r.payout)}${r.next ? ' · next ' + dd(r.next) : ''}${r.endsAt ? ' · ends ' + dd(r.endsAt) : ''}</div></div>
-        <div class="ramt in">${money((r.inBase || 0) / 12)}<span class="rorig">a month</span></div>
-      </div>`).join('')}
-      ${c.lumps.map((r) => `<div class="row">
-        <div class="rmain"><div class="rlabel">${esc(r.label)}</div>
-          <div class="rmeta">all at once on ${dd(r.at)} — nothing monthly until then</div></div>
-        <div class="ramt">${money(r.inBase)}</div>
-      </div>`).join('')}
-      ${c.owedPerMonth > 0 ? `<div class="note out">And about ${money(c.owedPerMonth)} a month goes back out on what you owe.</div>` : ''}
+      ${/* WHAT EACH HOLDING PAYS, in a column. "What passive will be" is a comparison between
+            holdings — which certificate carries this, what the flat adds — and until now every
+            one of those figures sat at the end of its own sentence, in a different place on
+            every line. */ ''}
+      ${c.streams.length ? `<div class="tblwrap"><table class="tbl">
+        <thead><tr><th>Source</th><th class="n">A month</th><th class="n">A year</th></tr></thead>
+        <tbody>${c.streams.map((r) => `<tr>
+          <td><span class="swatch" style="display:inline-block;margin-right:8px;vertical-align:middle;background:var(--src-${SLOT[r.category] || 4})"></span>${esc(r.label)}
+            <span class="tsub">${esc(Math.round(r.perPayment).toLocaleString())} ${esc(r.currency)} ${esc(r.payout)}${r.next ? ' · next ' + dd(r.next) : ''}${r.endsAt ? ' · ends ' + dd(r.endsAt) : ''}</span></td>
+          <td class="n in">${money((r.inBase || 0) / 12)}</td>
+          <td class="n" style="font-weight:400;color:var(--dim)">${money(r.inBase || 0)}</td>
+        </tr>`).join('')}</tbody>
+        <tfoot><tr><td>Scheduled to arrive</td>
+          <td class="n in">${money(c.perMonth)}</td>
+          <td class="n" style="font-weight:400;color:var(--dim)">${money(c.perMonth * 12)}</td></tr>
+          ${c.owedPerMonth > 0 ? `<tr class="soft"><td>Going back out on what you owe</td>
+            <td class="n out">−${money(c.owedPerMonth)}</td>
+            <td class="n out" style="font-weight:400">−${money(c.owedPerMonth * 12)}</td></tr>` : ''}
+        </tfoot>
+      </table></div>` : ''}
+      ${c.lumps.length ? `<div class="tblwrap"><table class="tbl" style="margin-top:12px">
+        <thead><tr><th>All at once</th><th class="n">When</th><th class="n">Amount</th></tr></thead>
+        <tbody>${c.lumps.map((r) => `<tr>
+          <td>${esc(r.label)}<span class="tsub">nothing monthly until then</span></td>
+          <td class="n" style="font-weight:400;color:var(--dim)">${dd(r.at)}</td>
+          <td class="n">${money(r.inBase)}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>` : ''}
+      ${/* What he owes now has its own row in the table's footer, directly under what arrives —
+            which is where the comparison belongs. Repeating it as a sentence is noise. */ ''}
+      ${c.owedPerMonth > 0 && !c.streams.length ? `<div class="note out">And about ${money(c.owedPerMonth)} a month goes back out on what you owe.</div>` : ''}
       <div class="note">This is the yearly <i>rate</i> behind those holdings. The figure above counts
       only what has actually landed and been dated into a month — each coupon joins it on the day it
       pays, not before. A promise is not income until it arrives.</div>
@@ -1028,20 +1151,23 @@ function drawPlan() {
       ? ` · sell ${when(e.sellAtDate, e.sellAtYear)}${e.sellFor != null ? ` for ${e.currency !== S.base ? `${Math.round(e.sellFor).toLocaleString()} ${esc(e.currency)}` : money(e.sellFor)}` : ''}`
       : ' · keeping it';
 
+  /* THE PIECES HE BUILT, in columns. A monthly figure and a one-off are different units and
+     cannot share a column honestly, so the amount column says which it is underneath — but the
+     numbers still line up on one edge, which is what makes a list of eight pieces readable. */
   const pieces = (S.events || []).map((e) => `
-    <div class="row">
-      <span class="dot ${e.kind === 'spending' ? 'out' : 'in'}"></span>
-      <div class="rmain">
-        <div class="rlabel">${esc(e.label || e.kind)}</div>
-        ${/* A lump with a rate is a deposit — it PAYS that rate out as a separate coupon, it does
-              not grow on it. Saying "grows at 17%" here would be the exact thing he caught. */ ''}
-        <div class="rmeta">${esc(what[e.kind] || e.kind)} · ${per(e)}${sellNote(e)}${e.ratePct != null
+    <tr>
+      <td><span class="dot ${e.kind === 'spending' ? 'out' : 'in'}" style="display:inline-block;margin-right:8px;vertical-align:middle"></span>${esc(e.label || e.kind)}
+        <span class="tsub">${esc(what[e.kind] || e.kind)} · ${per(e)}${sellNote(e)}${e.ratePct != null
           ? (e.kind === 'lump' ? ` · pays ${e.ratePct}% out, as its own coupon` : ` · grows at ${e.ratePct}%`)
-          : (e.kind === 'asset' ? ' · holds its value' : '')}</div>
-      </div>
-      <button class="edit" data-plan-edit="${esc(e.id)}" aria-label="Edit">✎</button>
-      <button class="del" data-plan-del="${esc(e.id)}" aria-label="Remove">×</button>
-    </div>`).join('');
+          : (e.kind === 'asset' ? ' · holds its value' : '')}</span></td>
+      <td class="n ${e.kind === 'spending' ? 'out' : 'in'}">${e.amountInBase == null ? '—'
+        : (e.kind === 'spending' ? '−' : '') + money(e.amountInBase)}
+        <span class="torig">${['lump', 'asset'].includes(e.kind) ? 'once' : 'a month'}</span></td>
+      <td class="act">
+        <button class="edit" data-plan-edit="${esc(e.id)}" aria-label="Edit">✎</button>
+        <button class="del" data-plan-del="${esc(e.id)}" aria-label="Remove">×</button>
+      </td>
+    </tr>`).join('');
 
   const base = S.planBase || 0;
   const listedMonthly = (S.events || [])
@@ -1111,15 +1237,26 @@ function drawPlan() {
             each holding is actually worth and actually earns has not gone anywhere: it is in
             "What it comes to" below, in one sentence instead of a row per certificate, because
             that is a result he reads, not a piece he adds. */ ''}
-      <div class="row">
-        <span class="dot ${S.planUseMeasured ? 'in' : 'out'}"></span>
-        <div class="rmain">
-          <div class="rlabel">What you actually saved this month</div>
-          <div class="rmeta">${S.planUseMeasured ? `${money(base)}, measured — not a guess` : 'switched off — only what you list counts'}</div>
-        </div>
-        <button class="add" data-plan-base="${S.planUseMeasured ? 'off' : 'on'}">${S.planUseMeasured ? 'Ignore it' : 'Use it'}</button>
-      </div>
-      ${pieces || '<div class="empty" style="padding:16px">Nothing listed yet. Add what you put in, what arrives, and what it costs.</div>'}
+      <div class="tblwrap"><table class="tbl">
+        <thead><tr><th>Piece</th><th class="n">Amount</th><th></th></tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="dot ${S.planUseMeasured ? 'in' : 'out'}" style="display:inline-block;margin-right:8px;vertical-align:middle"></span>What you actually saved this month
+              <span class="tsub">${S.planUseMeasured ? 'measured — not a guess' : 'switched off — only what you list counts'}</span></td>
+            <td class="n ${S.planUseMeasured ? 'in' : ''}">${S.planUseMeasured ? money(base) : '—'}<span class="torig">a month</span></td>
+            <td class="act"><button class="add" data-plan-base="${S.planUseMeasured ? 'off' : 'on'}">${S.planUseMeasured ? 'Ignore it' : 'Use it'}</button></td>
+          </tr>
+          ${pieces}
+        </tbody>
+        ${/* What the whole list comes to per month — the number the forecast is actually built
+              on, and the one thing "your plan" could never tell him without a calculator. */ ''}
+        <tfoot><tr>
+          <td>Going in every month</td>
+          <td class="n ${goesIn >= 0 ? 'in' : 'out'}">${money(goesIn)}</td>
+          <td></td>
+        </tr></tfoot>
+      </table></div>
+      ${!pieces ? '<div class="empty" style="padding:16px">Nothing listed yet. Add what you put in, what arrives, and what it costs.</div>' : ''}
       ${(S.planUnconverted || []).length ? `<div class="warn" style="margin:10px 0 0">No exchange rate for
         ${esc(S.planUnconverted.join(', '))} — left out of everything below rather than counted as ${esc(S.base)}.</div>` : ''}
       <button class="btn ghost" id="addevent" style="margin-top:12px">+ Add money, income, or a cost</button>
@@ -1194,15 +1331,37 @@ function drawPlan() {
 
     <details class="card" id="yby">
       <summary style="cursor:pointer;color:var(--dim);font-size:13px;font-weight:600;letter-spacing:.03em;text-transform:uppercase">Year by year</summary>
-      <table class="yrs">
-        <thead><tr><th>Year</th><th>Invested</th><th>Per month</th></tr></thead>
-        <tbody>${mid.rows.map((r) => `<tr${goal > 0 && r.passiveMonthly >= goal ? ' class="hit"' : ''} data-plan-year="${r.year}">
-          <td>${calYear(r.year)}${r.year === 1 && monthsLeftThisYear() < 12 ? ` <span style="color:var(--dim)">· ${monthsLeftThisYear()} month${monthsLeftThisYear() === 1 ? '' : 's'} left, not twelve</span>` : ''}${r.events.length ? ` <span style="color:var(--dim)">· ${esc(r.events.join(', '))}</span>` : ''}${r.ends.length ? ` <span style="color:var(--dim)">· ${esc(r.ends.join(', '))} ends</span>` : ''}${r.sold?.length ? ` <span style="color:var(--dim)">· ${esc(r.sold.join(', '))} sold</span>` : ''}</td>
-          <td class="n">${money(r.capital)}</td>
-          <td class="n">${money(r.passiveMonthly)}</td>
-        </tr>`).join('')}</tbody>
-      </table>
-      <div class="note">${f.runs.length > 1 ? `The middle case, your ${S.planYieldPct}% on money with no rate of its own.` : 'Every rate here is one you stated.'} Assumes ${esc(f.assumes)}. Tap a year to see what it is made of.</div>
+      ${/* THE FORECAST, WITH THE COLUMNS A FORECAST NEEDS. Capital and passive income were the
+            only two, so the year that mattered — the one where what he PUT IN stopped being the
+            thing carrying the total — was invisible. "Spendable" is the column the milestone is
+            actually checked against, and "added" is what his own saving contributed that year. */ ''}
+      <div class="tblwrap"><table class="tbl yrs">
+        <thead><tr>
+          <th>Year</th><th class="n opt">Added</th><th class="n">Spendable</th>
+          <th class="n opt">Everything</th><th class="n">Passive a month</th>
+        </tr></thead>
+        <tbody>${mid.rows.map((r) => {
+          // Built once, not twice: two copies of this list drift the moment either is edited.
+          const notes = [
+            r.year === 1 && monthsLeftThisYear() < 12 ? `${monthsLeftThisYear()} month${monthsLeftThisYear() === 1 ? '' : 's'} left, not twelve` : '',
+            r.events.length ? esc(r.events.join(', ')) : '',
+            r.ends.length ? esc(r.ends.join(', ')) + ' ends' : '',
+            r.sold?.length ? esc(r.sold.join(', ')) + ' sold' : '',
+            r.ranShort ? '<b class="out">the spendable money runs out</b>' : '',
+          ].filter(Boolean);
+          return `<tr class="tap${goal > 0 && r.passiveMonthly >= goal ? ' hit' : ''}" data-plan-year="${r.year}">
+          <td>${calYear(r.year)}${notes.length ? `<span class="tsub">${notes.join(' · ')}</span>` : ''}</td>
+          <td class="n opt ${r.drawnDown > 0 ? 'out' : ''}" style="font-weight:400">${r.drawnDown > 0 ? '−' + money(r.drawnDown) : money(r.contributedThisYear)}</td>
+          <td class="n">${money(r.liquidCapital ?? r.capital)}</td>
+          <td class="n opt" style="font-weight:400;color:var(--dim)">${money(r.capital)}</td>
+          <td class="n in">${money(r.passiveMonthly)}</td>
+        </tr>`;
+        }).join('')}</tbody>
+      </table></div>
+      <div class="note"><b>Spendable</b> is money you could actually put toward something — it leaves
+      out a deposit still inside its term and anything you own but have not sold, which is what a
+      milestone target is checked against. <b>Everything</b> counts those too.
+      ${f.runs.length > 1 ? `The middle case, your ${S.planYieldPct}% on money with no rate of its own.` : 'Every rate here is one you stated.'} Assumes ${esc(f.assumes)}. Tap a year to see what it is made of.</div>
     </details>`;
 
   $('addevent').onclick = () => openPlanEvent();
@@ -1711,15 +1870,14 @@ function openYearInfo(year) {
   $('etitle').textContent = `${calYear(year)}, month by month`;
   $('eerr').hidden = true;
   const b = r.breakdown || { base: 0, pieces: [], buckets: [], everythingElse: null };
+  // A ROW OF A TABLE, not a sentence with a number stuck on the end. Two rents of 169 have to sit
+  // one above the other in the same column, or comparing them means reading them.
   const line = (label, meta, val) => `
-    <div class="row">
-      <span class="dot ${val >= 0 ? 'in' : 'out'}"></span>
-      <div class="rmain">
-        <div class="rlabel">${esc(label)}</div>
-        ${meta ? `<div class="rmeta">${meta}</div>` : ''}
-      </div>
-      <div class="ramt ${val >= 0 ? 'in' : 'out'}">${money(val)}</div>
-    </div>`;
+    <tr>
+      <td><span class="dot ${val >= 0 ? 'in' : 'out'}" style="display:inline-block;margin-right:8px;vertical-align:middle"></span>${esc(label)}
+        ${meta ? `<span class="tsub">${meta}</span>` : ''}</td>
+      <td class="n ${val >= 0 ? 'in' : 'out'}">${money(val)}</td>
+    </tr>`;
   // An asset bucket is never "growing at its own rate" the way a deposit is — it is something he
   // owns, holding its value (or appreciating, only if he said so), and it is capital he cannot
   // spend on something else without a separate decision to sell it.
@@ -1769,29 +1927,45 @@ function openYearInfo(year) {
     ...(b.everythingElse ? ['everything else'] : []),
   ];
   const capital = r.capital > 0 ? `
-    <h3 style="margin:14px 0 4px">What the capital is made of</h3>
-    <div class="row">
-      <span class="dot in"></span>
-      <div class="rmain"><div class="rlabel">Liquid</div>
-        <div class="rmeta">${esc(liquidLabels.join(', ') || 'nothing yet')} — could go toward something new; a milestone target is checked against this, not the total</div></div>
-      <div class="ramt in">${money(r.liquidCapital)}</div>
-    </div>
-    ${lockedTotal > 0.5 ? `<div class="row">
-      <span class="dot" style="background:var(--dim)"></span>
-      <div class="rmain"><div class="rlabel">Locked until it matures</div>
-        <div class="rmeta">${esc(lockedLabels.join(', '))} — becomes liquid on its own the day the term ends; the coupon it pays along the way already counts, above</div></div>
-      <div class="ramt">${money(lockedTotal)}</div>
-    </div>` : ''}
-    ${ownedTotal > 0.5 ? `<div class="row">
-      <span class="dot" style="background:var(--dim)"></span>
-      <div class="rmain"><div class="rlabel">Something you own</div>
-        <div class="rmeta">${esc(assetLabels.join(', '))} — real net worth, only liquid if you sell it</div></div>
-      <div class="ramt">${money(ownedTotal)}</div>
-    </div>` : ''}` : '';
+    <h3 style="margin:16px 0 0">What the capital is made of</h3>
+    <div class="tblwrap"><table class="tbl">
+      <thead><tr><th>Kind</th><th class="n">Amount</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><span class="dot in" style="display:inline-block;margin-right:8px;vertical-align:middle"></span>Liquid
+            <span class="tsub">${esc(liquidLabels.join(', ') || 'nothing yet')} — could go toward something new; a milestone target is checked against this, not the total</span></td>
+          <td class="n in">${money(r.liquidCapital)}</td>
+        </tr>
+        ${lockedTotal > 0.5 ? `<tr>
+          <td><span class="dot" style="display:inline-block;margin-right:8px;vertical-align:middle;background:var(--dim)"></span>Locked until it matures
+            <span class="tsub">${esc(lockedLabels.join(', '))} — becomes liquid on its own the day the term ends; the coupon it pays along the way already counts, above</span></td>
+          <td class="n">${money(lockedTotal)}</td>
+        </tr>` : ''}
+        ${ownedTotal > 0.5 ? `<tr>
+          <td><span class="dot" style="display:inline-block;margin-right:8px;vertical-align:middle;background:var(--dim)"></span>Something you own
+            <span class="tsub">${esc(assetLabels.join(', '))} — real net worth, only liquid if you sell it</span></td>
+          <td class="n">${money(ownedTotal)}</td>
+        </tr>` : ''}
+      </tbody>
+      <tfoot><tr><td>Everything, end of ${calYear(year)}</td><td class="n">${money(r.capital)}</td></tr></tfoot>
+    </table></div>` : '';
   $('efields').innerHTML = `
     <div class="note" style="margin-top:0">Every line that adds up to this year's ${money(r.passiveMonthly)} a month.</div>
-    ${monthly || '<div class="empty" style="padding:16px">Nothing recurring yet.</div>'}
-    ${onceOff ? `<h3 style="margin:14px 0 4px">Landing this year</h3>${onceOff}` : ''}
+    ${monthly
+      ? `<div class="tblwrap"><table class="tbl">
+          <thead><tr><th>What</th><th class="n">Per month</th></tr></thead>
+          <tbody>${monthly}</tbody>
+          <tfoot>
+            <tr><td>Adds up to</td><td class="n ${r.passiveMonthly >= 0 ? 'in' : 'out'}">${money(r.passiveMonthly)}</td></tr>
+            <tr class="soft"><td>Over the ${r.year === 1 ? monthsLeftThisYear() : 12} months of ${calYear(year)}</td><td class="n">${money(r.passiveMonthly * (r.year === 1 ? monthsLeftThisYear() : 12))}</td></tr>
+          </tfoot>
+        </table></div>`
+      : '<div class="empty" style="padding:16px">Nothing recurring yet.</div>'}
+    ${onceOff ? `<h3 style="margin:16px 0 0">Landing this year</h3>
+      <div class="tblwrap"><table class="tbl">
+        <thead><tr><th>What</th><th class="n">Once</th></tr></thead>
+        <tbody>${onceOff}</tbody>
+      </table></div>` : ''}
     ${capital}`;
   $('esave').hidden = true;
   $('esheet').hidden = false;
