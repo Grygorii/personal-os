@@ -67,6 +67,8 @@ const subs = [
   cleanSub({ id: 's3', label: 'Gym', amount: 4500, currency: 'EGP', every: 'quarterly', startsAt: utc(2025, 1, 10) }),
   cleanSub({ id: 's4', label: 'Some AI thing', amount: 20, currency: 'USD', every: 'monthly', startsAt: utc(2026, 9, 1), trialEndsAt: utc(2026, 9, 20) }),
   cleanSub({ id: 's5', label: 'Old magazine', amount: 8, currency: 'EUR', every: 'monthly', startsAt: utc(2023, 1, 1), endsAt: utc(2026, 4, 1) }),
+  // Cancelled, but not gone yet — he set the stop date and nothing on the page acknowledged it.
+  cleanSub({ id: 's6', label: 'Antropic', amount: 22.17, currency: 'EUR', every: 'monthly', startsAt: utc(2025, 1, 1), endsAt: utc(2026, 10, 4) }),
 ];
 // Everything he holds in EGP was bought with euro at one rate, on one day.
 const basis = { EGP: { rateThen: 48, at: utc(2024, 5, 26) } };
@@ -478,7 +480,19 @@ function must(el, panel, needles, label) {
     }
 
     must(el, 'p-subs', ['Every subscription, per year', 'What that costs in capital', 'Netflix',
-      'free trial', 'Old magazine'], 'this month');
+      'free trial', 'Old magazine',
+      // "I changed that Antropic will be cancelled from the 4th of October but the advice still
+      // didn't change." It was live all along — but nothing anywhere said the date had landed, so
+      // a cancelled subscription looked exactly like one running for ever.
+      'ending', 'stops'], 'this month');
+    const subsHtml = el('p-subs').innerHTML;
+    const antropic = subsHtml.slice(subsHtml.indexOf('Antropic'), subsHtml.indexOf('Antropic') + 400);
+    if (!antropic.includes('stops')) fail('a subscription he has cancelled must say when it stops, from the day he says so');
+    if (antropic.includes('· next ')) fail('and must not still read like one running for ever');
+    // The advisor must not tell him to cancel it a second time.
+    if (S.advice.some((t) => t.headline.includes('Antropic'))) {
+      fail('never advise cancelling a subscription he has already cancelled — that is what made him ask if the tips were hard coded');
+    }
     must(el, 'p-fx', ['EGP', 'to 1 EUR', 'You put in', 'It is worth', 'The rate has',
       'weakens 10%', 'Holding by holding', 'what you exchanged at'], 'this month');
     const fx = el('p-fx').innerHTML;
@@ -567,10 +581,12 @@ function must(el, panel, needles, label) {
   if (netflix && netflix.dir !== 'out') fail('a subscription charge is money leaving');
 
   // Subscriptions, normalised. 12.99 monthly = 155.88; 90 yearly = 90; 4,500 EGP quarterly =
-  // 18,000 EGP = 333.33; 20 USD monthly = 240 USD = 222.22. The cancelled one counts nothing.
+  // 18,000 EGP = 333.33; 20 USD monthly = 240 USD = 222.22; 22.17 monthly = 266.04. The one that
+  // has ALREADY ended counts nothing; the one ending in October still does, because he is still
+  // paying it until then — "ending" is not "ended", and the difference is four weeks of money.
   const sub = S.subs;
-  if (sub.count !== 4) fail(`four live subscriptions, got ${sub.count}`);
-  if (Math.round(sub.perYear) !== 801) fail(`801 a year across the four, got ${Math.round(sub.perYear)}`);
+  if (sub.count !== 5) fail(`five live subscriptions, got ${sub.count}`);
+  if (Math.round(sub.perYear) !== 1067) fail(`1,067 a year across the five, got ${Math.round(sub.perYear)}`);
   if (!sub.ended.some((r) => r.label === 'Old magazine')) fail('a cancelled subscription is kept, not deleted');
   if (!sub.trials.some((r) => r.label === 'Some AI thing')) fail('a free trial should be flagged before it starts charging');
   if (sub.capitalNeeded.length !== 2) fail('the capital cost is a range, never one number');

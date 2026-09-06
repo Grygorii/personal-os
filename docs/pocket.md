@@ -236,10 +236,10 @@ a price without one: it looks current.
 2. Railway → same project → **New Service** → same repo.
 3. Start command: `npm run start:pocket`.
 4. Env vars above, `DB_NAME=pocket` among them.
-5. Look for `[boot] pocket-34 · db=pocket · base=EUR`.
+5. Look for `[boot] pocket-35 · db=pocket · base=EUR`.
 
 **Which build is actually serving?** `GET /health` (or `/version`) answers without Telegram —
-`{"ok":true,"app":"pocket","version":"pocket-34"}`. The marker lives in `src/pocket/version.js`;
+`{"ok":true,"app":"pocket","version":"pocket-35"}`. The marker lives in `src/pocket/version.js`;
 bump it on every deploy. Kept has `GET /version` for exactly the same reason: "is my change even
 out there yet" is the first question of every deploy, and guessing at it wastes an evening.
 
@@ -1125,6 +1125,31 @@ Then, because he asked for it twice: **ten passes over the app looking for what 
    the card answers both.
 10. **The `assumes` line stopped describing the arithmetic.** It travels with every projected
     figure and still said "contributions continue" — now "each piece runs exactly as dated".
+
+## "Are they changing with the changes made, or hard coded?"
+
+He set Anthropic to be cancelled from the 4th of October, and the advice card went on saying
+**"Antropic costs 266 EUR a year — cancelling it frees that much to invest instead."** So he asked
+the fair question: is any of this actually reading my data?
+
+It was. Every figure on that card is computed from his own numbers on every load, and none of it
+is written down anywhere. The bug was narrower and worse: **`ended` only ever meant "already
+over".** A stop date four weeks in the future scored nothing, so a subscription he had cancelled
+was, to the whole app, indistinguishable from one running for ever. Two consequences, both his to
+trip over:
+
+- the advisor kept telling him to cancel a thing he had just cancelled, priced at a **full year**
+  when about four weeks of it were left, and
+- **nothing on the Subs tab acknowledged the date at all** — no pill, and "next 4 Oct" underneath,
+  exactly like a live subscription. There was no way to tell the change had registered, which is
+  why he came and asked instead of just looking.
+
+`ending` is now a state of its own (`endsAt` set, not yet reached), separate from `ended`. The
+Subs tab wears it from the day he sets it — an **ending** pill, "stops 4 Oct", and whether there
+is one more charge to come or nothing more to pay. The advisor skips it entirely and moves to the
+next subscription that is still an open question, because that card is for decisions he has not
+made yet. The yearly total still counts it: he is still paying it until October, and "ending" is
+not "ended".
 
 ## Not done yet
 

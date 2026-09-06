@@ -699,9 +699,14 @@ function drawSubs() {
     <div class="row" style="${r.ended ? 'opacity:.45' : ''}">
       <span class="dot out"></span>
       <div class="rmain">
-        <div class="rlabel">${esc(r.label)}${r.inTrial ? ' <span class="pill out">free trial</span>' : ''}${r.paidThisMonth ? ' <span class="pill">paid</span>' : ''}</div>
+        ${/* CANCELLED SHOWS AS CANCELLED, from the day he says so and not from the day it stops.
+              A subscription he had already ended on the 4th of October read exactly like one
+              running for ever — no pill, "next 4 Oct" underneath — so there was nothing anywhere
+              telling him the date had registered, and he had to come and ask. */ ''}
+        <div class="rlabel">${esc(r.label)}${r.inTrial ? ' <span class="pill out">free trial</span>' : ''}${r.ending ? ' <span class="pill sched">ending</span>' : ''}${r.paidThisMonth ? ' <span class="pill">paid</span>' : ''}</div>
         <div class="rmeta">${esc(Math.round(r.amount).toLocaleString())} ${esc(r.currency)} ${esc(r.every)}${
           r.ended ? ' · ended ' + dd(r.endsAt)
+          : r.ending ? ' · stops ' + dd(r.endsAt) + (r.next && r.next < r.endsAt ? ' · one more on ' + dd(r.next) : ' · nothing more to pay')
           : r.inTrial ? ' · free until ' + dd(r.trialEndsAt)
           : r.next ? ' · next ' + dd(r.next) : ''}</div>
       </div>

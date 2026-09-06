@@ -1755,6 +1755,12 @@ export function subsSummary(subs, table, base = 'EUR', now = Date.now()) {
       perMonth: perYear / 12,
       next,
       ended,
+      // ALREADY CANCELLED, NOT YET GONE. "I changed that Antropic will be cancelled from the 4th
+      // of October but the advice still didn't change." `ended` only ever meant "already over",
+      // so a subscription he had cancelled looked identical to one running for ever: nothing on
+      // the Subs tab said the date had registered, and the advisor went on telling him to cancel
+      // a thing he had just cancelled. Ending is its own state, and it is the one he can see.
+      ending: !!(s.endsAt && now < s.endsAt),
       // Still inside a free trial: costing nothing yet, and about to cost something.
       inTrial: !!(s.trialEndsAt && now < s.trialEndsAt),
       perYearInBase: toBase(perYear, s.currency, table),
@@ -2219,7 +2225,10 @@ export function moneyAdvice(accounts = [], subs = [], table, base = 'EUR', now =
   // 4. WHAT SUBSCRIPTIONS COST IN CAPITAL. A recurring bill is a claim on money that could be
   // invested instead — the same arithmetic the Subs tab already runs, aimed at a decision.
   const sub = subsSummary(subs, table, base, now);
-  const biggestSub = (sub.rows || []).filter((r) => !r.ended && !r.inTrial)
+  // Not one he has already cancelled. This card is decisions still OPEN — "cancelling it frees
+  // that much to invest" is noise once he has set the date it stops, and worse than noise: it
+  // reads as an app that did not notice what he typed. The next biggest live one takes its place.
+  const biggestSub = (sub.rows || []).filter((r) => !r.ended && !r.ending && !r.inTrial)
     .sort((a, b) => (b.perYearInBase || 0) - (a.perYearInBase || 0))[0];
   if (biggestSub && biggestSub.perYearInBase > 0) {
     const capital = biggestSub.perYearInBase / 0.035;

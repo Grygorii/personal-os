@@ -2238,6 +2238,31 @@ test('capitalReachedYear: a deposit still mid-term does not count either — onl
   assert.equal(withCoupon.rows[0].liquidCapital, 12000, 'a year of coupons is liquid even while the principal that paid them is still locked');
 });
 
+// "I changed that Antropic will be cancelled from the 4th of October, but the advice still didn't
+// change — are they changing with the changes made, or are they hard coded?" They were computed
+// live, every one of them, and this tip still told him to cancel a subscription he had already
+// cancelled: `ended` only ever meant "already over", so a stop date four weeks out counted for
+// nothing. An advice card is decisions still OPEN.
+test('moneyAdvice: a subscription he has already cancelled is not a decision he still has to make', () => {
+  const SEP6 = utc(2026, 9, 6);
+  const T2 = { base: 'EUR', rates: { EUR: 1 }, at: SEP6 };
+  const cancelled = cleanSub({ id: 's1', label: 'Antropic', amount: 22.17, currency: 'EUR', every: 'monthly', startsAt: utc(2025, 1, 1), endsAt: utc(2026, 10, 4) });
+  const live = cleanSub({ id: 's2', label: 'Gym', amount: 40, currency: 'EUR', every: 'monthly', startsAt: utc(2025, 1, 1) });
+
+  // It is ENDING — not ended, four weeks of it left to pay — and that is a state of its own.
+  const row = subsSummary([cancelled], T2, 'EUR', SEP6).rows[0];
+  assert.equal(row.ended, false, 'it has not stopped yet — he still pays it until October');
+  assert.equal(row.ending, true, 'but he has said when it stops, and the app has to know that');
+
+  // The advisor moves on to the next subscription he could still actually decide about.
+  const tips = moneyAdvice([], [cancelled, live], T2, 'EUR', SEP6);
+  assert.ok(!tips.some((t) => t.headline.includes('Antropic')), 'never advise cancelling what is already cancelled');
+  assert.ok(tips.some((t) => t.headline.includes('Gym')), 'the next one that is still an open question takes its place');
+
+  // With nothing left that is still open, the tip drops rather than reaching for a cancelled one.
+  assert.ok(!moneyAdvice([], [cancelled], T2, 'EUR', SEP6).some((t) => t.id === 'sub'));
+});
+
 test('moneyAdvice: up to five tips, ranked by size, and only the ones that actually apply', () => {
   const subs = [cleanSub({ id: 's1', label: 'Netflix', amount: 12.99, currency: 'EUR', every: 'monthly', startsAt: utc(2024, 3, 5) })];
   const tips = moneyAdvice(HIS(), subs, T, 'EUR', SEPT26);
