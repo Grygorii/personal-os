@@ -618,10 +618,10 @@
     border-top:1px solid var(--line);background:var(--surface)}
   .rdpos{font-family:var(--sans);font-size:.78rem;color:var(--muted);letter-spacing:.02em}
   .rdkeep{border:1px solid var(--line);background:var(--raise);color:var(--ink);
-    border-radius:10px;padding:0 14px;height:36px;min-height:36px;
+    border-radius:10px;padding:0 14px;height:var(--tap);min-height:var(--tap);
     font-family:var(--sans);font-size:.82rem;font-weight:600;cursor:pointer}
   /* Sits above the footer, not over the words being selected. */
-  .rdsel{position:absolute;left:0;right:0;bottom:calc(52px + env(safe-area-inset-bottom));
+  .rdsel{position:absolute;left:0;right:0;bottom:calc(60px + env(safe-area-inset-bottom));
     display:flex;gap:8px;justify-content:center;padding:0 12px;z-index:2}
   .rdsel[hidden]{display:none}
   .rdsel button{background:var(--accent);color:var(--on-accent);border:0;border-radius:11px;
