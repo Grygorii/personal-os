@@ -81,13 +81,28 @@ globalThis.createKeptLibrarySync = function ({ read, write, request, status = ()
   }
   function markDirty() { generation++; dirty = true; persist(); status(blocked ? 'conflict' : 'pending'); }
   async function useCloud() {
-    // Caller must preserve/download the local copy and ask for explicit consent first.
+    // Caller preserves/downloads the local copy and asks for explicit consent first.
     if (inFlight) await inFlight;
-    const before = { state: JSON.parse(JSON.stringify(read())), revision, dirty, blocked };
-    blocked = false; dirty = false; revision = -1;
-    if (await load()) return true;
-    revision = before.revision; dirty = before.dirty; blocked = before.blocked;
-    write(before.state); status(blocked ? 'conflict' : 'offline'); return false;
+    if (loading) await loading;
+    const startGeneration = generation, wasBlocked = blocked;
+    blocked = true; // no automatic write may race this deliberate replacement
+    try {
+      const response = await request('GET');
+      if (!response.ok) { blocked = wasBlocked; return tell(blocked ? 'conflict' : 'offline'); }
+      const cloud = await response.json();
+      if (!Array.isArray(cloud.books) || !Number.isSafeInteger(cloud.revision) || cloud.revision < 0) {
+        blocked = wasBlocked; return tell(blocked ? 'conflict' : 'offline');
+      }
+      // The download covered the version present when recovery started, not an edit made
+      // while the request was travelling. Keep that new edit and require a fresh decision.
+      if (generation !== startGeneration) return conflict();
+      revision = cloud.revision; dirty = false; blocked = false;
+      write({ ...read(), books: cloud.books, serverRevision: revision, syncDirty: false });
+      changed(); status('synced'); return true;
+    } catch {
+      blocked = wasBlocked;
+      return tell(blocked ? 'conflict' : 'offline');
+    }
   }
   return { load, flush, markDirty, useCloud, pending: () => dirty || blocked };
 };
