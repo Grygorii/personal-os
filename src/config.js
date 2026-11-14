@@ -31,6 +31,7 @@ export const config = {
   timezone: process.env.TZ || 'Europe/Dublin',
   // Master key for encrypting tenants' own AI keys at rest. Env only — never in Mongo/git.
   encryptionKey: oneLine(process.env.ENCRYPTION_KEY),
+  sessionSecret: oneLine(process.env.SESSION_SECRET),
   // Multi-tenant switch. Off = only the owner may use the bot (current behaviour).
   multiTenant: oneLine(process.env.MULTI_TENANT) === 'true',
   // With the doors open, let people straight in (they land on trust level 0 with a small

@@ -1,4 +1,5 @@
 import http from 'http';
+import { verifyInitData } from './miniapp.js';
 import crypto from 'crypto';
 import { readFile } from 'fs/promises';
 import { fileURLToPath } from 'url';
@@ -19,6 +20,7 @@ import { verifyTelegramLogin, verifyGoogleToken, createSession, readSession, par
 import * as contact from './contact.js';
 import * as push from './push.js';
 import { addBook } from './library.js';
+import { LibraryConflict, replaceLibrary, requireRevision, revisionOf } from './library-revision.js';
 
 // Read a small JSON request body (exam answers etc.). Hard cap, raised only for the one
 // endpoint that carries a photograph — the client downscales first, so this is a ceiling
@@ -121,6 +123,7 @@ const ROUTES = {
 // generic thumbnail on the home screen — right after someone decided to trust it enough to
 // install. These are real PNGs (see scripts/make-icons.mjs).
 const ASSETS = {
+  '/library-sync.js': { file: 'library-sync.js', type: 'application/javascript', cache: 'no-store' },
   '/me.jpg': { file: 'me.jpg', type: 'image/jpeg' },
   '/icon-180.png': { file: 'icon-180.png', type: 'image/png' },
   '/icon-192.png': { file: 'icon-192.png', type: 'image/png' },
@@ -277,7 +280,7 @@ function countVisit(page, req) {
 
 // Verifying a Mini App request now lives in src/miniapp.js so Pocket can use it too. Still
 // re-exported here: this is where callers have always imported it from.
-export { verifyInitData } from './miniapp.js';
+export { verifyInitData };
 
 // Gather his live System into a compact JSON for the dashboard.
 async function gatherDashboard() {
@@ -580,10 +583,11 @@ async function searchBooks(q) {
 // so whole-document sync keeps the client trivial and the data always consistent.
 async function getBooks() {
   const doc = await col('books').findOne({ _id: 'library' });
-  return { books: doc?.books || [], updatedAt: doc?.updatedAt || null };
+  return { books: doc?.books || [], updatedAt: doc?.updatedAt || null, revision: revisionOf(doc), exists: !!doc };
 }
 
-async function saveBooks(books) {
+async function saveBooks(books, expectedRevision) {
+  requireRevision(expectedRevision);
   if (!Array.isArray(books)) throw new Error('books must be an array');
   if (books.length > 500) throw new Error('too many books');
   // What the server already holds, so a client that has never heard of a field cannot delete
@@ -645,8 +649,8 @@ async function saveBooks(books) {
     started: Number(b.started) || Date.now(),
     updated: Number(b.updated) || Date.now(),
   }));
-  await col('books').updateOne({ _id: 'library' }, { $set: { books: clean, updatedAt: new Date() } }, { upsert: true });
-  return { ok: true, count: clean.length };
+  const revision = await replaceLibrary(col('books'), clean, expectedRevision, before);
+  return { ok: true, count: clean.length, revision };
 }
 
 // ---- the owner's admin view ----
@@ -2438,7 +2442,7 @@ export function startServer(port = process.env.PORT || 8080, build = 'dev') {
       path === '/api/bookexam' || path === '/api/bookexam/grade' ||
       path === '/api/bookexam/paper' || path === '/api/books' ||
       path === '/api/share' || path === '/api/chat' || path === '/api/booksearch' ||
-      path === '/api/tidy' || path === '/api/readpage'
+      path === '/api/tidy' || path === '/api/readpage' || path === '/api/word'
     ) {
       // Two ways to prove who you are: Telegram's Mini App signature, or a session cookie
       // from signing in on the website. The allowlist then decides if you're allowed in.
@@ -2547,7 +2551,7 @@ export function startServer(port = process.env.PORT || 8080, build = 'dev') {
         // image the client has already downscaled.
         const body = needsBody ? await readJson(req, path === '/api/readpage' ? 2_000_000 : 200000) : null;
         const data = await runAs(acct, async () => {
-          if (path === '/api/books') return req.method === 'PUT' ? saveBooks(body?.books) : getBooks();
+          if (path === '/api/books') return req.method === 'PUT' ? saveBooks(body?.books, body?.revision) : getBooks();
           if (path === '/api/share') return createShare({ ...body, name: body?.name || acct.name });
           // The mentor, in the browser. Same brain, same memory, same logging as Telegram —
           // and the same guardrails, since a web message costs exactly as much as a chat one.
@@ -2617,8 +2621,9 @@ export function startServer(port = process.env.PORT || 8080, build = 'dev') {
         res.end(JSON.stringify(data));
       } catch (err) {
         console.error('[web] api error:', path, err.message);
-        res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'server' }));
+        const status = err instanceof LibraryConflict ? err.statusCode : 500;
+        res.writeHead(status, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err instanceof LibraryConflict ? err.code : 'server' }));
       }
       return;
     }
@@ -2677,7 +2682,7 @@ export function startServer(port = process.env.PORT || 8080, build = 'dev') {
     if (ASSETS[path]) {
       try {
         const buf = await readFile(fileURLToPath(new URL(`../webapp/${ASSETS[path].file}`, import.meta.url)));
-        res.writeHead(200, { 'Content-Type': ASSETS[path].type, 'Cache-Control': 'public, max-age=86400' });
+        res.writeHead(200, { 'Content-Type': ASSETS[path].type, 'Cache-Control': ASSETS[path].cache || 'public, max-age=86400' });
         res.end(buf);
       } catch {
         res.writeHead(404, { 'Content-Type': 'text/plain' });

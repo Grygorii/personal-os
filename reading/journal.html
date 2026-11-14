@@ -694,6 +694,13 @@
     <a id="guest-signin" href="/signin">Keep them →</a>
   </div>
 
+  <style>#sync-status[hidden]{display:none}</style>
+  <aside id="sync-status" class="sec" role="status" hidden>
+    <p id="sync-message"></p>
+    <button class="btn ghost" id="sync-retry" type="button">Retry sync</button>
+    <button class="btn ghost" id="sync-download" type="button">Download this device's copy</button>
+    <button class="btn ghost" id="sync-cloud" type="button" hidden>Use latest saved library</button>
+  </aside>
   <section id="view-library">
     <h1>Your library</h1>
     <p class="sub">Your books, what you're getting from them, and the thoughts they spark.</p>
@@ -842,9 +849,13 @@
   <div class="toast" id="toast" role="status"></div>
 </div>
 
+<script src="/library-sync.js"></script>
 <script>
 const KEY="reading-journal-v1";
-let state=JSON.parse(localStorage.getItem(KEY)||"{}"); state.books=state.books||[];
+let state;
+try { state=JSON.parse(sessionStorage.getItem(KEY+":pending")||localStorage.getItem(KEY)||"{}"); }
+catch { state={}; }
+state.books=Array.isArray(state.books)?state.books:[];
 /* The library lives on the server so it follows you across devices, gets backed up, and
    the mentor can see it. localStorage stays as an offline cache and a first-run migration
    source. Saves are debounced — typing a thought shouldn't fire a request per keystroke. */
@@ -875,32 +886,66 @@ function step(name){
   }catch(e){ /* private mode with storage disabled — the app still works, we just can't count */ }
 }
 let syncTimer=null,syncing=false;
+function syncStatus(kind){
+  const box=document.getElementById("sync-status");
+  box.hidden=["synced","local","pending"].includes(kind);
+  document.getElementById("sync-message").textContent=kind==="conflict"
+    ? "Your library changed elsewhere. This device's unsent copy is safe here; automatic syncing is paused. Download it before choosing the latest saved library."
+    : "Not synced yet. Your changes are kept on this device. Retry when connected, or download a copy.";
+  document.getElementById("sync-cloud").hidden=kind!=="conflict";
+  document.getElementById("sync-retry").hidden=kind==="conflict";
+}
+function cacheShelf(next){
+  state=next;
+  // A tab's pending version survives reload even if another tab updates the shared cache.
+  if(state.syncDirty) sessionStorage.setItem(KEY+":pending",JSON.stringify(state));
+  else sessionStorage.removeItem(KEY+":pending");
+  localStorage.setItem(KEY,JSON.stringify(state));
+}
+const shelfSync=createKeptLibrarySync({
+  read:()=>state, write:cacheShelf,
+  request:(method,body)=>api("/api/books",{method,headers:{"Content-Type":"application/json"},
+    ...(body?{body:JSON.stringify(body)}:{})}),
+  status:syncStatus, changed:()=>renderLibrary()
+});
 async function pushBooks(){
+  if(window.__me?.guest&&!initData()) return true;
   syncing=true;
   try{
-    await api("/api/books",{method:"PUT",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({books:state.books})});
-  }catch(e){ /* offline: localStorage still holds it, next save retries */ }
-  syncing=false;
+    if(!Number.isSafeInteger(state.serverRevision)) await shelfSync.load();
+    return await shelfSync.flush();
+  }finally{syncing=false;}
 }
 const save=()=>{
-  localStorage.setItem(KEY,JSON.stringify(state));
+  shelfSync.markDirty();
   clearTimeout(syncTimer); syncTimer=setTimeout(()=>{syncTimer=null;pushBooks();},600);
 };
-/* Send a pending edit now instead of in 600ms — used before handing the shelf to the
-   mentor, and when the app goes to the background mid-edit. */
-function flushSaves(){ if(syncTimer){ clearTimeout(syncTimer); syncTimer=null; return pushBooks(); } }
-addEventListener("visibilitychange",()=>{ if(document.visibilityState==="hidden") flushSaves(); });
-async function loadBooks(){
-  try{
-    const r=await api("/api/books");
-    if(!r.ok) return;                              // not signed in → local-only, unchanged
-    const {books}=await r.json();
-    if(Array.isArray(books)&&books.length){ state.books=books; localStorage.setItem(KEY,JSON.stringify(state)); }
-    else if(state.books.length){ await pushBooks(); }   // first run: lift the local shelf up
-    renderLibrary();
-  }catch(e){}
+function flushSaves(){
+  clearTimeout(syncTimer); syncTimer=null;
+  return pushBooks();
 }
+addEventListener("visibilitychange",()=>{if(document.visibilityState==="hidden") flushSaves();});
+addEventListener("online",()=>loadBooks());
+async function loadBooks(){
+  await shelfSync.load();
+  if(shelfSync.pending()) await shelfSync.flush();
+}
+function downloadLocalShelf(){
+  const data=JSON.stringify({exportedAt:new Date().toISOString(),books:state.books},null,2);
+  const url=URL.createObjectURL(new Blob([data],{type:"application/json"}));
+  const a=document.createElement("a");a.href=url;a.download="kept-device-copy-"+Date.now()+".json";
+  document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
+}
+document.getElementById("sync-download").onclick=downloadLocalShelf;
+document.getElementById("sync-retry").onclick=()=>loadBooks();
+document.getElementById("sync-cloud").onclick=async()=>{
+  if(!confirm("Keep a recovery copy and download this device's unsent notes, then use the latest saved library? The unsent version will NOT be uploaded.")) return;
+  try{
+    localStorage.setItem(KEY+":recovery:"+Date.now(),JSON.stringify(state));
+    downloadLocalShelf();
+    await shelfSync.useCloud();
+  }catch(e){syncStatus("offline");}
+};
 const $=id=>document.getElementById(id);
 const esc=s=>(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 
@@ -3307,21 +3352,23 @@ function endRound(){
     const text=input.value.trim();
     if(!text||busy) return;
     busy=true; send.disabled=true;
-    if(log.querySelector(".chat-empty")) log.innerHTML="";
-    bubble("user",text); input.value=""; input.style.height="auto";
-    const t=typing();
+    let t=null;
     try{
-      const r=await api("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({text})});
-      t.remove();
-      if(r.status===401){ bubble("coach","Please sign in again."); location.href="/app"; return; }
-      const d=await r.json();
-      bubble("coach", d.reply || "…");
-      // The mentor can put a book on their shelf mid-conversation — pull the library back
-      // in so it's already there when they switch tabs.
-      loadBooks();
-    }catch(e){ t.remove(); bubble("coach","Couldn't reach the mentor — try again."); }
-    finally{ busy=false; send.disabled=false; input.focus(); }
+      // The mentor must read the thought just saved, not yesterday's cloud version.
+      if(!await flushSaves()){
+        toast("Sync needs attention in Library. Your message is still here.");
+        return;
+      }
+      if(log.querySelector(".chat-empty")) log.innerHTML="";
+      bubble("user",text);input.value="";input.style.height="auto";t=typing();
+      const r=await api("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text})});
+      t.remove();t=null;
+      if(r.status===401){bubble("coach","Please sign in again.");location.href="/app";return;}
+      if(!r.ok) throw new Error("mentor unavailable");
+      const d=await r.json();bubble("coach",d.reply||"…");
+      await loadBooks();
+    }catch(e){if(t)t.remove();bubble("coach","Couldn't reach the mentor — try again.");}
+    finally{busy=false;send.disabled=false;input.focus();}
   }
   send.onclick=submit;
   input.addEventListener("keydown",e=>{ if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();submit();} });
@@ -3405,7 +3452,7 @@ function endRound(){
    half-written thought is far worse than running yesterday's code for another hour. */
 (function(){
   let mine=null, checking=false;
-  const dirty=()=>document.querySelector(".exam-ans, .ed-t")
+  const dirty=()=>shelfSync.pending() || document.querySelector(".exam-ans, .ed-t")
     || [...document.querySelectorAll("textarea, input")].some(e=>e.value && e.value.trim());
 
   async function check(){

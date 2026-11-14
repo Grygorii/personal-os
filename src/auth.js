@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { config } from './config.js';
+import { sessionBase } from './session-secret.js';
 
 // Signing in on the WEBSITE, so the installed app doesn't depend on Telegram being open.
 // Telegram stays the identity provider — no passwords, no email — but the session lives in
@@ -66,9 +67,11 @@ export async function verifyGoogleToken(idToken) {
 function sessionKey() {
   // Reuse the master key when present; otherwise derive from the bot token so sessions
   // still work before ENCRYPTION_KEY is set (it's a signing key, not an encryption key).
-  const base = config.encryptionKey || config.telegramToken || 'insecure-dev-key';
+  const base = sessionBase(config);
   return crypto.createHash('sha256').update(`session:${base}`).digest();
 }
+
+export function assertSessionSecret() { sessionKey(); }
 
 export function createSession(userId) {
   const expires = Date.now() + SESSION_TTL_MS;

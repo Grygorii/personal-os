@@ -8,9 +8,10 @@ import * as users from './users.js';
 import { runAs } from './ctx.js';
 import { config, warnIfNoLlmKey } from './config.js';
 import { initPush } from './push.js';
+import { assertSessionSecret } from './auth.js';
 
 // Bump on each deploy so we can confirm which build is actually live (read meta.boot).
-const VERSION = 'reader-2';
+const VERSION = 'reading-reliability-20261114';
 
 // A rejected promise nobody caught kills the process on modern Node, and Railway restarts
 // it — so the only trace of a whole class of bug was a silent restart. Log it, keep serving.
@@ -25,6 +26,7 @@ process.on('uncaughtException', (err) => {
 });
 
 async function main() {
+  assertSessionSecret();
   warnIfNoLlmKey();   // this app does call a model; Pocket does not, so it never says this
   // ---- Which app is this? ----
   // Railway defaults an unconfigured service to `npm start`, which is THIS file. So a service
