@@ -11,7 +11,7 @@ import { initPush } from './push.js';
 import { assertSessionSecret } from './auth.js';
 
 // Bump on each deploy so we can confirm which build is actually live (read meta.boot).
-const VERSION = 'reading-reliability-20261114';
+const VERSION = 'reading-reliability-20261114.1';
 
 // A rejected promise nobody caught kills the process on modern Node, and Railway restarts
 // it — so the only trace of a whole class of bug was a silent restart. Log it, keep serving.
