@@ -20,9 +20,11 @@ test('the actual HTTP router recognizes word lookup without calling a model or d
 });
 test('every inline app script parses, including the new sync and mentor wiring', async () => {
   const html = await readFile(new URL('../reading/journal.html', import.meta.url), 'utf8');
+  // Documentation contains literal <script> tags. They are not executable markup.
+  const markup = html.replace(/<!--[\s\S]*?-->/g, '');
   let count = 0;
-  for (const match of html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)) {
-    if (match[1].trim()) { new Script(match[1]); count++; }
+  for (const match of markup.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)) {
+    if (match[1].trim()) { new Script(match[1], { filename: `journal-inline-${count + 1}.js` }); count++; }
   }
   assert.ok(count >= 2);
   assert.match(html, /src="\/library-sync\.js"/);
