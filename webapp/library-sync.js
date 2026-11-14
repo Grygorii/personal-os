@@ -1,13 +1,16 @@
-// Browser + node:test compatible. All effects are injected so real race conditions are testable.
-globalThis.createKeptLibrarySync = function ({ read, write, request, status = () => {}, changed = () => {} }) {
+// Serialized, revision-checked writes. The owner check also protects an already-open tab
+// when another tab signs into a different account. All effects are injectable for tests.
+globalThis.createKeptLibrarySync = function ({ read, write, request, owner = null, status = () => {}, changed = () => {} }) {
   let inFlight = null, loading = null, blocked = false, generation = 0;
   let revision = Number.isSafeInteger(read().serverRevision) ? read().serverRevision : null;
   let dirty = read().syncDirty === true;
-  const persist = () => write({ ...read(), serverRevision: revision, syncDirty: dirty });
-  const cloneBooks = () => JSON.parse(JSON.stringify(read().books || []));
-  const same = (a, b) => JSON.stringify(a || []) === JSON.stringify(b || []);
-  const tell = (kind) => { status(kind); return false; };
-  const conflict = () => { blocked = true; return tell('conflict'); };
+  let storageFailed = false;
+  const store = (value) => { try { write(value); storageFailed = false; } catch { storageFailed = true; status('storage'); } };
+  const persist = () => store({ ...read(), serverRevision: revision, syncDirty: dirty });
+  const tell = (kind) => { status(storageFailed ? 'storage' : kind); return false; };
+  const conflict = (kind = 'conflict') => { blocked = true; return tell(kind); };
+  const valid = (cloud) => Array.isArray(cloud?.books) && Number.isSafeInteger(cloud.revision) && cloud.revision >= 0;
+  const accountMatches = (cloud) => !owner || cloud.owner === owner;
   async function load() {
     if (blocked) return false;
     if (inFlight) { await inFlight; if (dirty || blocked) return false; }
@@ -15,38 +18,27 @@ globalThis.createKeptLibrarySync = function ({ read, write, request, status = ()
     const startGeneration = generation;
     loading = (async () => {
       try {
-        const response = await request('GET');
-        if (response.status === 401) return tell('local');
-        if (!response.ok) return tell('offline');
-        const cloud = await response.json();
-        if (!Array.isArray(cloud.books) || !Number.isSafeInteger(cloud.revision)) return tell('offline');
+        const r = await request('GET');
+        if (r.status === 401) return tell(owner ? 'signedout' : 'local');
+        if (!r.ok) return tell('offline');
+        const cloud = await r.json();
+        if (!valid(cloud)) return tell('offline');
+        if (!accountMatches(cloud)) return conflict('account');
         const local = read();
-        // First sign-in may lift a guest draft into a genuinely new library, never into
-        // an existing (possibly deliberately emptied) library.
         if (revision === null && cloud.exists === false && (local.books || []).length) {
           revision = cloud.revision; dirty = true; persist(); return true;
         }
-        if (revision === null && same(local.books, cloud.books)) {
-          revision = cloud.revision; dirty = false; persist(); status('synced'); return true;
+        if (revision === null && JSON.stringify(local.books || []) === JSON.stringify(cloud.books)) {
+          revision = cloud.revision; dirty = false; persist(); tell('synced'); return true;
         }
-        // Never copy a stale/unsent shelf over a nonempty cloud shelf or discard local edits.
         if (dirty || generation !== startGeneration) {
           if (revision !== cloud.revision) return conflict();
-          persist();
-          return true;
+          persist(); return true;
         }
-        if (revision === null && (local.books || []).length && !same(local.books, cloud.books)) {
-          // An existing empty library can be an intentional deletion on another device.
-          if (cloud.exists !== false) return conflict();
-          revision = cloud.revision;
-          dirty = true;
-          persist();
-          return true;
-        }
-        revision = cloud.revision;
-        dirty = false;
-        write({ ...local, books: cloud.books, serverRevision: revision, syncDirty: false });
-        changed(); status('synced'); return true;
+        if (revision === null && (local.books || []).length && cloud.exists !== false) return conflict();
+        revision = cloud.revision; dirty = false;
+        store({ ...local, books: cloud.books, serverRevision: revision, syncDirty: false });
+        changed(); tell('synced'); return true;
       } catch { return tell('offline'); }
       finally { loading = null; }
     })();
@@ -56,53 +48,46 @@ globalThis.createKeptLibrarySync = function ({ read, write, request, status = ()
     if (inFlight) return inFlight;
     if (blocked) return false;
     inFlight = (async () => {
-      // Do not call load() here: it awaits an in-flight save. Initial load must precede flush.
       if (loading) await loading;
       if (blocked || !dirty) return !blocked;
       if (revision === null) return tell('offline');
       while (dirty && !blocked) {
         const sentGeneration = generation;
-        const books = cloneBooks();
+        const books = JSON.parse(JSON.stringify(read().books || []));
         try {
-          const response = await request('PUT', { books, revision });
-          if (response.status === 409 || response.status === 428) return conflict();
-          if (response.status === 401) return tell('local');
-          if (!response.ok) return tell('offline');
-          const result = await response.json();
-          if (!result.ok || !Number.isSafeInteger(result.revision) || result.revision <= revision) return tell('offline');
-          revision = result.revision;
-          dirty = generation !== sentGeneration;
-          persist();
+          const r = await request('PUT', { books, revision, ...(owner ? { owner } : {}) });
+          if (r.status === 409 || r.status === 428) {
+            const detail = await r.json().catch(() => ({}));
+            return conflict(detail.error === 'account_changed' ? 'account' : 'conflict');
+          }
+          if (r.status === 401) return tell(owner ? 'signedout' : 'local');
+          if (!r.ok) return tell('offline');
+          const out = await r.json();
+          if (!out.ok || !Number.isSafeInteger(out.revision) || out.revision <= revision) return tell('offline');
+          revision = out.revision; dirty = generation !== sentGeneration; persist();
         } catch { return tell('offline'); }
       }
-      status('synced'); return true;
+      tell('synced'); return true;
     })();
     try { return await inFlight; } finally { inFlight = null; }
   }
-  function markDirty() { generation++; dirty = true; persist(); status(blocked ? 'conflict' : 'pending'); }
+  function markDirty() { generation++; dirty = true; persist(); tell(blocked ? 'conflict' : 'pending'); }
   async function useCloud() {
-    // Caller preserves/downloads the local copy and asks for explicit consent first.
     if (inFlight) await inFlight;
     if (loading) await loading;
     const startGeneration = generation, wasBlocked = blocked;
-    blocked = true; // no automatic write may race this deliberate replacement
+    blocked = true;
     try {
-      const response = await request('GET');
-      if (!response.ok) { blocked = wasBlocked; return tell(blocked ? 'conflict' : 'offline'); }
-      const cloud = await response.json();
-      if (!Array.isArray(cloud.books) || !Number.isSafeInteger(cloud.revision) || cloud.revision < 0) {
-        blocked = wasBlocked; return tell(blocked ? 'conflict' : 'offline');
-      }
-      // The download covered the version present when recovery started, not an edit made
-      // while the request was travelling. Keep that new edit and require a fresh decision.
+      const r = await request('GET');
+      if (!r.ok) { blocked = wasBlocked; return tell(blocked ? 'conflict' : 'offline'); }
+      const cloud = await r.json();
+      if (!valid(cloud)) { blocked = wasBlocked; return tell(blocked ? 'conflict' : 'offline'); }
+      if (!accountMatches(cloud)) return conflict('account');
       if (generation !== startGeneration) return conflict();
       revision = cloud.revision; dirty = false; blocked = false;
-      write({ ...read(), books: cloud.books, serverRevision: revision, syncDirty: false });
-      changed(); status('synced'); return true;
-    } catch {
-      blocked = wasBlocked;
-      return tell(blocked ? 'conflict' : 'offline');
-    }
+      store({ ...read(), books: cloud.books, serverRevision: revision, syncDirty: false });
+      changed(); tell('synced'); return true;
+    } catch { blocked = wasBlocked; return tell(blocked ? 'conflict' : 'offline'); }
   }
   return { load, flush, markDirty, useCloud, pending: () => dirty || blocked };
 };

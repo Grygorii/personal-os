@@ -1,0 +1,58 @@
+name: Verify and prepare Kept release
+on:
+  push:
+    branches: [fix/kept-reading-reliability-20261114]
+    paths: [scripts/prepare-kept-release.mjs, .github/workflows/kept-release-prepare.yml]
+permissions:
+  contents: write
+concurrency:
+  group: kept-release-preparation
+  cancel-in-progress: false
+jobs:
+  verify:
+    if: github.repository == 'Grygorii/personal-os' && github.ref == 'refs/heads/fix/kept-reading-reliability-20261114'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    services:
+      mongodb:
+        image: mongo:8.0
+        ports: ['27017:27017']
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand({ping:1})'"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/kept-reading-reliability-20261114
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: node scripts/prepare-kept-release.mjs
+      - run: npm ci --ignore-scripts
+      - run: npm test
+      - run: npm install --no-save --package-lock=false --ignore-scripts playwright@1.58.2
+      - run: npx playwright install --with-deps chromium
+      - name: Real MongoDB and real Chromium integration
+        env:
+          MONGO_URI: mongodb://127.0.0.1:27017
+          KEPT_RELEASE_TEST: 'true'
+        run: node scripts/verify-kept-release.mjs --browser
+      - name: Check syntax and whitespace
+        run: |
+          find src scripts webapp -type f \( -name '*.js' -o -name '*.mjs' \) -print0 | xargs -0 -n1 node --check
+          git diff --check
+      - name: Commit verified integration only to the review branch
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/webserver.js reading/journal.html
+          git commit -m "Keep shared-browser notes with their owner and verify persistence in a real browser"
+          git push origin HEAD:fix/kept-reading-reliability-20261114
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: kept-real-integration-report
+          path: kept-release-report.json
+          retention-days: 14
