@@ -123,6 +123,7 @@ const ROUTES = {
 // generic thumbnail on the home screen — right after someone decided to trust it enough to
 // install. These are real PNGs (see scripts/make-icons.mjs).
 const ASSETS = {
+  '/library-cache.js': { file: 'library-cache.js', type: 'application/javascript', cache: 'no-store' },
   '/library-sync.js': { file: 'library-sync.js', type: 'application/javascript', cache: 'no-store' },
   '/me.jpg': { file: 'me.jpg', type: 'image/jpeg' },
   '/icon-180.png': { file: 'icon-180.png', type: 'image/png' },
@@ -583,11 +584,12 @@ async function searchBooks(q) {
 // so whole-document sync keeps the client trivial and the data always consistent.
 async function getBooks() {
   const doc = await col('books').findOne({ _id: 'library' });
-  return { books: doc?.books || [], updatedAt: doc?.updatedAt || null, revision: revisionOf(doc), exists: !!doc };
+  return { books: doc?.books || [], updatedAt: doc?.updatedAt || null, revision: revisionOf(doc), exists: !!doc, owner: uid() };
 }
 
-async function saveBooks(books, expectedRevision) {
+async function saveBooks(books, expectedRevision, owner) {
   requireRevision(expectedRevision);
+  if (owner !== uid()) throw new LibraryConflict('account_changed');
   if (!Array.isArray(books)) throw new Error('books must be an array');
   if (books.length > 500) throw new Error('too many books');
   // What the server already holds, so a client that has never heard of a field cannot delete
@@ -2222,9 +2224,10 @@ export function startServer(port = process.env.PORT || 8080, build = 'dev') {
     // it is why this path exists only as a backstop — but they are dropped on arrival, and the
     // reader is told plainly to try again rather than being left wondering.
     if (path === '/app/receive') {
-      req.destroy();
-      res.writeHead(303, { Location: '/app?shared=retry' });
+      res.writeHead(303, { Location: '/app?shared=retry', Connection: 'close' });
       res.end();
+      // No body parser or storage: close after the response is delivered.
+      res.on('finish', () => req.socket?.end());
       return;
     }
     if (path === '/app' || path === '/signin') {
@@ -2282,6 +2285,7 @@ export function startServer(port = process.env.PORT || 8080, build = 'dev') {
             'ME_JSON',
             JSON.stringify({
               guest: !signedIn,
+              id: signedIn ? String(acct._id) : null,
               owner: acct?.role === 'owner',
               // What this person may open, asked as capabilities rather than as a role. The
               // menu is built from this list, so a reader is never sent the existence of a
@@ -2530,6 +2534,11 @@ export function startServer(port = process.env.PORT || 8080, build = 'dev') {
         res.end(JSON.stringify({ error: 'unauthorized' }));
         return;
       }
+      if (req.headers['x-kept-user'] && req.headers['x-kept-user'] !== String(acct._id)) {
+        res.writeHead(409, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'account_changed' }));
+        return;
+      }
       // A burst ceiling on the whole API. The Telegram side has had one since the doors
       // opened; the web side — now the only front door — had none, so a loop in a tab
       // could hammer Mongo and the model as fast as the network allowed.
@@ -2551,7 +2560,7 @@ export function startServer(port = process.env.PORT || 8080, build = 'dev') {
         // image the client has already downscaled.
         const body = needsBody ? await readJson(req, path === '/api/readpage' ? 2_000_000 : 200000) : null;
         const data = await runAs(acct, async () => {
-          if (path === '/api/books') return req.method === 'PUT' ? saveBooks(body?.books, body?.revision) : getBooks();
+          if (path === '/api/books') return req.method === 'PUT' ? saveBooks(body?.books, body?.revision, body?.owner) : getBooks();
           if (path === '/api/share') return createShare({ ...body, name: body?.name || acct.name });
           // The mentor, in the browser. Same brain, same memory, same logging as Telegram —
           // and the same guardrails, since a web message costs exactly as much as a chat one.
