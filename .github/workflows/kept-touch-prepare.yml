@@ -1,0 +1,46 @@
+name: Prepare reader touch-target correction
+on:
+  push:
+    branches: [fix/kept-reader-touch-target-20261114]
+permissions:
+  contents: write
+jobs:
+  prepare:
+    if: github.repository == 'Grygorii/personal-os' && github.ref == 'refs/heads/fix/kept-reader-touch-target-20261114'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Correct the measured small button and its footer clearance
+        run: |
+          node --input-type=module <<'NODE'
+          import {readFileSync,writeFileSync} from 'node:fs';
+          import assert from 'node:assert/strict';
+          const path='reading/journal.html';
+          let source=readFileSync(path,'utf8');
+          const old='border-radius:10px;padding:0 14px;height:36px;min-height:36px;';
+          assert.equal(source.split(old).length,2);
+          source=source.replace(old,'border-radius:10px;padding:0 14px;height:var(--tap);min-height:var(--tap);');
+          const footer='.rdsel{position:absolute;left:0;right:0;bottom:calc(52px + env(safe-area-inset-bottom));';
+          assert.equal(source.split(footer).length,2);
+          source=source.replace(footer,'.rdsel{position:absolute;left:0;right:0;bottom:calc(60px + env(safe-area-inset-bottom));');
+          writeFileSync(path,source);
+          const boot=readFileSync('src/index.js','utf8');
+          assert.ok(boot.includes("const VERSION = 'reading-reliability-20261114';"));
+          writeFileSync('src/index.js',boot.replace("const VERSION = 'reading-reliability-20261114';","const VERSION = 'reading-reliability-20261114.1';"));
+          NODE
+      - run: npm ci --ignore-scripts
+      - run: npm test
+      - run: git diff --check
+      - name: Remove this temporary workflow and commit only the verified correction
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/kept-touch-prepare.yml
+          git add reading/journal.html src/index.js
+          git commit -m "Make the reader's thought button easy to tap without overlapping selections"
+          git push origin HEAD:fix/kept-reader-touch-target-20261114
