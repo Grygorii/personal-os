@@ -5,6 +5,7 @@ import { config } from './config.js';
 import * as system from './system.js';
 import { currentUser, personName, languageRule, isLanguage } from './ctx.js';
 import { addBook } from './library.js';
+import { readingEvidence, withReadingEvidence, READING_CONTEXT_RULES } from './reading-context.js';
 import * as users from './users.js';
 import { rawCol } from './db.js';
 const rawUsers = () => rawCol('users');
@@ -150,7 +151,7 @@ STAY IN YOUR LANE: books, ideas and their thinking. You are NOT a life coach her
 
 STYLE: short and human (1–3 sentences) — this is a chat inside their reading app. Honest over flattering. One good question at a time, and often none — a real remark beats an interrogation. Hold your reads loosely ("I might be off, but…"); you're curious, not a know-it-all.
 
-CONTEXT: it is ${now} (${partOfDay}). Currently reading: ${readingLine}
+CONTEXT: it is ${now} (${partOfDay}). Current books and progress are in KEPT_LIBRARY_EVIDENCE when supplied.
 Recent reading activity:
 ${bookLogs}
 ${examBlock}
@@ -358,7 +359,7 @@ export function parseResponse(raw) {
 }
 
 async function think(finalUserContent, image = null) {
-  const [profile, logs, reading, history, energy, state, pursuitRows] = await Promise.all([
+  const [profile, logs, reading, history, energy, state, pursuitRows, shelf] = await Promise.all([
     getProfile(),
     recentLogs(),
     getReading(),
@@ -366,6 +367,7 @@ async function think(finalUserContent, image = null) {
     system.energySnapshot(),
     system.currentState(),
     col('pursuits').find().sort({ lastActive: -1 }).limit(10).toArray(),
+    users.can(currentUser(), 'books') ? col('books').findOne({ _id: 'library' }) : null,
   ]);
 
   const pursuits = pursuitRows.length
@@ -387,6 +389,7 @@ async function think(finalUserContent, image = null) {
     partOfDay: partOfDayNow(),
   });
 
+  const evidence = users.can(currentUser(), 'books') ? readingEvidence(shelf, finalUserContent) : '';
   const messages = history.map((m) => ({
     role: m.role === 'coach' ? 'assistant' : 'user',
     content: m.text,
@@ -396,9 +399,9 @@ async function think(finalUserContent, image = null) {
     content: image
       ? [
           { type: 'image', source: { type: 'base64', media_type: image.mediaType || 'image/jpeg', data: image.base64 } },
-          { type: 'text', text: finalUserContent || 'I sent you a photo — take a look and respond.' },
+          { type: 'text', text: withReadingEvidence(finalUserContent || 'I sent you a photo — take a look and respond.', evidence) },
         ]
-      : finalUserContent,
+      : withReadingEvidence(finalUserContent, evidence),
   });
 
   // Raised twice now. 600 left it barely room to open a brace; 1400 still cut a word
@@ -406,7 +409,7 @@ async function think(finalUserContent, image = null) {
   // together and an unclosed brace loses the whole answer. A ceiling costs nothing until it
   // is reached — you are billed for tokens produced, not tokens allowed — so it is set well
   // clear of the longest thing the mentor is ever asked for.
-  const raw = await chat({ system: systemPrompt, messages, maxTokens: 3000 });
+  const raw = await chat({ system: systemPrompt + (users.can(currentUser(), 'books') ? READING_CONTEXT_RULES : ''), messages, maxTokens: 3000 });
   const parsed = parseResponse(raw);
   console.log(
     `[coach] in="${finalUserContent.slice(0, 70).replace(/\n/g, ' ')}" ` +

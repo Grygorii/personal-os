@@ -1,0 +1,38 @@
+name: Kept real integration
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  integration:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    services:
+      mongodb:
+        image: mongo:8.0
+        ports: ['27017:27017']
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand({ping:1})'"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm install --no-save --package-lock=false --ignore-scripts playwright@1.58.2
+      - run: npx playwright install --with-deps chromium
+      - name: Persistence, authentication, conflicts and browser recovery
+        env:
+          MONGO_URI: mongodb://127.0.0.1:27017
+          KEPT_RELEASE_TEST: 'true'
+        run: node scripts/verify-kept-release.mjs --browser
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: kept-real-integration-report
+          path: kept-release-report.json
+          retention-days: 14
